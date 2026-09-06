@@ -37,13 +37,8 @@ jobs:
       - name: Rename APK
         run: cp app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v2.0.0.apk
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: monitor-de-noticias-v2.0.0
-          path: monitor-de-noticias-v2.0.0.apk
-
       - name: Publish GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v2.0.0

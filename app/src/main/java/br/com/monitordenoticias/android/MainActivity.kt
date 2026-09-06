@@ -120,8 +120,24 @@ fun DemandScreen(s:AppState,vm:MonitorViewModel) {
         Spacer(Modifier.height(8.dp)); OutlinedTextField(vehicle,{vehicle=it},label={Text("Veículo")},singleLine=true,modifier=Modifier.fillMaxWidth())
         OutlinedTextField(subject,{subject=it},label={Text("Assunto")},singleLine=true,modifier=Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp)); Button(onClick={vm.addDemand(vehicle,subject);vehicle="";subject=""},enabled=vehicle.isNotBlank()&&subject.isNotBlank()){Text("Adicionar demanda")}
-        Spacer(Modifier.height(12.dp)); LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            items(s.demands,key={it.id}) { d -> Card(Modifier.fillMaxWidth()){Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(d.vehicle,fontWeight=FontWeight.Bold);Text(d.subject,style=MaterialTheme.typography.bodySmall)}TextButton(onClick={vm.removeDemand(d.id)}){Text("Excluir")}}} }
+        Spacer(Modifier.height(12.dp))
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(s.demands, key = { it.id }) { d ->
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(d.vehicle, fontWeight = FontWeight.Bold)
+                            Text(d.subject, style = MaterialTheme.typography.bodySmall)
+                        }
+                        TextButton(onClick = { vm.removeDemand(d.id) }) {
+                            Text("Excluir")
+                        }
+                    }
+                }
+            }
         }
     }
 }

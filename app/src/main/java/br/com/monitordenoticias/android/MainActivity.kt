@@ -5,27 +5,59 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Article
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.ManageSearch
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.text.SimpleDateFormat
 import java.util.*
+
+private val AppBg = Color(0xFF0F0E14)
+private val SurfaceDark = Color(0xFF19181F)
+private val Accent = Color(0xFF6EA8FE)
+private val Mint = Color(0xFF61D6B1)
+private val TextSecondary = Color(0xFFB9B4C3)
+
+private val AppColors = darkColorScheme(
+    primary = Accent,
+    onPrimary = Color(0xFF14223C),
+    background = AppBg,
+    surface = SurfaceDark,
+    surfaceVariant = Color(0xFF22212A),
+    onBackground = Color(0xFFF5F2FA),
+    onSurface = Color(0xFFF5F2FA),
+    onSurfaceVariant = TextSecondary
+)
 
 class MainActivity : ComponentActivity() {
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (android.os.Build.VERSION.SDK_INT >= 33) notificationPermission.launch("android.permission.POST_NOTIFICATIONS")
-        setContent { MaterialTheme { MonitorApp() } }
+        setContent { MaterialTheme(colorScheme = AppColors) { MonitorApp() } }
     }
 }
 
@@ -33,15 +65,63 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MonitorApp(vm: MonitorViewModel = viewModel()) {
     val state by vm.state.collectAsState()
-    val tabs = listOf("Notícias","Período","Demandas","Histórico","Config.")
+    val tabs = listOf(
+        Triple("Notícias", Icons.Outlined.Article, 0),
+        Triple("Período", Icons.Outlined.CalendarMonth, 1),
+        Triple("Demandas", Icons.Outlined.NotificationsActive, 2),
+        Triple("Histórico", Icons.Outlined.History, 3),
+        Triple("Termos", Icons.Outlined.ManageSearch, 4),
+        Triple("Fontes", Icons.Outlined.Public, 5),
+        Triple("Config.", Icons.Outlined.Settings, 6)
+    )
     Scaffold(
-        topBar={ TopAppBar(title={Text("Monitor de Notícias")}, actions={ Text("v2.0.0",modifier=Modifier.padding(end=16.dp)) })},
-        bottomBar={ NavigationBar { tabs.forEachIndexed { i,t -> NavigationBarItem(selected=state.selectedTab==i,onClick={vm.setTab(i)},icon={Spacer(Modifier.size(1.dp))},label={Text(t)}) } } }
+        containerColor = AppBg,
+        topBar={
+            CenterAlignedTopAppBar(
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = AppBg),
+                title={
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Monitor de Notícias", fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                        Text("Monitoramento inteligente", color = TextSecondary, fontSize = 12.sp)
+                    }
+                },
+                actions={ Text("2.1.0", color = TextSecondary, fontSize = 12.sp, modifier=Modifier.padding(end=14.dp)) }
+            )
+        },
+        bottomBar={
+            NavigationBar(containerColor = SurfaceDark, tonalElevation = 0.dp) {
+                tabs.forEach { tab ->
+                    NavigationBarItem(
+                        selected=state.selectedTab==tab.third,
+                        onClick={vm.setTab(tab.third)},
+                        icon={Icon(tab.second, contentDescription=tab.first)},
+                        label={Text(tab.first, fontSize=9.sp, maxLines=2)},
+                        colors=NavigationBarItemDefaults.colors(
+                            selectedIconColor=Accent,
+                            selectedTextColor=Color.White,
+                            indicatorColor=Color(0xFF353244),
+                            unselectedIconColor=TextSecondary,
+                            unselectedTextColor=TextSecondary
+                        )
+                    )
+                }
+            }
+        }
     ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize()) {
-            if(state.status.isNotBlank()) Text(state.status,Modifier.padding(horizontal=16.dp,vertical=8.dp),style=MaterialTheme.typography.labelMedium)
+        Column(Modifier.padding(pad).fillMaxSize().background(AppBg)) {
+            if(state.status.isNotBlank() && state.status != "Pronto") {
+                Surface(color=Color(0xFF171720), modifier=Modifier.fillMaxWidth()) {
+                    Text(state.status, color=TextSecondary, fontSize=11.sp, modifier=Modifier.padding(horizontal=18.dp,vertical=7.dp))
+                }
+            }
             when(state.selectedTab) {
-                0->NewsScreen(state,vm); 1->PeriodScreen(state,vm); 2->DemandScreen(state,vm); 3->HistoryScreen(state,vm); 4->SettingsScreen(state,vm)
+                0->NewsScreen(state,vm)
+                1->PeriodScreen(state,vm)
+                2->DemandScreen(state,vm)
+                3->HistoryScreen(state,vm)
+                4->TermsScreen(state,vm)
+                5->SourcesScreen(state)
+                else->SettingsScreen(state,vm)
             }
         }
     }
@@ -50,15 +130,48 @@ fun MonitorApp(vm: MonitorViewModel = viewModel()) {
 @Composable
 fun NewsScreen(s:AppState,vm:MonitorViewModel) {
     val shown = if (s.showOnlyDemands) s.news.filter { it.demand } else s.news
-    Column(Modifier.fillMaxSize().padding(12.dp)) {
-        Row(verticalAlignment=Alignment.CenterVertically,modifier=Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f)) {
-                Text("Últimas 24 horas",fontWeight=FontWeight.Bold)
-                Text(s.lastUpdatedAt?.let { "Atualizado em ${dateText(it)}" } ?: "Monitoramento ativo",style=MaterialTheme.typography.labelSmall)
+    Column(Modifier.fillMaxSize().padding(horizontal=18.dp)) {
+        Spacer(Modifier.height(12.dp))
+        Text("Últimas notícias", fontWeight=FontWeight.ExtraBold, fontSize=30.sp)
+        Text("Monitoramento automático das últimas 24 horas", color=TextSecondary, fontSize=14.sp)
+        Spacer(Modifier.height(18.dp))
+        Card(
+            shape=RoundedCornerShape(28.dp),
+            colors=CardDefaults.cardColors(containerColor=Color.Transparent),
+            modifier=Modifier.fillMaxWidth()
+        ) {
+            Box(
+                Modifier.background(Brush.linearGradient(listOf(Color(0xFF1D2230),Color(0xFF18171E)))).padding(20.dp)
+            ) {
+                Column {
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Box(
+                            Modifier.size(54.dp).clip(CircleShape).background(Accent.copy(alpha=.13f)),
+                            contentAlignment=Alignment.Center
+                        ) {
+                            Icon(Icons.Outlined.ManageSearch, contentDescription=null, tint=Accent, modifier=Modifier.size(30.dp))
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Painel de monitoramento", fontWeight=FontWeight.Bold, fontSize=20.sp)
+                            Text("${s.news.size} matéria(s) nas últimas 24h", color=TextSecondary, fontSize=12.sp)
+                        }
+                    }
+                    Spacer(Modifier.height(18.dp))
+                    Button(
+                        onClick=vm::search,
+                        enabled=!s.busy,
+                        modifier=Modifier.fillMaxWidth(),
+                        shape=RoundedCornerShape(18.dp)
+                    ) { Text(if(s.busy) "Buscando..." else "Buscar agora", fontWeight=FontWeight.Bold) }
+                    s.lastUpdatedAt?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text("Última atualização: ${dateText(it)}", color=TextSecondary, fontSize=10.sp)
+                    }
+                }
             }
-            Button(onClick=vm::search,enabled=!s.busy){Text(if(s.busy)"Buscando…" else "Buscar agora")}
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SummaryCard("Notícias", s.news.size.toString(), Modifier.weight(1f))
             SummaryCard("Demandas", s.news.count { it.demand }.toString(), Modifier.weight(1f))
@@ -69,19 +182,35 @@ fun NewsScreen(s:AppState,vm:MonitorViewModel) {
             FilterChip(selected=!s.showOnlyDemands,onClick={vm.setDemandFilter(false)},label={Text("Todas")})
             FilterChip(selected=s.showOnlyDemands,onClick={vm.setDemandFilter(true)},label={Text("Demandas")})
         }
-        Spacer(Modifier.height(8.dp)); NewsList(shown)
+        Spacer(Modifier.height(8.dp))
+        NewsList(shown)
     }
 }
 
 @Composable
 fun SummaryCard(label:String,value:String,modifier:Modifier=Modifier) {
-    Card(modifier) { Column(Modifier.padding(10.dp)) { Text(value,style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold); Text(label,style=MaterialTheme.typography.labelSmall) } }
+    Card(modifier, colors=CardDefaults.cardColors(containerColor=SurfaceDark), shape=RoundedCornerShape(18.dp)) {
+        Column(Modifier.padding(horizontal=12.dp,vertical=10.dp)) {
+            Text(value,style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold,color=Accent)
+            Text(label,color=TextSecondary,fontSize=10.sp)
+        }
+    }
 }
 
 @Composable
 fun NewsList(items:List<News>) {
     val context=LocalContext.current
-    if(items.isEmpty()) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text("Nenhuma notícia encontrada.")}
+    if(items.isEmpty()) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
+        Column(horizontalAlignment=Alignment.CenterHorizontally) {
+            Box(Modifier.size(68.dp).clip(CircleShape).background(SurfaceDark),contentAlignment=Alignment.Center) {
+                Icon(Icons.Outlined.ManageSearch,contentDescription=null,tint=Accent,modifier=Modifier.size(34.dp))
+            }
+            Spacer(Modifier.height(14.dp))
+            Text("Nenhuma notícia encontrada",fontWeight=FontWeight.Bold,fontSize=19.sp)
+            Spacer(Modifier.height(4.dp))
+            Text("Use “Buscar agora” para atualizar o monitor.",color=TextSecondary,fontSize=12.sp)
+        }
+    }
     else LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(bottom=16.dp)) {
         items(items,key={it.link}) { n ->
             Card(Modifier.fillMaxWidth().clickable { context.startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse(n.link))) }) {
@@ -148,6 +277,65 @@ fun HistoryScreen(s:AppState,vm:MonitorViewModel) {
     Column(Modifier.fillMaxSize().padding(12.dp)) {
         Row(verticalAlignment=Alignment.CenterVertically){Text("Histórico (${s.history.size})",fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f));OutlinedButton(onClick=vm::clearHistory,enabled=s.history.isNotEmpty()){Text("Limpar")}}
         Spacer(Modifier.height(8.dp)); OutlinedButton(onClick={exportCsv(context,s.history)},enabled=s.history.isNotEmpty()){Text("Exportar CSV completo")}; Spacer(Modifier.height(8.dp)); NewsList(s.history)
+    }
+}
+
+@Composable
+fun TermsScreen(s:AppState,vm:MonitorViewModel) {
+    var term by remember{mutableStateOf("")}
+    Column(Modifier.fillMaxSize().padding(horizontal=18.dp)) {
+        Spacer(Modifier.height(12.dp))
+        Text("Termos monitorados",fontWeight=FontWeight.ExtraBold,fontSize=28.sp)
+        Text("Palavras e expressões usadas na busca automática",color=TextSecondary,fontSize=13.sp)
+        Spacer(Modifier.height(16.dp))
+        Card(colors=CardDefaults.cardColors(containerColor=SurfaceDark),shape=RoundedCornerShape(22.dp)) {
+            Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                OutlinedTextField(term,{term=it},label={Text("Novo termo")},singleLine=true,modifier=Modifier.weight(1f))
+                Spacer(Modifier.width(8.dp))
+                Button(onClick={vm.addTerm(term);term=""},enabled=term.isNotBlank(),shape=RoundedCornerShape(14.dp)){Text("+",fontSize=20.sp)}
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        LazyColumn {
+            items(s.terms){t->
+                Row(Modifier.fillMaxWidth().padding(vertical=5.dp),verticalAlignment=Alignment.CenterVertically){
+                    Icon(Icons.Outlined.ManageSearch,contentDescription=null,tint=Accent)
+                    Spacer(Modifier.width(8.dp))
+                    Text(t,Modifier.weight(1f))
+                    TextButton(onClick={vm.removeTerm(t)}){Text("Excluir")}
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SourcesScreen(s:AppState) {
+    Column(Modifier.fillMaxSize().padding(horizontal=18.dp)) {
+        Spacer(Modifier.height(12.dp))
+        Text("Fontes",fontWeight=FontWeight.ExtraBold,fontSize=28.sp)
+        Text("Canais utilizados para localizar novas matérias",color=TextSecondary,fontSize=13.sp)
+        Spacer(Modifier.height(16.dp))
+        SourceCard("Google Notícias","RSS de pesquisa • Brasil • Português",true)
+        Spacer(Modifier.height(10.dp))
+        SourceCard("Fontes detectadas","${s.history.map{it.source}.filter{it.isNotBlank()}.distinct().size} veículo(s) no histórico",s.history.isNotEmpty())
+    }
+}
+
+@Composable
+fun SourceCard(title:String,subtitle:String,active:Boolean) {
+    Card(colors=CardDefaults.cardColors(containerColor=SurfaceDark),shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
+            Box(Modifier.size(44.dp).clip(CircleShape).background(Accent.copy(alpha=.12f)),contentAlignment=Alignment.Center) {
+                Icon(Icons.Outlined.Public,contentDescription=null,tint=Accent)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title,fontWeight=FontWeight.Bold)
+                Text(subtitle,color=TextSecondary,fontSize=11.sp)
+            }
+            Text(if(active)"ATIVA" else "VAZIA",color=if(active)Mint else TextSecondary,fontWeight=FontWeight.Bold,fontSize=9.sp)
+        }
     }
 }
 

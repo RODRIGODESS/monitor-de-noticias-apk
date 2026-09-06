@@ -1,0 +1,62 @@
+name: Build and Release Android
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Gradle 8.11.1
+        run: |
+          curl -L -o gradle.zip https://services.gradle.org/distributions/gradle-8.11.1-bin.zip
+          unzip -q gradle.zip
+
+      - name: Build installable APK
+        run: ./gradle-8.11.1/bin/gradle --no-daemon :app:assembleDebug
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v2.0.0.apk
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-de-noticias-v2.0.0
+          path: monitor-de-noticias-v2.0.0.apk
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.0.0
+          target_commitish: ${{ github.sha }}
+          name: Monitor de Notícias Android v2.0.0
+          body: |
+            Versão 2.0.0 do Monitor de Notícias Android.
+
+            Principais melhorias:
+            - detecção de notícias realmente novas;
+            - demandas por veículo e assunto;
+            - histórico separado das últimas 24 horas;
+            - persistência do intervalo de monitoramento;
+            - notificações aprimoradas;
+            - exportação CSV ampliada;
+            - interface com resumo e filtro de demandas.
+          files: monitor-de-noticias-v2.0.0.apk
+          make_latest: true

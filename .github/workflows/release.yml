@@ -92,46 +92,57 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v2.9.0 release asset
+      - name: Prepare v3.0.0 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.9.0.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.0.apk
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.9.0
+          tag_name: v3.0.0
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v2.9.0
+          name: Monitor de Notícias Android v3.0.0
           body: |
-            Versão 2.9.0 do Monitor de Notícias Android.
+            Monitor de Notícias Android v3.0.0 — buscas em tempo real.
 
-            Monitor de Vídeos — qualidade e organização:
-            - mantém a correção de termos por palavra inteira, evitando falso positivo como "FAB" dentro de "fábrica";
-            - mantém limpeza do histórico de vídeos com confirmação;
-            - mantém pesquisa por período com Hoje, 24 horas, 7 dias, 30 dias e data/hora manual;
-            - mantém links diretos e deduplicação dos vídeos.
+            Resultados progressivos:
+            - notícias encontradas entram na tela enquanto as demais consultas continuam;
+            - vídeos validados entram imediatamente na aba Vídeos, sem esperar o fim da varredura;
+            - Demandas são atualizadas progressivamente durante a busca manual;
+            - busca por período de Notícias e Vídeos também usa atualização progressiva.
 
-            Fontes de vídeo:
-            - nova seleção no padrão das fontes de notícias: Nacionais ou Estados;
-            - filtro de fontes regionais por Região e por UF;
-            - pesquisa por nome de canal, telejornal ou grupo;
-            - ações Selecionar e Limpar aplicadas somente às fontes visíveis;
-            - canais nacionais, portais, YouTube oficial e telejornais Globo/Globoplay ficam separados por fonte.
+            Painel operacional em tempo real:
+            - cronômetro da busca em segundos;
+            - consulta atual, fonte/canal atual e Termo/Demanda em execução;
+            - consultas concluídas/total, encontrados, novos e falhas;
+            - barra de progresso durante Notícias, Vídeos e Demandas.
 
-            Globo/Globoplay regional:
-            - catálogo individualizado de telejornais locais em todas as UFs;
-            - inclui famílias Bom Dia, 1ª Edição e 2ª Edição/telejornais equivalentes por estado e afiliada;
-            - preserva as três varreduras amplas da v2.8.5 como rede de segurança;
-            - novas fontes regionais do catálogo não são ativadas em massa automaticamente: o usuário escolhe Região/UF, preservando bateria, rede e confiabilidade do segundo plano.
+            Fontes:
+            - Fontes agora funciona como uma área própria com abas Notícias e Vídeos;
+            - Fontes de Vídeo saem da lista principal da aba Vídeos;
+            - mantém Nacionais / Estados / Região / UF, pesquisa e Selecionar/Limpar visíveis;
+            - mantém catálogo de telejornais Globo/Globoplay, portais e canais oficiais do YouTube.
 
-            Segundo plano:
-            - busca automática de vídeos permanece aproximadamente a cada 1 hora;
-            - seleção de fontes é persistida e respeitada tanto na busca manual quanto automática.
+            Tela inicial:
+            - card Monitor de Vídeos padronizado com total armazenado, novos de hoje, Demandas e fontes ativas;
+            - durante uma busca o card mostra o progresso e os números em tempo real.
+
+            Globoplay profundo:
+            - resultados /v/<id> do Globoplay são resolvidos antes do descarte por Termo;
+            - título, descrição, keywords, tags, article:tag, video:tag e metadados estruturados passam a ser analisados;
+            - aumenta a quantidade de candidatos analisados por consulta no Globoplay;
+            - permite encontrar vídeos em que o Termo aparece em tags/metadados, mesmo que não esteja no título do card da busca;
+            - mantém link direto, palavra inteira para siglas e deduplicação.
+
+            Cobertura e segundo plano:
+            - mantém telejornais nacionais e regionais por UF;
+            - mantém CNN Brasil, Jovem Pan News, GloboNews, Record News, Jornal da Record, Band Jornalismo/BandNews e SBT News no YouTube;
+            - busca automática continua aproximadamente a cada 1 hora, sujeita ao gerenciamento de bateria/Doze do Android.
 
             Atualização:
-            - versionCode 290 / versionName 2.9.0;
+            - versionCode 300 / versionName 3.0.0;
             - mesmo applicationId e mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v2.8.5 preservando dados e configurações.
-          files: monitor-de-noticias-v2.9.0.apk
+            - instalação direta sobre v2.9.0 preservando dados e configurações.
+          files: monitor-de-noticias-v3.0.0.apk
           make_latest: true

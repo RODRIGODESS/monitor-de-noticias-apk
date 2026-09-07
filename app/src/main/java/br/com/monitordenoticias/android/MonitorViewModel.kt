@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -49,9 +50,11 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
+            val current = _state.value
+            val recent = scopedRecent(current)
             publish {
                 it.copy(
-                    news = db.listRecent(),
+                    news = recent,
                     history = db.listNews(),
                     terms = db.listTerms(),
                     demands = db.listDemands()
@@ -76,12 +79,14 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
             val status = when {
                 result.errors > 0 && result.foundCount == 0 -> "⚠ Não foi possível consultar as fontes. Verifique sua conexão."
                 result.errors > 0 -> "Busca parcial: ${result.newCount} nova(s) • ${result.errors} consulta(s) falharam"
-                result.newCount == 0 -> "Busca concluída: nenhuma notícia nova • ${result.foundCount} resultado(s)"
+                result.newCount == 0 -> "Busca concluída: ${result.foundCount} resultado(s) no escopo selecionado"
                 result.newDemandCount > 0 -> "✓ ${result.newCount} nova(s) • ${result.newDemandCount} demanda(s) encontrada(s)"
                 else -> "✓ ${result.newCount} nova(s) notícia(s) encontrada(s)"
             }
             _state.value = _state.value.copy(
-                news = db.listRecent(),
+                // Important: show only results from THIS search scope. Do not reload every
+                // recent row from the DB, because it may contain older open-search results.
+                news = result.items,
                 history = db.listNews(),
                 busy = false,
                 status = status,
@@ -111,7 +116,7 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun searchPeriod(from: Long, to: Long) {
-        _state.value = _state.value.copy(busy = true, status = "Pesquisando período salvo...")
+        _state.value = _state.value.copy(busy = true, status = "Pesquisando período...")
         viewModelScope.launch {
             val latest = _state.value
             val result = repo.searchPeriod(
@@ -122,7 +127,7 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
             )
             val status = if (result.errors > 0 && result.foundCount == 0)
                 "⚠ Não foi possível concluir a pesquisa externa."
-            else "Período: ${result.foundCount} matéria(s) • ${result.newCount} nova(s) no histórico"
+            else "Período: ${result.foundCount} matéria(s) no escopo selecionado"
             _state.value = _state.value.copy(
                 news = result.items,
                 history = db.listNews(),
@@ -161,13 +166,17 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
         val ids = _state.value.selectedSourceIds.toMutableSet().apply {
             if (selected) add(id) else remove(id)
         }.toSet()
-        prefs.edit().putStringSet("selected_source_ids", ids).apply()
+        val searchAll = if (selected) false else _state.value.searchAllSources
+        prefs.edit()
+            .putStringSet("selected_source_ids", ids)
+            .putBoolean("search_all_sources", searchAll)
+            .apply()
         _state.value = _state.value.copy(
             selectedSourceIds = ids,
-            searchAllSources = if (selected) false else _state.value.searchAllSources,
+            searchAllSources = searchAll,
             status = "✓ ${ids.size} fonte(s) selecionada(s)"
         )
-        if (selected) prefs.edit().putBoolean("search_all_sources", false).apply()
+        refresh()
     }
 
     fun setVisibleSources(ids: Set<String>, selected: Boolean) {
@@ -185,30 +194,123 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
             searchAllSources = searchAll,
             status = if (selected) "✓ Fontes visíveis selecionadas" else "✓ Fontes visíveis desmarcadas"
         )
+        refresh()
     }
 
     fun setSearchAllSources(enabled: Boolean) {
         prefs.edit().putBoolean("search_all_sources", enabled).apply()
         _state.value = _state.value.copy(
             searchAllSources = enabled,
-            status = if (enabled) "✓ Busca aberta em qualquer veículo ativada" else "Selecione as fontes desejadas"
+            status = if (enabled) "✓ Busca aberta ativada" else "Selecione as fontes desejadas"
         )
+        refresh()
     }
 
-    fun addTerm(value: String) { viewModelScope.launch(Dispatchers.IO) { db.addTerm(value); refresh() } }
-    fun removeTerm(value: String) { viewModelScope.launch(Dispatchers.IO) { db.removeTerm(value); refresh() } }
-    fun addDemand(vehicle:String,subject:String) { viewModelScope.launch(Dispatchers.IO) { db.addDemand(vehicle,subject); refresh() } }
-    fun removeDemand(id:Long) { viewModelScope.launch(Dispatchers.IO) { db.removeDemand(id); refresh() } }
-    fun clearHistory() { viewModelScope.launch(Dispatchers.IO) { db.clearHistory(); refresh(); publish { it.copy(status="✓ Histórico limpo com sucesso") } } }
-    fun setTab(tab:Int) { _state.value = _state.value.copy(selectedTab = tab) }
-    fun setDemandFilter(enabled: Boolean) { _state.value = _state.value.copy(showOnlyDemands = enabled) }
+    fun addTerm(value: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.addTerm(value)
+            refresh()
+        }
+    }
 
-    fun setInterval(minutes:Int) {
+    fun removeTerm(value: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.removeTerm(value)
+            refresh()
+        }
+    }
+
+    fun addDemand(vehicle: String, subject: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.addDemand(vehicle, subject)
+            refresh()
+        }
+    }
+
+    fun removeDemand(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.removeDemand(id)
+            refresh()
+        }
+    }
+
+    fun clearHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.clearHistory()
+            refresh()
+            publish { it.copy(status = "✓ Histórico limpo com sucesso") }
+        }
+    }
+
+    fun setTab(tab: Int) {
+        _state.value = _state.value.copy(selectedTab = tab, status = "Pronto")
+    }
+
+    fun setDemandFilter(enabled: Boolean) {
+        _state.value = _state.value.copy(showOnlyDemands = enabled)
+    }
+
+    fun setInterval(minutes: Int) {
         val safe = minutes.coerceAtLeast(15)
         prefs.edit().putInt("interval_minutes", safe).apply()
         _state.value = _state.value.copy(intervalMinutes = safe, status = "✓ Intervalo salvo: $safe min")
         schedule(safe)
     }
+
+    private fun scopedRecent(state: AppState): List<News> {
+        val recent = db.listRecent()
+        if (state.searchAllSources) return recent
+
+        val selected = SourceCatalog.selected(state.selectedSourceIds)
+        if (selected.isEmpty()) return emptyList()
+
+        return recent.filter { news ->
+            selected.any { source -> sourceMatchesStrict(news.source, source) }
+        }
+    }
+
+    private fun sourceMatchesStrict(actualSource: String, selected: MediaSource): Boolean {
+        val actualNormalized = normalize(actualSource)
+        val actualKey = compact(actualSource)
+        val hostKey = publisherHostKey(actualSource)
+
+        return (listOf(selected.name) + selected.aliases).any { candidate ->
+            val candidateNormalized = normalize(candidate)
+            val candidateKey = compact(candidate)
+            if (candidateNormalized.isBlank() || candidateKey.isBlank()) {
+                false
+            } else if (
+                actualNormalized == candidateNormalized ||
+                actualKey == candidateKey ||
+                hostKey == candidateKey
+            ) {
+                true
+            } else {
+                val meaningfulTokens = candidateNormalized
+                    .split(' ')
+                    .filter { it.length >= 2 && it !in setOf("de", "do", "da", "dos", "das") }
+                meaningfulTokens.size >= 2 &&
+                    candidateKey.length >= 6 &&
+                    (actualKey.startsWith(candidateKey) || hostKey.startsWith(candidateKey))
+            }
+        }
+    }
+
+    private fun publisherHostKey(value: String): String {
+        val cleaned = value.trim().lowercase()
+        val firstPart = if ('.' in cleaned) cleaned.substringBefore('.') else cleaned
+        return compact(firstPart)
+    }
+
+    private fun compact(value: String): String = normalize(value).replace(" ", "")
+
+    private fun normalize(value: String): String = Normalizer.normalize(
+        value.lowercase(),
+        Normalizer.Form.NFD
+    )
+        .replace(Regex("\\p{Mn}+"), "")
+        .replace(Regex("[^a-z0-9]+"), " ")
+        .trim()
 
     private fun updatePeriod(block: (AppState) -> AppState) {
         val updated = block(_state.value)
@@ -226,7 +328,8 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun parseDateTime(date: String, time: String): Long? = runCatching {
-        SimpleDateFormat("dd/MM/yyyy HH:mm", locale).apply { isLenient = false }.parse("$date $time")?.time
+        SimpleDateFormat("dd/MM/yyyy HH:mm", locale).apply { isLenient = false }
+            .parse("$date $time")?.time
     }.getOrNull()
 
     private fun formatDate(ms: Long): String = SimpleDateFormat("dd/MM/yyyy", locale).format(Date(ms))
@@ -234,10 +337,14 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun sourceStatusPrefix(prefix: String): String {
         val state = _state.value
-        return if (state.searchAllSources) "$prefix • qualquer veículo" else "$prefix • ${state.selectedSourceIds.size} fonte(s)"
+        return if (state.searchAllSources) {
+            "$prefix • qualquer veículo"
+        } else {
+            "$prefix • ${state.selectedSourceIds.size} fonte(s)"
+        }
     }
 
-    private fun schedule(minutes:Int) {
+    private fun schedule(minutes: Int) {
         val req = PeriodicWorkRequestBuilder<MonitorWorker>(minutes.toLong(), TimeUnit.MINUTES).build()
         WorkManager.getInstance(getApplication()).enqueueUniquePeriodicWork(
             "monitor_noticias",
@@ -246,6 +353,12 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    private fun publish(block:(AppState)->AppState) { _state.value = block(_state.value) }
-    override fun onCleared(){ db.close(); super.onCleared() }
+    private fun publish(block: (AppState) -> AppState) {
+        _state.value = block(_state.value)
+    }
+
+    override fun onCleared() {
+        db.close()
+        super.onCleared()
+    }
 }

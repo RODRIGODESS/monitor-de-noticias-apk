@@ -12,17 +12,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect Globoplay embedded metadata
+      - name: Test Globoplay seed expansion
         run: |
           set -u
           UA='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36'
-          url='https://globoplay.globo.com/v/14938901/'
-          curl -L --max-time 20 -A "$UA" -o /tmp/page.html -sS "$url" || true
-          echo "bytes=$(wc -c < /tmp/page.html)"
-          grep -Eio '<meta[^>]+(og:title|og:description|keywords|article:tag|video:tag)[^>]*>' /tmp/page.html | head -20 || true
-          echo '--- identifiers ---'
-          grep -Eo '"(programId|program_id|program|editorialId|editorial_id|contentId|content_id|videoId|video_id|slug|title|headline)"[[:space:]]*:[[:space:]]*("[^"]{1,180}"|[0-9]+)' /tmp/page.html | head -80 || true
-          echo '--- api-like urls ---'
-          grep -Eo 'https?[^" ]+(api|graphql|playlist|videos|content)[^" ]*' /tmp/page.html | sed 's/\\u002F/\//g;s/\\\//\//g' | head -60 || true
-          echo '--- nearby video ids ---'
-          grep -Eio '/v/[0-9]+' /tmp/page.html | sort -u | head -80 || true
+          for pair in '14693620|14938901' '13890065|14937180'; do
+            seed=${pair%%|*}; target=${pair##*|}
+            curl -L --max-time 20 -A "$UA" -o "/tmp/$seed.html" -sS "https://globoplay.globo.com/v/$seed/" || true
+            echo "=== SEED $seed -> TARGET $target ==="
+            if grep -q "/v/$target" "/tmp/$seed.html"; then echo 'TARGET=yes'; else echo 'TARGET=no'; fi
+            grep -Eio '/v/[0-9]+' "/tmp/$seed.html" | sort -u | tail -30 || true
+          done
+
+          echo '=== G1 SEARCH militares ==='
+          curl -L --max-time 20 -A "$UA" -o /tmp/g1.html -sS 'https://g1.globo.com/busca/?q=militares' || true
+          echo "bytes=$(wc -c < /tmp/g1.html)"
+          for id in 14938901 14937913 14937180; do
+            if grep -q "$id" /tmp/g1.html; then echo "G1_$id=yes"; else echo "G1_$id=no"; fi
+          done
+          grep -Eio 'https?[^" ]+[0-9]{8}\.ghtml' /tmp/g1.html | head -20 || true

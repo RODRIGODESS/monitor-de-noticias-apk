@@ -52,9 +52,6 @@ class NewsRepository(private val db: NewsDb) {
 
     private fun performDemandSearch(demand: Demand): DemandSearchResult {
         val checkedAt = System.currentTimeMillis()
-        // Search broadly by subject first, then enforce vehicle + subject locally.
-        // This avoids losing results when Google News does not treat the publisher
-        // name as searchable article text.
         val query = demand.subject.trim()
         val fetched = fetchGoogleNews(query)
         if (fetched == null) {
@@ -92,7 +89,9 @@ class NewsRepository(private val db: NewsDb) {
 
         terms.forEach { term ->
             val result = fetchGoogleNews(term)
-            if (result == null) errors++ else result.forEach { raw += it to term }
+            if (result == null) errors++ else result
+                .filter { news -> subjectMatches("${news.title} ${news.snippet}", term) }
+                .forEach { raw += it to term }
         }
 
         if (!searchAllSources && selectedSources.isNotEmpty() && selectedSources.size <= 24) {
@@ -101,7 +100,9 @@ class NewsRepository(private val db: NewsDb) {
                 terms.forEach { term ->
                     val query = "\"$term\" ($sourceClause)"
                     val result = fetchGoogleNews(query)
-                    if (result == null) errors++ else result.forEach { raw += it to term }
+                    if (result == null) errors++ else result
+                        .filter { news -> subjectMatches("${news.title} ${news.snippet}", term) }
+                        .forEach { raw += it to term }
                 }
             }
         }
@@ -140,14 +141,8 @@ class NewsRepository(private val db: NewsDb) {
         return tokens.size >= 2 && wantedKey.length >= 5 && (actualKey.startsWith(wantedKey) || hostKey.startsWith(wantedKey))
     }
 
-    private fun subjectMatches(text: String, subject: String): Boolean {
-        val haystack = normalize(text)
-        val wanted = normalize(subject)
-        if (wanted.isBlank()) return true
-        if (haystack.contains(wanted)) return true
-        val tokens = wanted.split(' ').filter { it.length >= 3 && it !in STOP_WORDS }
-        return tokens.isNotEmpty() && tokens.all { haystack.contains(it) }
-    }
+    private fun subjectMatches(text: String, subject: String): Boolean =
+        MediaTextMatcher.matches(text, subject)
 
     private fun sourceMatchesStrict(actualSource: String, selected: MediaSource): Boolean {
         val actualNormalized = normalize(actualSource)
@@ -182,7 +177,7 @@ class NewsRepository(private val db: NewsDb) {
         val url = URL("https://news.google.com/rss/search?q=$q&hl=pt-BR&gl=BR&ceid=BR:pt-419")
         val con = (url.openConnection() as HttpURLConnection).apply {
             connectTimeout = 8000; readTimeout = 10000; requestMethod = "GET"
-            setRequestProperty("User-Agent", "Mozilla/5.0 MonitorNoticiasAndroid/2.5")
+            setRequestProperty("User-Agent", "Mozilla/5.0 MonitorNoticiasAndroid/2.9")
         }
         try {
             if (con.responseCode !in 200..299) error("HTTP ${con.responseCode}")

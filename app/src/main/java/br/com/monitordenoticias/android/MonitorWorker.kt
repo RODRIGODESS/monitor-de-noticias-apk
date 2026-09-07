@@ -8,7 +8,11 @@ class MonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWo
     override suspend fun doWork(): Result {
         val db = NewsDb(applicationContext)
         return try {
-            val result = NewsRepository(db).searchBlockingCompatible()
+            val prefs = applicationContext.getSharedPreferences("monitor_prefs", 0)
+            val searchAll = prefs.getBoolean("search_all_sources", true)
+            val sourceIds = prefs.getStringSet("selected_source_ids", emptySet()).orEmpty()
+            val sources = SourceCatalog.selected(sourceIds)
+            val result = NewsRepository(db).searchBlockingCompatible(sources, searchAll)
             if (result.newCount > 0) {
                 val text = if (result.newDemandCount > 0)
                     "${result.newCount} nova(s) notícia(s) • ${result.newDemandCount} demanda(s) encontrada(s)."
@@ -16,7 +20,10 @@ class MonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWo
                 NotificationHelper.notify(applicationContext, "Monitor de Notícias", text)
             }
             if (result.errors > 0 && result.foundCount == 0) Result.retry() else Result.success()
-        } catch (_: Exception) { Result.retry() }
-        finally { db.close() }
+        } catch (_: Exception) {
+            Result.retry()
+        } finally {
+            db.close()
+        }
     }
 }

@@ -92,57 +92,55 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v3.0.0 release asset
+      - name: Prepare v3.0.1 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.0.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.1.apk
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.0
+          tag_name: v3.0.1
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v3.0.0
+          name: Monitor de Notícias Android v3.0.1
           body: |
-            Monitor de Notícias Android v3.0.0 — buscas em tempo real.
+            Monitor de Notícias Android v3.0.1 — correção da varredura audiovisual e dos alertas de Demandas.
 
-            Resultados progressivos:
-            - notícias encontradas entram na tela enquanto as demais consultas continuam;
-            - vídeos validados entram imediatamente na aba Vídeos, sem esperar o fim da varredura;
-            - Demandas são atualizadas progressivamente durante a busca manual;
-            - busca por período de Notícias e Vídeos também usa atualização progressiva.
+            Globo / Globoplay regional:
+            - os telejornais regionais deixam de depender da busca geral do Globoplay, que não estava exibindo de forma confiável os trechos recentes;
+            - a descoberta passa a usar os índices oficiais de vídeos do G1 do próprio telejornal e suas páginas de continuação;
+            - o ID encontrado é convertido para o link direto correspondente no Globoplay (/v/<id>/);
+            - Termos e Demandas são cruzados localmente depois da descoberta dos candidatos;
+            - mantém análise profunda de título, descrição, tags/keywords e metadados da página direta;
+            - reduz drasticamente as consultas redundantes de fonte x termo nos telejornais regionais.
 
-            Painel operacional em tempo real:
-            - cronômetro da busca em segundos;
-            - consulta atual, fonte/canal atual e Termo/Demanda em execução;
-            - consultas concluídas/total, encontrados, novos e falhas;
-            - barra de progresso durante Notícias, Vídeos e Demandas.
+            Casos de validação usados no diagnóstico:
+            - SE TV 1ª Edição / 14938901;
+            - Bom Dia Tocantins / 14937913;
+            - Bom Dia Mirante / 14937180, localizado em página de continuação do índice do programa.
 
-            Fontes:
-            - Fontes agora funciona como uma área própria com abas Notícias e Vídeos;
-            - Fontes de Vídeo saem da lista principal da aba Vídeos;
-            - mantém Nacionais / Estados / Região / UF, pesquisa e Selecionar/Limpar visíveis;
-            - mantém catálogo de telejornais Globo/Globoplay, portais e canais oficiais do YouTube.
+            Automação de vídeos:
+            - horários-alvo locais: 08h, 12h, 15h, 19h e 21h;
+            - a busca manual permanece disponível a qualquer momento;
+            - Android/Doze ainda pode atrasar alguns minutos uma execução automática.
 
-            Tela inicial:
-            - card Monitor de Vídeos padronizado com total armazenado, novos de hoje, Demandas e fontes ativas;
-            - durante uma busca o card mostra o progresso e os números em tempo real.
+            Demandas na tela Início:
+            - o indicador Demandas deixa de mostrar simplesmente quantas demandas estão cadastradas;
+            - passa a mostrar somente demandas que realmente tiveram ocorrência encontrada;
+            - sem ocorrência, o indicador fica em 0 e sem destaque de alerta;
+            - notificações Android de Demandas continuam somente para resultados novos.
 
-            Globoplay profundo:
-            - resultados /v/<id> do Globoplay são resolvidos antes do descarte por Termo;
-            - título, descrição, keywords, tags, article:tag, video:tag e metadados estruturados passam a ser analisados;
-            - aumenta a quantidade de candidatos analisados por consulta no Globoplay;
-            - permite encontrar vídeos em que o Termo aparece em tags/metadados, mesmo que não esteja no título do card da busca;
-            - mantém link direto, palavra inteira para siglas e deduplicação.
-
-            Cobertura e segundo plano:
-            - mantém telejornais nacionais e regionais por UF;
-            - mantém CNN Brasil, Jovem Pan News, GloboNews, Record News, Jornal da Record, Band Jornalismo/BandNews e SBT News no YouTube;
-            - busca automática continua aproximadamente a cada 1 hora, sujeita ao gerenciamento de bateria/Doze do Android.
+            Mantido da v3.0:
+            - resultados progressivos em Notícias, Vídeos e Demandas;
+            - cronômetro, fonte atual e barra de progresso;
+            - pesquisa de vídeos por período;
+            - Fontes de Notícias/Vídeos separadas;
+            - canais oficiais do YouTube e demais portais;
+            - palavra inteira para siglas e deduplicação.
 
             Atualização:
-            - versionCode 300 / versionName 3.0.0;
+            - versionCode 301 / versionName 3.0.1;
             - mesmo applicationId e mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v2.9.0 preservando dados e configurações.
-          files: monitor-de-noticias-v3.0.0.apk
+            - instalação direta sobre v3.0.0 preservando dados e configurações.
+          files: monitor-de-noticias-v3.0.1.apk
           make_latest: true

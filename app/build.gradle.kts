@@ -16,8 +16,8 @@ android {
         applicationId = "br.com.monitordenoticias.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 260
-        versionName = "2.6.0"
+        versionCode = 270
+        versionName = "2.7.0"
     }
 
     signingConfigs {
@@ -53,7 +53,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
+    kotlinOptions {
+        jvmTarget = "17"
+        freeCompilerArgs += listOf("-opt-in=androidx.compose.material3.ExperimentalMaterial3Api")
+    }
     buildFeatures { compose = true }
 }
 

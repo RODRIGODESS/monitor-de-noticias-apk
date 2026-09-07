@@ -49,9 +49,7 @@ object VideoSourceCatalog {
         )
     )
 
-    /**
-     * Canais oficiais no YouTube monitorados como fontes independentes.
-     */
+    /** Canais oficiais no YouTube monitorados como fontes independentes. */
     val youtubeOfficial = listOf(
         VideoSource(
             id = "youtube-cnn-brasil",
@@ -118,11 +116,7 @@ object VideoSourceCatalog {
         )
     )
 
-    /**
-     * Telejornais nacionais da Globo. Cada item é tratado como uma fonte própria.
-     * A landingUrl aponta para a busca do próprio programa no Globoplay, permitindo
-     * varrer os vídeos/edições daquele telejornal e cruzar localmente com os Termos.
-     */
+    /** Telejornais nacionais da Globo/Globoplay. */
     val globoplayTelejournalsNational = listOf(
         globoplayTelejournal(
             id = "globoplay-bom-dia-brasil",
@@ -157,11 +151,11 @@ object VideoSourceCatalog {
     )
 
     /**
-     * Telejornais locais/afiliadas com páginas de programa ou trechos no Globoplay.
-     * Muitas páginas de um trecho antigo continuam expondo a seção "Trechos" atual
-     * do programa, por isso funcionam como ponto de entrada para a varredura recente.
+     * Telejornais regionais já individualizados. A busca da v2.8.5 usa também o
+     * nome do programa junto ao Termo/Demanda para não depender apenas da página
+     * inicial do telejornal.
      */
-    val globoplayTelejournalsRegional = listOf(
+    private val globoplayRegionalSpecific = listOf(
         globoplayTelejournal(
             id = "globoplay-bom-dia-sp",
             name = "Globoplay • Bom Dia SP",
@@ -286,6 +280,45 @@ object VideoSourceCatalog {
         )
     )
 
+    /**
+     * Varreduras amplas para não depender de uma lista fixa de afiliadas. Elas
+     * pesquisam no Globoplay o Termo/Demanda combinado com as três famílias que
+     * concentram os telejornais locais: todos os "Bom Dia", todas as 1ª Edições
+     * e todas as 2ª Edições. Assim entram também afiliadas/edições que mudam de
+     * nome ou que ainda não têm um item individual no catálogo.
+     */
+    val globoplayRegionalSweeps = listOf(
+        globoplayTelejournal(
+            id = "globoplay-regionais-bom-dia",
+            name = "Globoplay • Regionais — todos os Bom Dia",
+            program = "Bom Dia",
+            landingUrl = "https://globoplay.globo.com/busca/?q=Bom%20Dia",
+            region = "Todas as regiões",
+            state = "BR",
+            extraAliases = REGIONAL_GLOBO_ALIASES
+        ),
+        globoplayTelejournal(
+            id = "globoplay-regionais-primeira-edicao",
+            name = "Globoplay • Regionais — todas as 1ª Edições",
+            program = "1ª Edição",
+            landingUrl = "https://globoplay.globo.com/busca/?q=1%C2%AA%20Edi%C3%A7%C3%A3o",
+            region = "Todas as regiões",
+            state = "BR",
+            extraAliases = REGIONAL_GLOBO_ALIASES + listOf("Primeira Edição", "1a Edição")
+        ),
+        globoplayTelejournal(
+            id = "globoplay-regionais-segunda-edicao",
+            name = "Globoplay • Regionais — todas as 2ª Edições",
+            program = "2ª Edição",
+            landingUrl = "https://globoplay.globo.com/busca/?q=2%C2%AA%20Edi%C3%A7%C3%A3o",
+            region = "Todas as regiões",
+            state = "BR",
+            extraAliases = REGIONAL_GLOBO_ALIASES + listOf("Segunda Edição", "2a Edição")
+        )
+    )
+
+    val globoplayTelejournalsRegional: List<VideoSource> = globoplayRegionalSpecific + globoplayRegionalSweeps
+
     val national: List<VideoSource> = portalNational + youtubeOfficial + globoplayTelejournalsNational
 
     private val bandRegional = listOf(
@@ -353,6 +386,7 @@ object VideoSourceCatalog {
     val youtubeOfficialIds: Set<String> = youtubeOfficial.map { it.id }.toSet()
     val globoplayTelejournalIds: Set<String> =
         (globoplayTelejournalsNational + globoplayTelejournalsRegional).map { it.id }.toSet()
+    val globoplayRegionalSweepIds: Set<String> = globoplayRegionalSweeps.map { it.id }.toSet()
     val defaultIds: Set<String> = national.map { it.id }.toSet()
 
     fun selected(ids: Set<String>): List<VideoSource> = ids.mapNotNull(byId::get)
@@ -373,6 +407,17 @@ object VideoSourceCatalog {
         state = state,
         landingUrl = landingUrl,
         linkHints = listOf("/v/"),
-        aliases = (listOf("Globo", "Globoplay", program) + extraAliases).distinct()
+        aliases = (listOf("Globo", "Globoplay", program) + extraAliases).distinct(),
+        searchUrlTemplate = "https://globoplay.globo.com/busca/?q={query}",
+        searchPrefix = program
+    )
+
+    private val REGIONAL_GLOBO_ALIASES = listOf(
+        "TV Globo", "Globo SP", "Globo Rio", "Globo Minas", "Globo Brasília", "Globo Pernambuco",
+        "Rede Amazônica", "TV Acre", "TV Amapá", "TV Amazonas", "TV Rondônia", "TV Roraima",
+        "TV Gazeta", "TV Gazeta AL", "TV Gazeta ES", "TV Bahia", "TV Verdes Mares", "TV Anhanguera",
+        "TV Mirante", "TV Centro América", "TV Morena", "TV Liberal", "TV Tapajós", "TV Cabo Branco",
+        "RPC", "TV Clube", "Inter TV Cabugi", "RBS TV", "NSC TV", "EPTV", "TV TEM", "TV Tribuna",
+        "TV Fronteira", "TV Sergipe", "TV Anhanguera Tocantins"
     )
 }

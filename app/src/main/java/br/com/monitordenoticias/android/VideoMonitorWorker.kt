@@ -7,7 +7,7 @@ import androidx.work.WorkerParameters
 class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         VideoAutoRunLog.markAttempt(applicationContext)
-        val db = VideoDb(applicationContext)
+        val db = VideoDb(applicationContext).apply { removeInvalidListingEntries() }
         return try {
             val prefs = applicationContext.getSharedPreferences(BackgroundMonitor.PREFS, 0)
             val selectedIds = prefs.getStringSet(VideoViewModel.KEY_SELECTED_SOURCES, null)
@@ -22,13 +22,11 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
             }
 
             val result = VideoRepository(applicationContext, db).search(sources)
+            db.removeInvalidListingEntries()
             VideoAutoRunLog.markCompleted(applicationContext, result)
 
             if (result.newCount > 0) {
-                val text = when {
-                    result.newRelevantCount > 0 -> "${result.newCount} novo(s) vídeo(s) • ${result.newRelevantCount} relacionado(s) aos seus termos/demandas."
-                    else -> "${result.newCount} novo(s) vídeo(s) detectado(s) nas emissoras monitoradas."
-                }
+                val text = "${result.newCount} novo(s) vídeo(s) com link direto relacionado(s) aos seus Termos/Demandas."
                 NotificationHelper.notify(applicationContext, "Monitor de Vídeos", text)
             }
 

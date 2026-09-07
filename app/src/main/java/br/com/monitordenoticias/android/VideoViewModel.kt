@@ -7,15 +7,24 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class VideoViewModel(app: Application) : AndroidViewModel(app) {
-    private val db = VideoDb(app).apply { removeInvalidListingEntries() }
+    private val db = VideoDb(app).apply {
+        removeInvalidListingEntries()
+        repairStoredMatches()
+    }
     private val repo = VideoRepository(app, db)
     private val prefs = app.getSharedPreferences(BackgroundMonitor.PREFS, 0)
+    private val locale = Locale("pt", "BR")
 
-    private val savedIds = loadSelectedSourcesForV284()
+    private val savedIds = loadSelectedSourcesForV285()
+    private val now = System.currentTimeMillis()
+    private val defaultFrom = now - 7L * 24L * 60L * 60L * 1000L
 
-    private fun loadSelectedSourcesForV284(): Set<String> {
+    private fun loadSelectedSourcesForV285(): Set<String> {
         val existing = prefs.getStringSet(KEY_SELECTED_SOURCES, null)
             ?.filter { VideoSourceCatalog.byId.containsKey(it) }
             ?.toSet()
@@ -36,6 +45,12 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             changed = true
         }
 
+        if (!prefs.getBoolean(KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, false)) {
+            selected = selected + VideoSourceCatalog.globoplayRegionalSweepIds
+            editor.putBoolean(KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, true)
+            changed = true
+        }
+
         if (changed || existing == null) {
             editor.putStringSet(KEY_SELECTED_SOURCES, selected).apply()
         }
@@ -49,7 +64,11 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         VideoState(
             items = scopedItems(),
             selectedSourceIds = savedIds,
-            lastManualAt = prefs.getLong(KEY_LAST_MANUAL, 0L)
+            lastManualAt = prefs.getLong(KEY_LAST_MANUAL, 0L),
+            periodStartDate = prefs.getString(KEY_PERIOD_START_DATE, formatDate(defaultFrom)) ?: formatDate(defaultFrom),
+            periodStartTime = prefs.getString(KEY_PERIOD_START_TIME, formatTime(defaultFrom)) ?: formatTime(defaultFrom),
+            periodEndDate = prefs.getString(KEY_PERIOD_END_DATE, formatDate(now)) ?: formatDate(now),
+            periodEndTime = prefs.getString(KEY_PERIOD_END_TIME, formatTime(now)) ?: formatTime(now)
         )
     )
     val state: StateFlow<VideoState> = _state
@@ -61,6 +80,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
             db.removeInvalidListingEntries()
+            db.repairStoredMatches()
             _state.value = _state.value.copy(items = scopedItems())
         }
     }
@@ -76,6 +96,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val result = repo.search(selected)
             db.removeInvalidListingEntries()
+            db.repairStoredMatches()
             val now = System.currentTimeMillis()
             prefs.edit().putLong(KEY_LAST_MANUAL, now).apply()
             val status = when {
@@ -91,6 +112,70 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
                 lastManualAt = now
             )
         }
+    }
+
+    fun searchSavedPeriod() {
+        val current = _state.value
+        if (current.busy) return
+        val selected = VideoSourceCatalog.selected(current.selectedSourceIds)
+        if (selected.isEmpty()) {
+            _state.value = current.copy(status = "⚠ Selecione pelo menos uma fonte de vídeo")
+            return
+        }
+        val from = parseDateTime(current.periodStartDate, current.periodStartTime)
+        val to = parseDateTime(current.periodEndDate, current.periodEndTime)
+        if (from == null || to == null) {
+            _state.value = current.copy(status = "⚠ Data ou hora inválida. Use dd/MM/aaaa e HH:mm.")
+            return
+        }
+        if (from >= to) {
+            _state.value = current.copy(status = "⚠ Período inválido: o início precisa ser anterior ao fim.")
+            return
+        }
+
+        _state.value = current.copy(busy = true, status = "Pesquisando vídeos no período...")
+        viewModelScope.launch {
+            val result = repo.searchPeriod(selected, from, to)
+            db.removeInvalidListingEntries()
+            db.repairStoredMatches()
+            val selectedIds = _state.value.selectedSourceIds
+            val periodItems = db.listPeriod(from, to)
+                .filter { it.relevant && it.sourceId in selectedIds }
+            val status = when {
+                result.errors > 0 && periodItems.isEmpty() -> "⚠ Pesquisa do período concluída sem vídeos • ${result.errors} consulta(s) falharam"
+                periodItems.isNotEmpty() -> "✓ Período: ${periodItems.size} vídeo(s) relacionado(s) aos Termos/Demandas"
+                else -> "✓ Período pesquisado • nenhum vídeo relacionado encontrado"
+            }
+            _state.value = _state.value.copy(
+                items = periodItems,
+                busy = false,
+                status = status,
+                lastManualAt = System.currentTimeMillis()
+            )
+        }
+    }
+
+    fun setPeriodStartDate(value: String) = updatePeriod { it.copy(periodStartDate = value) }
+    fun setPeriodStartTime(value: String) = updatePeriod { it.copy(periodStartTime = value) }
+    fun setPeriodEndDate(value: String) = updatePeriod { it.copy(periodEndDate = value) }
+    fun setPeriodEndTime(value: String) = updatePeriod { it.copy(periodEndTime = value) }
+
+    fun applyPeriodPreset(days: Int) {
+        val end = System.currentTimeMillis()
+        val start = when (days) {
+            0 -> SimpleDateFormat("dd/MM/yyyy", locale).parse(formatDate(end))?.time ?: end
+            1 -> end - 24L * 60L * 60L * 1000L
+            else -> end - days.toLong() * 24L * 60L * 60L * 1000L
+        }
+        val updated = _state.value.copy(
+            periodStartDate = formatDate(start),
+            periodStartTime = if (days == 0) "00:00" else formatTime(start),
+            periodEndDate = formatDate(end),
+            periodEndTime = formatTime(end),
+            status = "✓ Período de vídeos atualizado"
+        )
+        _state.value = updated
+        persistPeriod(updated)
     }
 
     fun setSourceSelected(id: String, selected: Boolean) {
@@ -122,6 +207,28 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun updatePeriod(block: (VideoState) -> VideoState) {
+        val updated = block(_state.value)
+        _state.value = updated
+        persistPeriod(updated)
+    }
+
+    private fun persistPeriod(state: VideoState) {
+        prefs.edit()
+            .putString(KEY_PERIOD_START_DATE, state.periodStartDate)
+            .putString(KEY_PERIOD_START_TIME, state.periodStartTime)
+            .putString(KEY_PERIOD_END_DATE, state.periodEndDate)
+            .putString(KEY_PERIOD_END_TIME, state.periodEndTime)
+            .apply()
+    }
+
+    private fun parseDateTime(date: String, time: String): Long? = runCatching {
+        SimpleDateFormat("dd/MM/yyyy HH:mm", locale).apply { isLenient = false }.parse("$date $time")?.time
+    }.getOrNull()
+
+    private fun formatDate(ms: Long): String = SimpleDateFormat("dd/MM/yyyy", locale).format(Date(ms))
+    private fun formatTime(ms: Long): String = SimpleDateFormat("HH:mm", locale).format(Date(ms))
+
     override fun onCleared() {
         db.close()
         super.onCleared()
@@ -132,5 +239,10 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_LAST_MANUAL = "video_last_manual_at"
         const val KEY_YOUTUBE_283_MIGRATED = "video_v283_youtube_sources_added"
         const val KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED = "video_v284_globoplay_telejournals_added"
+        const val KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED = "video_v285_globoplay_regional_sweeps_added"
+        const val KEY_PERIOD_START_DATE = "video_period_start_date"
+        const val KEY_PERIOD_START_TIME = "video_period_start_time"
+        const val KEY_PERIOD_END_DATE = "video_period_end_date"
+        const val KEY_PERIOD_END_TIME = "video_period_end_time"
     }
 }

@@ -275,7 +275,12 @@ private fun V28Videos(s: VideoState, vm: VideoViewModel) {
     val autoNew = prefs.getInt(VideoAutoRunLog.KEY_NEW, 0)
     val autoRelevant = prefs.getInt(VideoAutoRunLog.KEY_NEW_RELEVANT, 0)
     var showSources by remember { mutableStateOf(false) }
+    var showPeriod by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
     var sourceGroup by remember { mutableIntStateOf(0) }
+    val periodFrom = v28ParseDateTime(s.periodStartDate, s.periodStartTime)
+    val periodTo = v28ParseDateTime(s.periodEndDate, s.periodEndTime)
+    val periodValid = periodFrom != null && periodTo != null && periodFrom < periodTo
     val shown = when (s.filter) {
         VideoFilter.ALL -> s.items
         VideoFilter.RELEVANT -> s.items.filter { it.relevant }
@@ -312,6 +317,54 @@ private fun V28Videos(s: VideoState, vm: VideoViewModel) {
                 V28Chip("Relevantes", s.filter == VideoFilter.RELEVANT) { vm.setFilter(VideoFilter.RELEVANT) }
                 V28Chip("Demandas", s.filter == VideoFilter.DEMANDS) { vm.setFilter(VideoFilter.DEMANDS) }
                 V28Chip("Fontes (${s.selectedSourceIds.size})", showSources) { showSources = !showSources }
+                V28Chip("Período", showPeriod) { showPeriod = !showPeriod }
+                V28Chip("Limpar", false) { confirmClear = true }
+            }
+        }
+        if (showPeriod) {
+            item {
+                Surface(color = V28Surface, shape = RoundedCornerShape(17.dp), border = BorderStroke(1.dp, V28Divider), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(13.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.DateRange, null, tint = V28Purple, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Pesquisar vídeos por período", fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                                Text("Mesmo intervalo de data e hora usado na busca de notícias", color = V28Text2, fontSize = 10.5.sp)
+                            }
+                        }
+                        Spacer(Modifier.height(9.dp))
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("Hoje" to 0, "24 horas" to 1, "7 dias" to 7, "30 dias" to 30).forEach { (label, days) ->
+                                V28Chip(label, false) { vm.applyPeriodPreset(days) }
+                            }
+                        }
+                        Spacer(Modifier.height(9.dp))
+                        Text("Início", color = V28Accent, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(5.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            OutlinedTextField(s.periodStartDate, vm::setPeriodStartDate, label = { Text("Data") }, singleLine = true, modifier = Modifier.weight(1.45f))
+                            OutlinedTextField(s.periodStartTime, vm::setPeriodStartTime, label = { Text("Hora") }, singleLine = true, modifier = Modifier.weight(1f))
+                        }
+                        Spacer(Modifier.height(7.dp))
+                        Text("Fim", color = V28Mint, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(5.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            OutlinedTextField(s.periodEndDate, vm::setPeriodEndDate, label = { Text("Data") }, singleLine = true, modifier = Modifier.weight(1.45f))
+                            OutlinedTextField(s.periodEndTime, vm::setPeriodEndTime, label = { Text("Hora") }, singleLine = true, modifier = Modifier.weight(1f))
+                        }
+                        Spacer(Modifier.height(9.dp))
+                        Button(onClick = vm::searchSavedPeriod, enabled = periodValid && !s.busy, modifier = Modifier.fillMaxWidth().height(46.dp)) {
+                            Icon(Icons.Outlined.Search, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(7.dp))
+                            Text(if (s.busy) "Pesquisando..." else "Pesquisar vídeos no período")
+                        }
+                        if (!periodValid) {
+                            Spacer(Modifier.height(6.dp))
+                            Text("Revise as datas e horários. Use dd/MM/aaaa e HH:mm.", color = V28Amber, fontSize = 10.5.sp)
+                        }
+                    }
+                }
             }
         }
         if (showSources) {
@@ -346,8 +399,22 @@ private fun V28Videos(s: VideoState, vm: VideoViewModel) {
                 Text("${shown.size}", color = V28Text2, fontSize = 11.5.sp)
             }
         }
-        if (shown.isEmpty()) item { V28Empty("Nenhum vídeo encontrado", "Use Buscar agora ou aguarde a próxima varredura automática.") }
+        if (shown.isEmpty()) item { V28Empty("Nenhum vídeo encontrado", "Use Buscar agora, pesquise um período ou aguarde a próxima varredura automática.") }
         else items(shown, key = { it.link }) { V28VideoCard(it) }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            icon = { Icon(Icons.Outlined.DeleteOutline, null, tint = V28Red) },
+            title = { Text("Limpar vídeos?") },
+            text = { Text("Isso apaga o histórico de vídeos detectados. As próximas varreduras poderão encontrá-los novamente.") },
+            confirmButton = {
+                TextButton(onClick = { vm.clearHistory(); confirmClear = false }) { Text("Limpar", color = V28Red) }
+            },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancelar") } },
+            containerColor = V28Surface2
+        )
     }
 }
 
@@ -737,7 +804,7 @@ private fun V28Settings(s: AppState, vm: MonitorViewModel, videos: VideoState) {
         item {
             Surface(color = V28Accent.copy(alpha = .07f), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("Monitor de Notícias 2.8.2", color = V28Accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Monitor de Notícias ${BuildConfig.VERSION_NAME}", color = V28Accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     Text("Monitoramento integrado de notícias, demandas e vídeos. ${videos.selectedSourceIds.size} fonte(s) de vídeo ativa(s).", color = V28Text2, fontSize = 11.5.sp, lineHeight = 15.sp)
                 }
             }

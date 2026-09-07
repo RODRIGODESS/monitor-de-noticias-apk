@@ -26,7 +26,8 @@ data class VideoSource(
     val linkHints: List<String> = emptyList(),
     val aliases: List<String> = emptyList(),
     val youtubeHandle: String = "",
-    val searchUrlTemplate: String = ""
+    val searchUrlTemplate: String = "",
+    val searchPrefix: String = ""
 )
 
 data class VideoSearchResult(
@@ -44,7 +45,11 @@ data class VideoState(
     val busy: Boolean = false,
     val status: String = "Pronto",
     val filter: VideoFilter = VideoFilter.ALL,
-    val lastManualAt: Long = 0L
+    val lastManualAt: Long = 0L,
+    val periodStartDate: String = "",
+    val periodStartTime: String = "",
+    val periodEndDate: String = "",
+    val periodEndTime: String = ""
 )
 
 enum class VideoFilter { ALL, RELEVANT, DEMANDS }

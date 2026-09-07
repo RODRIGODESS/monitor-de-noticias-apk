@@ -16,8 +16,8 @@ android {
         applicationId = "br.com.monitordenoticias.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 284
-        versionName = "2.8.4"
+        versionCode = 285
+        versionName = "2.8.5"
     }
 
     signingConfigs {

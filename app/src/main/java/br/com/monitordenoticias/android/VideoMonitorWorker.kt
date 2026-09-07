@@ -7,7 +7,10 @@ import androidx.work.WorkerParameters
 class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         VideoAutoRunLog.markAttempt(applicationContext)
-        val db = VideoDb(applicationContext).apply { removeInvalidListingEntries() }
+        val db = VideoDb(applicationContext).apply {
+            removeInvalidListingEntries()
+            repairStoredMatches()
+        }
         return try {
             val prefs = applicationContext.getSharedPreferences(BackgroundMonitor.PREFS, 0)
             val existing = prefs.getStringSet(VideoViewModel.KEY_SELECTED_SOURCES, null)
@@ -30,6 +33,12 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
                 changed = true
             }
 
+            if (!prefs.getBoolean(VideoViewModel.KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, false)) {
+                selectedIds = selectedIds + VideoSourceCatalog.globoplayRegionalSweepIds
+                editor.putBoolean(VideoViewModel.KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, true)
+                changed = true
+            }
+
             if (changed || existing == null) {
                 editor.putStringSet(VideoViewModel.KEY_SELECTED_SOURCES, selectedIds).apply()
             }
@@ -43,6 +52,7 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
 
             val result = VideoRepository(applicationContext, db).search(sources)
             db.removeInvalidListingEntries()
+            db.repairStoredMatches()
             VideoAutoRunLog.markCompleted(applicationContext, result)
 
             if (result.newCount > 0) {

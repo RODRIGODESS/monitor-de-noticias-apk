@@ -21,7 +21,17 @@ class VideoRepository(
         val demand: Demand? = null
     )
 
-    suspend fun search(sources: List<VideoSource>): VideoSearchResult = withContext(Dispatchers.IO) {
+    suspend fun search(sources: List<VideoSource>): VideoSearchResult =
+        searchInternal(sources, null, null)
+
+    suspend fun searchPeriod(sources: List<VideoSource>, from: Long, to: Long): VideoSearchResult =
+        searchInternal(sources, from, to)
+
+    private suspend fun searchInternal(
+        sources: List<VideoSource>,
+        from: Long?,
+        to: Long?
+    ): VideoSearchResult = withContext(Dispatchers.IO) {
         val newsDb = NewsDb(context)
         try {
             val terms = newsDb.listTerms().ifEmpty { DEFAULT_TERMS }
@@ -92,6 +102,7 @@ class VideoRepository(
                         .take(MAX_RESOLVED_PER_QUERY)
                         .mapNotNull(::resolve)
                         .filter { item -> phraseMatches("${item.title} ${item.summary}", spec.query) }
+                        .filter { item -> inPeriod(item, from, to) }
                         .toList()
 
                     candidates.forEach { item ->
@@ -120,6 +131,7 @@ class VideoRepository(
 
             val items = collected.values
                 .filter { it.relevant && isDirectResult(it) }
+                .filter { item -> inPeriod(item, from, to) }
                 .distinctBy { canonicalKey(it.link) }
                 .sortedByDescending { it.publishedAt }
             val inserted = db.insert(items)
@@ -137,11 +149,13 @@ class VideoRepository(
     }
 
     private fun fetchSearchWebsite(source: VideoSource, query: String, capturedAt: Long): List<VideoItem> {
-        val encoded = URLEncoder.encode(query.trim(), "UTF-8")
+        val effectiveQuery = listOf(source.searchPrefix.trim(), query.trim())
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+        val encoded = URLEncoder.encode(effectiveQuery, "UTF-8")
         val url = source.searchUrlTemplate.replace("{query}", encoded)
-        // Não colocamos o termo pesquisado no summary. Na v2.8.1 isso fazia
-        // páginas genéricas como "Todos os vídeos" parecerem compatíveis com
-        // qualquer Termo apenas porque o texto sintético continha a consulta.
+        // O termo consultado nunca é injetado no summary: o casamento precisa
+        // existir no conteúdo real do resultado, não em texto sintético do app.
         return fetchPageLinks(source, url, capturedAt, "Resultado em ${source.name}")
     }
 
@@ -150,7 +164,7 @@ class VideoRepository(
 
     private fun fetchPageLinks(source: VideoSource, pageUrl: String, capturedAt: Long, fallbackSummary: String): List<VideoItem> {
         val doc = Jsoup.connect(pageUrl)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.3")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.5")
             .referrer("https://www.google.com/")
             .timeout(14_000)
             .followRedirects(true)
@@ -203,7 +217,7 @@ class VideoRepository(
         if (!isSpecificVideoUrl(source, candidate.link)) return null
 
         val doc = Jsoup.connect(candidate.link)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.3")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.5")
             .referrer(source.landingUrl)
             .timeout(14_000)
             .followRedirects(true)
@@ -229,10 +243,6 @@ class VideoRepository(
 
         val publishedAt = parsePublishedAt(doc) ?: candidate.publishedAt.takeIf { it > 0 } ?: capturedAt
 
-        // Os padrões de URL das fontes cadastradas já identificam páginas
-        // específicas. O sinal de player/VideoObject serve como validação extra,
-        // mas não é obrigatório porque algumas plataformas renderizam o player
-        // somente via JavaScript depois do carregamento inicial.
         val directPattern = isSpecificVideoUrl(source, canonical)
         val hasVideoSignal = pageHasVideoSignal(doc)
         if (!directPattern && !hasVideoSignal) return null
@@ -288,7 +298,7 @@ class VideoRepository(
     private fun fetchYoutube(source: VideoSource, capturedAt: Long): List<VideoItem> {
         val handle = source.youtubeHandle.removePrefix("@")
         val channelPage = Jsoup.connect("https://www.youtube.com/@$handle/videos")
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.3")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.5")
             .timeout(14_000)
             .get()
             .html()
@@ -297,7 +307,7 @@ class VideoRepository(
             ?: return emptyList()
 
         val feed = Jsoup.connect("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
-            .userAgent("Mozilla/5.0 MonitorNoticias/2.8.3")
+            .userAgent("Mozilla/5.0 MonitorNoticias/2.8.5")
             .timeout(14_000)
             .parser(Parser.xmlParser())
             .get()
@@ -423,13 +433,30 @@ class VideoRepository(
         }
     }
 
+    /**
+     * Casamento por palavras inteiras. Isso impede que termos curtos como "FAB"
+     * sejam encontrados dentro de "fábrica", mantendo o comportamento flexível
+     * para expressões com várias palavras.
+     */
     private fun phraseMatches(text: String, phrase: String): Boolean {
         val haystack = normalize(text)
         val wanted = normalize(phrase)
         if (wanted.isBlank()) return true
-        if (haystack.contains(wanted)) return true
-        val tokens = wanted.split(' ').filter { it.length >= 3 && it !in STOP_WORDS }
-        return tokens.isNotEmpty() && tokens.all { haystack.contains(it) }
+
+        val hayTokens = haystack.split(' ').filter { it.isNotBlank() }.toSet()
+        val wantedTokens = wanted.split(' ').filter { it.isNotBlank() }
+        if (wantedTokens.isEmpty()) return false
+        if (wantedTokens.size == 1) return wantedTokens.first() in hayTokens
+        if (" $haystack ".contains(" $wanted ")) return true
+
+        val meaningful = wantedTokens.filter { it.length >= 3 && it !in STOP_WORDS }
+        return meaningful.isNotEmpty() && meaningful.all { it in hayTokens }
+    }
+
+    private fun inPeriod(item: VideoItem, from: Long?, to: Long?): Boolean {
+        if (from != null && item.publishedAt < from) return false
+        if (to != null && item.publishedAt > to) return false
+        return true
     }
 
     private fun usefulTitle(value: String): Boolean {

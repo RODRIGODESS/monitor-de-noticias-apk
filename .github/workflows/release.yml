@@ -92,41 +92,44 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v2.7.0 release asset
+      - name: Prepare v2.8.0 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.7.0.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.8.0.apk
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.7.0
+          tag_name: v2.8.0
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v2.7.0
+          name: Monitor de Notícias Android v2.8.0
           body: |
-            Versão 2.7.0 do Monitor de Notícias Android.
+            Versão 2.8.0 do Monitor de Notícias Android.
 
-            Nova experiência visual:
-            - dashboard inicial profissional com saúde do monitor e indicadores;
-            - navegação inferior: Início, Fontes, Período, Demandas e Mais;
-            - Histórico, Termos e Configurações acessíveis pelo menu Mais;
-            - tipografia e cards maiores e mais legíveis;
-            - notícias com hierarquia visual, badges e metadados claros;
-            - Fontes e Período redesenhados para uso confortável em celular;
-            - Demandas com status operacional e busca manual individual/geral.
+            Monitor de Vídeos:
+            - nova aba Vídeos na navegação principal;
+            - monitoramento de Globoplay Jornalismo, R7/Record, CNN Brasil, SBT News e Band Jornalismo;
+            - fontes regionais iniciais: Band Brasília, Band Minas, Band Rio, Band Paraná e Band Bahia;
+            - seleção independente das fontes de vídeo;
+            - busca manual com botão Buscar vídeos;
+            - busca automática aproximadamente a cada 1 hora, inclusive em segundo plano;
+            - heartbeat de recuperação para execuções atrasadas;
+            - histórico próprio, evitando repetir vídeos já detectados;
+            - classificação por Termos e Demandas já cadastrados no aplicativo;
+            - filtros Todos, Relevantes e Demandas;
+            - toque no cartão abre o conteúdo na plataforma oficial.
 
-            Área segura do Android:
-            - barra inferior usa navigationBarsPadding;
-            - todo o conteúdo fica acima da barra de navegação do telefone;
-            - ações fixas de Fontes e Período ficam acima da navegação do app;
-            - imePadding evita que o teclado esconda os botões durante digitação.
+            Auditoria:
+            - Configurações passa a mostrar tentativa, conclusão, detectados, novos, relevantes e falhas do monitor de vídeos.
 
-            Segundo plano:
-            - mantém WorkManager + heartbeat de recuperação da v2.6;
-            - mantém relatório das buscas automáticas em Configurações.
+            Layout:
+            - mantém a identidade profissional da v2.7;
+            - navegação principal: Início, Vídeos, Fontes, Demandas e Mais;
+            - Período, Histórico, Termos e Configurações ficam em Mais;
+            - mantém proteção das áreas seguras superior/inferior do Android.
 
             Atualização:
-            - mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v2.6 preservando dados e configurações.
-          files: monitor-de-noticias-v2.7.0.apk
+            - mesmo applicationId e mesma assinatura permanente da linha v2.5+;
+            - instalação direta sobre v2.7 preservando os dados e configurações existentes.
+          files: monitor-de-noticias-v2.8.0.apk
           make_latest: true

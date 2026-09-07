@@ -16,8 +16,8 @@ android {
         applicationId = "br.com.monitordenoticias.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 270
-        versionName = "2.7.0"
+        versionCode = 280
+        versionName = "2.8.0"
     }
 
     signingConfigs {
@@ -72,5 +72,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.core:core-ktx:1.15.0")
+    implementation("org.jsoup:jsoup:1.18.3")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

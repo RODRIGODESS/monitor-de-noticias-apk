@@ -12,7 +12,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MonitorNoticias">
 
-        <activity android:name=".MainActivityV27" android:exported="true">
+        <activity android:name=".MainActivityV28" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -26,6 +26,21 @@
 
         <receiver
             android:name=".MonitorBootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".VideoHeartbeatReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
+        <receiver
+            android:name=".VideoBootReceiver"
             android:enabled="true"
             android:exported="false">
             <intent-filter>

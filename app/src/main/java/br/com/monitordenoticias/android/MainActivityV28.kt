@@ -110,7 +110,7 @@ private fun V28App(
             if (status.isNotBlank() && status != "Pronto") V28StatusStrip(status)
             when (section) {
                 V28Section.HOME -> V28Home(news, newsVm) { section = V28Section.VIDEOS }
-                V28Section.VIDEOS -> V28Videos(videos, videoVm)
+                V28Section.VIDEOS -> V29Videos(videos, videoVm)
                 V28Section.SOURCES -> V28Sources(news, newsVm)
                 V28Section.DEMANDS -> V28Demands(news, newsVm)
                 V28Section.PERIOD -> V28Period(news, newsVm)

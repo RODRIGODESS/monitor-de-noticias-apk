@@ -20,16 +20,30 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences(BackgroundMonitor.PREFS, 0)
     private val locale = Locale("pt", "BR")
 
-    private val savedIds = loadSelectedSourcesForV285()
+    private val savedIds = loadSelectedSourcesForV29()
     private val now = System.currentTimeMillis()
     private val defaultFrom = now - 7L * 24L * 60L * 60L * 1000L
 
-    private fun loadSelectedSourcesForV285(): Set<String> {
+    private fun loadSelectedSourcesForV29(): Set<String> {
         val existing = prefs.getStringSet(KEY_SELECTED_SOURCES, null)
             ?.filter { VideoSourceCatalog.byId.containsKey(it) }
             ?.toSet()
 
-        var selected = existing ?: VideoSourceCatalog.defaultIds
+        // Instalação nova: nacionais por padrão. O catálogo regional da v2.9 é
+        // grande e deve ser escolhido por Região/UF para não gerar centenas de
+        // consultas em cada varredura automática.
+        if (existing == null) {
+            val defaults = VideoSourceCatalog.defaultIds
+            prefs.edit()
+                .putStringSet(KEY_SELECTED_SOURCES, defaults)
+                .putBoolean(KEY_YOUTUBE_283_MIGRATED, true)
+                .putBoolean(KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, true)
+                .putBoolean(KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, true)
+                .apply()
+            return defaults
+        }
+
+        var selected = existing
         var changed = false
         val editor = prefs.edit()
 
@@ -39,8 +53,10 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             changed = true
         }
 
+        // Quem salta diretamente de uma versão anterior à 2.8.4 recebe somente
+        // o conjunto inicial já validado, não todo o novo catálogo nacional.
         if (!prefs.getBoolean(KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, false)) {
-            selected = selected + VideoSourceCatalog.globoplayTelejournalIds
+            selected = selected + V284_STARTER_IDS.filter { VideoSourceCatalog.byId.containsKey(it) }
             editor.putBoolean(KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, true)
             changed = true
         }
@@ -51,10 +67,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             changed = true
         }
 
-        if (changed || existing == null) {
-            editor.putStringSet(KEY_SELECTED_SOURCES, selected).apply()
-        }
-
+        if (changed) editor.putStringSet(KEY_SELECTED_SOURCES, selected).apply()
         return selected
     }
 
@@ -244,5 +257,12 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_PERIOD_START_TIME = "video_period_start_time"
         const val KEY_PERIOD_END_DATE = "video_period_end_date"
         const val KEY_PERIOD_END_TIME = "video_period_end_time"
+
+        private val V284_STARTER_IDS = setOf(
+            "globoplay-bom-dia-brasil", "globoplay-hora-1", "globoplay-jornal-hoje", "globoplay-jornal-nacional", "globoplay-jornal-da-globo",
+            "globoplay-bom-dia-sp", "globoplay-sp1", "globoplay-sp2", "globoplay-bom-dia-rio", "globoplay-rj1", "globoplay-rj2",
+            "globoplay-bom-dia-es", "globoplay-gazeta-meio-dia-es", "globoplay-bom-dia-minas", "globoplay-mg1", "globoplay-df1",
+            "globoplay-bom-dia-rio-grande", "globoplay-tj1-tapajos", "globoplay-tj2-tapajos"
+        )
     }
 }

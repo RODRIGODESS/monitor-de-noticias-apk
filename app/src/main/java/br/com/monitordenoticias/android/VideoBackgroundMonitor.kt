@@ -14,6 +14,8 @@ import java.util.Calendar
 
 object VideoBackgroundMonitor {
     private const val SCHEDULE_REQUEST_CODE = 2801
+    const val ACTION_SCHEDULED_SCAN = "br.com.monitordenoticias.android.VIDEO_SCHEDULED_SCAN"
+    private const val LEGACY_HOURLY_ACTION = "br.com.monitordenoticias.android.VIDEO_HEARTBEAT"
     private val SCHEDULE_HOURS = intArrayOf(8, 12, 15, 19, 21)
 
     private fun connectedConstraints() = Constraints.Builder()
@@ -27,9 +29,12 @@ object VideoBackgroundMonitor {
      */
     fun scheduleAll(context: Context) {
         val app = context.applicationContext
-        // Remove a agenda horária antiga caso o usuário esteja atualizando da v3.0.0.
+
+        // Remove tanto WorkManager legado quanto um AlarmManager horário que ainda
+        // possa ter sobrevivido à atualização da v3.0.0.
         WorkManager.getInstance(app).cancelUniqueWork("monitor_videos_1h")
         WorkManager.getInstance(app).cancelUniqueWork("monitor_videos_heartbeat")
+        cancelLegacyHourlyAlarm(app)
         scheduleNext(app)
     }
 
@@ -40,7 +45,7 @@ object VideoBackgroundMonitor {
         val next = nextScheduledTime(now)
 
         val intent = Intent(app, VideoHeartbeatReceiver::class.java)
-            .setAction("br.com.monitordenoticias.android.VIDEO_SCHEDULED_SCAN")
+            .setAction(ACTION_SCHEDULED_SCAN)
         val pendingIntent = PendingIntent.getBroadcast(
             app,
             SCHEDULE_REQUEST_CODE,
@@ -48,8 +53,8 @@ object VideoBackgroundMonitor {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // setAndAllowWhileIdle não exige permissão de alarme exato. O Android pode
-        // deslocar alguns minutos por Doze/bateria, mas mantém os horários como alvo.
+        // Não exige permissão de alarme exato. O Android/Doze pode deslocar alguns
+        // minutos, mas 08h, 12h, 15h, 19h e 21h continuam sendo os horários-alvo.
         alarmManager.setAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP,
             next.timeInMillis,
@@ -60,6 +65,20 @@ object VideoBackgroundMonitor {
             .edit()
             .putLong(VideoAutoRunLog.KEY_NEXT_HEARTBEAT_AT, next.timeInMillis)
             .apply()
+    }
+
+    private fun cancelLegacyHourlyAlarm(context: Context) {
+        val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
+        val legacyIntent = Intent(context, VideoHeartbeatReceiver::class.java)
+            .setAction(LEGACY_HOURLY_ACTION)
+        val legacy = PendingIntent.getBroadcast(
+            context,
+            SCHEDULE_REQUEST_CODE,
+            legacyIntent,
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        ) ?: return
+        alarmManager.cancel(legacy)
+        legacy.cancel()
     }
 
     private fun nextScheduledTime(now: Calendar): Calendar {
@@ -86,7 +105,7 @@ object VideoBackgroundMonitor {
             .build()
         WorkManager.getInstance(app).enqueueUniqueWork(
             "monitor_videos_scheduled",
-            ExistingWorkPolicy.REPLACE,
+            ExistingWorkPolicy.KEEP,
             request
         )
     }
@@ -134,6 +153,7 @@ object VideoAutoRunLog {
 
 class VideoHeartbeatReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
+        if (intent?.action != VideoBackgroundMonitor.ACTION_SCHEDULED_SCAN) return
         VideoBackgroundMonitor.enqueueScheduled(context)
         VideoBackgroundMonitor.scheduleNext(context)
     }
@@ -142,7 +162,13 @@ class VideoHeartbeatReceiver : BroadcastReceiver() {
 class VideoBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
-        if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        if (action !in setOf(
+                Intent.ACTION_BOOT_COMPLETED,
+                Intent.ACTION_MY_PACKAGE_REPLACED,
+                Intent.ACTION_TIME_CHANGED,
+                Intent.ACTION_TIMEZONE_CHANGED
+            )
+        ) return
         VideoBackgroundMonitor.scheduleAll(context)
     }
 }

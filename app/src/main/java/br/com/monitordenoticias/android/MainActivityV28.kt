@@ -110,7 +110,7 @@ private fun V28App(
             if (status.isNotBlank() && status != "Pronto") V28StatusStrip(status)
             when (section) {
                 V28Section.HOME -> V28Home(news, newsVm) { section = V28Section.VIDEOS }
-                V28Section.VIDEOS -> V28Videos(videos, videoVm)
+                V28Section.VIDEOS -> V29Videos(videos, videoVm)
                 V28Section.SOURCES -> V28Sources(news, newsVm)
                 V28Section.DEMANDS -> V28Demands(news, newsVm)
                 V28Section.PERIOD -> V28Period(news, newsVm)
@@ -737,7 +737,7 @@ private fun V28Settings(s: AppState, vm: MonitorViewModel, videos: VideoState) {
         item {
             Surface(color = V28Accent.copy(alpha = .07f), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("Monitor de Notícias 2.8.2", color = V28Accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Monitor de Notícias ${BuildConfig.VERSION_NAME}", color = V28Accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     Text("Monitoramento integrado de notícias, demandas e vídeos. ${videos.selectedSourceIds.size} fonte(s) de vídeo ativa(s).", color = V28Text2, fontSize = 11.5.sp, lineHeight = 15.sp)
                 }
             }

@@ -16,7 +16,7 @@ jobs:
           ref: fix/v3.0.1-demand-video-schedule
           fetch-depth: 0
 
-      - name: Apply targeted fixes
+      - name: Apply targeted code fixes
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -30,7 +30,6 @@ jobs:
                   raise SystemExit(f"{label}: expected snippet not found in {path}")
               p.write_text(text.replace(old, new, 1))
 
-          # Home: highlight only Demandas that actually produced results.
           must_replace(
               'app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt',
               '    val videoDemands = videos.items.count { it.demand }\n',
@@ -44,7 +43,6 @@ jobs:
               'home demand metric'
           )
 
-          # Demand status strip: checking with zero hits must be silent on Home.
           must_replace(
               'app/src/main/java/br/com/monitordenoticias/android/MonitorViewModel.kt',
               '''            val status = when {\n                errors == active.size -> "⚠ As buscas de demandas falharam"\n                fresh > 0 -> "✓ ${active.size} demanda(s) verificadas • $fresh nova(s) matéria(s)"\n                else -> "✓ ${active.size} demanda(s) verificadas • nenhuma matéria nova"\n            }''',
@@ -58,8 +56,6 @@ jobs:
               'single demand final status'
           )
 
-          # Efficient video plan: one scan per Globoplay telejournal/YouTube channel,
-          # then match all configured Terms and Demands locally.
           must_replace(
               'app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt',
               '''            val plan = sources.associateWith { source ->\n                buildList {\n                    terms.forEach { term -> add(QuerySpec(query = term, term = term)) }\n                    demands\n                        .filter { demand -> sourceMatchesDemand(source, demand.vehicle) }\n                        .forEach { demand -> add(QuerySpec(query = demand.subject, demand = demand)) }\n                }.distinctBy { spec -> "${normalize(spec.query)}|${spec.term}|${spec.demand?.id ?: 0L}" }\n            }''',
@@ -78,10 +74,12 @@ jobs:
               '                        onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery), listOf(merged)))',
               'progress result label'
           )
-          # Remaining completion update for the same spec.
           p = Path('app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt')
-          text = p.read_text()
-          text = text.replace('                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, spec.query)))\n                }', '                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery)))\n                }', 1)
+          text = p.read_text().replace(
+              '                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, spec.query)))\n                }',
+              '                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery)))\n                }',
+              1
+          )
           p.write_text(text)
 
           must_replace(
@@ -97,28 +95,13 @@ jobs:
               '        versionCode = 301\n        versionName = "3.0.1"',
               'version bump'
           )
-
-          p = Path('.github/workflows/release.yml')
-          text = p.read_text().replace('v3.0.0', 'v3.0.1')
-          text = text.replace('versionCode 300 / versionName 3.0.0', 'versionCode 301 / versionName 3.0.1')
-          text = text.replace(
-              'busca automática continua aproximadamente a cada 1 hora, sujeita ao gerenciamento de bateria/Doze do Android.',
-              'busca automática de vídeos tem horários-alvo 08h, 12h, 15h, 19h e 21h no horário local; o Android pode atrasar alguns minutos por Doze/bateria; a busca manual permanece disponível.'
-          )
-          text = text.replace(
-              'Monitor de Notícias Android v3.0.1 — buscas em tempo real.',
-              'Monitor de Notícias Android v3.0.1 — Demandas silenciosas sem achados e varredura de Vídeos otimizada.'
-          )
-          p.write_text(text)
-
-          Path('.github/workflows/v301-patch.yml').unlink(missing_ok=True)
           PY
 
-      - name: Commit fixes
+      - name: Commit code fixes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add app/src app/build.gradle.kts
           git diff --cached --quiet && exit 0
-          git commit -m "fix: demand alerts and efficient scheduled video scans"
+          git commit -m "fix: demand alerts and efficient video scans"
           git push origin HEAD:fix/v3.0.1-demand-video-schedule

@@ -53,6 +53,7 @@ fun V30Home(
     val news24h = news.news.count { it.date >= now - 24L * 60L * 60L * 1000L }
     val videoDemands = videos.items.count { it.demand }
     val matchedDemands = news.demands.count { it.lastFoundCount > 0 }
+    val matchedDemands = news.demands.count { it.lastFoundCount > 0 }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -199,6 +200,7 @@ fun V30Videos(s: VideoState, vm: VideoViewModel, openSources: () -> Unit) {
                     } else {
                         Spacer(Modifier.height(8.dp))
                         Text("Os cards entram nesta tela assim que cada vídeo é validado, sem esperar o fim da varredura.", color = V30Text2, fontSize = 10.5.sp)
+                        Text("Automática: 08h • 12h • 15h • 19h • 21h • busca manual sempre disponível", color = V30Purple, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
                         Text("Automática: 08h • 12h • 15h • 19h • 21h • busca manual sempre disponível", color = V30Purple, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }

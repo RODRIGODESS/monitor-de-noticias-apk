@@ -412,7 +412,7 @@ object VideoSourceCatalog {
         searchPrefix = program
     )
 
-    private val REGIONAL_GLOBO_ALIASES = listOf(
+    private val REGIONAL_GLOBO_ALIASES get() = listOf(
         "TV Globo", "Globo SP", "Globo Rio", "Globo Minas", "Globo Brasília", "Globo Pernambuco",
         "Rede Amazônica", "TV Acre", "TV Amapá", "TV Amazonas", "TV Rondônia", "TV Roraima",
         "TV Gazeta", "TV Gazeta AL", "TV Gazeta ES", "TV Bahia", "TV Verdes Mares", "TV Anhanguera",

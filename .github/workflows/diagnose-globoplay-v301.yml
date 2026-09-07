@@ -23,3 +23,12 @@ jobs:
             grep -Eio '<meta[^>]+(keywords|article:tag|video:tag|og:title|og:description)[^>]*>' "/tmp/$id.html" | head -20 || true
             grep -Eio 'militares|militar|/v/[0-9]+' "/tmp/$id.html" | head -30 || true
           done
+
+          echo '=== BUSCA GERAL: militares ==='
+          curl -L --max-time 20 -A 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36' \
+            -o /tmp/search.html -sS 'https://globoplay.globo.com/busca/?q=militares' || true
+          echo "bytes=$(wc -c < /tmp/search.html 2>/dev/null || echo 0)"
+          for id in 14938901 14937913 14937180; do
+            if grep -q "/v/$id" /tmp/search.html; then echo "FOUND_$id=yes"; else echo "FOUND_$id=no"; fi
+          done
+          grep -Eio '/v/[0-9]+' /tmp/search.html | sort -u | head -40 || true

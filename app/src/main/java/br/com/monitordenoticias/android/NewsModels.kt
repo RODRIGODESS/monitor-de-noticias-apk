@@ -49,6 +49,11 @@ data class SearchResult(
     val errors: Int = 0
 )
 
+data class NewsSearchUpdate(
+    val progress: LiveSearchProgress,
+    val items: List<News> = emptyList()
+)
+
 data class AppState(
     val news: List<News> = emptyList(),
     val history: List<News> = emptyList(),
@@ -81,5 +86,6 @@ data class AppState(
     val autoDemandNew: Int = 0,
     val autoDemandErrors: Int = 0,
     val autoDemandErrorText: String = "",
-    val nextBackgroundHeartbeatAt: Long = 0L
+    val nextBackgroundHeartbeatAt: Long = 0L,
+    val searchProgress: LiveSearchProgress = LiveSearchProgress()
 )

@@ -16,18 +16,43 @@ class NewsRepository(private val db: NewsDb) {
         "Cisne Branco","Fragata Marinha do Brasil","Navio-Patrulha Marinha","Programa Nuclear da Marinha"
     )
 
+    private data class SearchTask(
+        val query: String,
+        val term: String,
+        val sourceLabel: String
+    )
+
     suspend fun search(selectedSources: List<MediaSource> = emptyList(), searchAllSources: Boolean = true): SearchResult = withContext(Dispatchers.IO) {
         val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
-        performSearch(cutoff, System.currentTimeMillis(), selectedSources, searchAllSources)
+        performSearch(cutoff, System.currentTimeMillis(), selectedSources, searchAllSources, null)
+    }
+
+    suspend fun searchProgressive(
+        selectedSources: List<MediaSource> = emptyList(),
+        searchAllSources: Boolean = true,
+        onUpdate: (NewsSearchUpdate) -> Unit
+    ): SearchResult = withContext(Dispatchers.IO) {
+        val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+        performSearch(cutoff, System.currentTimeMillis(), selectedSources, searchAllSources, onUpdate)
     }
 
     suspend fun searchPeriod(from: Long, to: Long, selectedSources: List<MediaSource> = emptyList(), searchAllSources: Boolean = true): SearchResult = withContext(Dispatchers.IO) {
-        performSearch(from, to, selectedSources, searchAllSources)
+        performSearch(from, to, selectedSources, searchAllSources, null)
+    }
+
+    suspend fun searchPeriodProgressive(
+        from: Long,
+        to: Long,
+        selectedSources: List<MediaSource> = emptyList(),
+        searchAllSources: Boolean = true,
+        onUpdate: (NewsSearchUpdate) -> Unit
+    ): SearchResult = withContext(Dispatchers.IO) {
+        performSearch(from, to, selectedSources, searchAllSources, onUpdate)
     }
 
     suspend fun searchBlockingCompatible(selectedSources: List<MediaSource> = emptyList(), searchAllSources: Boolean = true): SearchResult = withContext(Dispatchers.IO) {
         val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
-        performSearch(cutoff, System.currentTimeMillis(), selectedSources, searchAllSources)
+        performSearch(cutoff, System.currentTimeMillis(), selectedSources, searchAllSources, null)
     }
 
     suspend fun searchDemand(demand: Demand): DemandSearchResult = withContext(Dispatchers.IO) {
@@ -52,9 +77,6 @@ class NewsRepository(private val db: NewsDb) {
 
     private fun performDemandSearch(demand: Demand): DemandSearchResult {
         val checkedAt = System.currentTimeMillis()
-        // Search broadly by subject first, then enforce vehicle + subject locally.
-        // This avoids losing results when Google News does not treat the publisher
-        // name as searchable article text.
         val query = demand.subject.trim()
         val fetched = fetchGoogleNews(query)
         if (fetched == null) {
@@ -84,48 +106,120 @@ class NewsRepository(private val db: NewsDb) {
         return DemandSearchResult(demand, matched, matched.size, inserted.size)
     }
 
-    private fun performSearch(from: Long, to: Long, selectedSources: List<MediaSource>, searchAllSources: Boolean): SearchResult {
+    private fun performSearch(
+        from: Long,
+        to: Long,
+        selectedSources: List<MediaSource>,
+        searchAllSources: Boolean,
+        onUpdate: ((NewsSearchUpdate) -> Unit)?
+    ): SearchResult {
         val terms = db.listTerms().ifEmpty { defaultTerms }
         val demands = db.listDemands().filter { it.active }
-        var errors = 0
-        val raw = mutableListOf<Pair<News, String>>()
-
-        terms.forEach { term ->
-            val result = fetchGoogleNews(term)
-            if (result == null) errors++ else result.forEach { raw += it to term }
-        }
-
-        if (!searchAllSources && selectedSources.isNotEmpty() && selectedSources.size <= 24) {
-            selectedSources.chunked(8).forEach { batch ->
-                val sourceClause = batch.joinToString(" OR ") { "\"${it.name}\"" }
-                terms.forEach { term ->
-                    val query = "\"$term\" ($sourceClause)"
-                    val result = fetchGoogleNews(query)
-                    if (result == null) errors++ else result.forEach { raw += it to term }
+        val startedAt = System.currentTimeMillis()
+        val tasks = buildList {
+            terms.forEach { term -> add(SearchTask(term, term, "Google Notícias")) }
+            if (!searchAllSources && selectedSources.isNotEmpty() && selectedSources.size <= 24) {
+                selectedSources.chunked(8).forEach { batch ->
+                    val sourceClause = batch.joinToString(" OR ") { "\"${it.name}\"" }
+                    val label = batch.joinToString(", ") { it.name }.take(70)
+                    terms.forEach { term ->
+                        add(SearchTask("\"$term\" ($sourceClause)", term, label))
+                    }
                 }
             }
         }
 
-        val classified = raw
-            .filter { it.first.date in from..to }
-            .filter { pair -> searchAllSources || selectedSources.any { selected -> sourceMatchesStrict(pair.first.source, selected) } }
-            .groupBy { it.first.link }
-            .map { (_, matches) ->
-                val base = matches.first().first
-                val matchedTerms = matches.map { it.second }.distinct()
-                val demandMatch = demands.firstOrNull { d -> demandVehicleMatches(base.source, d.vehicle) && subjectMatches("${base.title} ${base.snippet}", d.subject) }
-                base.copy(
-                    important = demandMatch != null,
-                    demand = demandMatch != null,
-                    matchedTerm = matchedTerms.joinToString(", "),
-                    matchedDemand = demandMatch?.let { "${it.vehicle} • ${it.subject}" }.orEmpty(),
-                    capturedAt = System.currentTimeMillis()
-                )
-            }
-            .sortedByDescending { it.date }
+        val collected = linkedMapOf<String, News>()
+        val newLinks = linkedSetOf<String>()
+        var errors = 0
+        var completed = 0
 
-        val inserted = db.insertNews(classified)
-        return SearchResult(classified, classified.size, inserted.size, inserted.count { it.demand }, errors)
+        fun progress(source: String, query: String, active: Boolean = true): LiveSearchProgress = LiveSearchProgress(
+            active = active,
+            kind = "Notícias",
+            startedAt = startedAt,
+            finishedAt = if (active) 0L else System.currentTimeMillis(),
+            completed = completed,
+            total = tasks.size,
+            currentSource = source,
+            currentQuery = query,
+            found = collected.size,
+            newCount = newLinks.size,
+            errors = errors
+        )
+
+        onUpdate?.invoke(NewsSearchUpdate(progress("Preparando", "")))
+
+        tasks.forEach { task ->
+            onUpdate?.invoke(NewsSearchUpdate(progress(task.sourceLabel, task.term)))
+            val fetched = fetchGoogleNews(task.query)
+            if (fetched == null) {
+                errors++
+            } else {
+                val batch = fetched
+                    .asSequence()
+                    .filter { it.date in from..to }
+                    .filter { news -> searchAllSources || selectedSources.any { selected -> sourceMatchesStrict(news.source, selected) } }
+                    .map { base ->
+                        val body = "${base.title} ${base.snippet}"
+                        val actualTerms = terms.filter { subjectMatches(body, it) }
+                        val matchedTerms = if (actualTerms.isNotEmpty()) actualTerms else listOf(task.term)
+                        val demandMatch = demands.firstOrNull { d ->
+                            demandVehicleMatches(base.source, d.vehicle) && subjectMatches(body, d.subject)
+                        }
+                        base.copy(
+                            important = demandMatch != null,
+                            demand = demandMatch != null,
+                            matchedTerm = matchedTerms.distinct().joinToString(", "),
+                            matchedDemand = demandMatch?.let { "${it.vehicle} • ${it.subject}" }.orEmpty(),
+                            capturedAt = System.currentTimeMillis()
+                        )
+                    }
+                    .distinctBy { it.link }
+                    .toList()
+
+                val mergedBatch = batch.map { incoming ->
+                    val previous = collected[incoming.link]
+                    if (previous == null) incoming else mergeNews(previous, incoming)
+                }
+                mergedBatch.forEach { collected[it.link] = it }
+
+                val inserted = db.insertNews(mergedBatch)
+                inserted.forEach { newLinks += it.link }
+                if (mergedBatch.isNotEmpty()) {
+                    onUpdate?.invoke(NewsSearchUpdate(progress(task.sourceLabel, task.term), mergedBatch))
+                }
+            }
+            completed++
+            onUpdate?.invoke(NewsSearchUpdate(progress(task.sourceLabel, task.term)))
+        }
+
+        val items = collected.values.sortedByDescending { it.date }
+        val newDemandCount = items.count { it.link in newLinks && it.demand }
+        onUpdate?.invoke(
+            NewsSearchUpdate(
+                progress("Concluído", "", active = false).copy(
+                    completed = tasks.size,
+                    found = items.size,
+                    newCount = newLinks.size
+                )
+            )
+        )
+        return SearchResult(items, items.size, newLinks.size, newDemandCount, errors)
+    }
+
+    private fun mergeNews(previous: News, incoming: News): News {
+        val terms = (previous.matchedTerm.split(',') + incoming.matchedTerm.split(','))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+        return incoming.copy(
+            important = previous.important || incoming.important,
+            demand = previous.demand || incoming.demand,
+            matchedTerm = terms.joinToString(", "),
+            matchedDemand = incoming.matchedDemand.ifBlank { previous.matchedDemand },
+            capturedAt = maxOf(previous.capturedAt, incoming.capturedAt)
+        )
     }
 
     private fun demandVehicleMatches(actualSource: String, vehicle: String): Boolean {
@@ -144,9 +238,12 @@ class NewsRepository(private val db: NewsDb) {
         val haystack = normalize(text)
         val wanted = normalize(subject)
         if (wanted.isBlank()) return true
-        if (haystack.contains(wanted)) return true
-        val tokens = wanted.split(' ').filter { it.length >= 3 && it !in STOP_WORDS }
-        return tokens.isNotEmpty() && tokens.all { haystack.contains(it) }
+        if (" $haystack ".contains(" $wanted ")) return true
+        val hayTokens = haystack.split(' ').filter { it.isNotBlank() }.toSet()
+        val wantedTokens = wanted.split(' ').filter { it.isNotBlank() }
+        if (wantedTokens.size == 1) return wantedTokens.first() in hayTokens
+        val tokens = wantedTokens.filter { it.length >= 3 && it !in STOP_WORDS }
+        return tokens.isNotEmpty() && tokens.all { it in hayTokens }
     }
 
     private fun sourceMatchesStrict(actualSource: String, selected: MediaSource): Boolean {
@@ -182,7 +279,7 @@ class NewsRepository(private val db: NewsDb) {
         val url = URL("https://news.google.com/rss/search?q=$q&hl=pt-BR&gl=BR&ceid=BR:pt-419")
         val con = (url.openConnection() as HttpURLConnection).apply {
             connectTimeout = 8000; readTimeout = 10000; requestMethod = "GET"
-            setRequestProperty("User-Agent", "Mozilla/5.0 MonitorNoticiasAndroid/2.5")
+            setRequestProperty("User-Agent", "Mozilla/5.0 MonitorNoticiasAndroid/3.0")
         }
         try {
             if (con.responseCode !in 200..299) error("HTTP ${con.responseCode}")

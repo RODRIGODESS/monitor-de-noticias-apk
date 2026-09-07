@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -23,15 +24,13 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
     private val savedIds = loadSelectedSourcesForV29()
     private val now = System.currentTimeMillis()
     private val defaultFrom = now - 7L * 24L * 60L * 60L * 1000L
+    private val initialStats = currentStats()
 
     private fun loadSelectedSourcesForV29(): Set<String> {
         val existing = prefs.getStringSet(KEY_SELECTED_SOURCES, null)
             ?.filter { VideoSourceCatalog.byId.containsKey(it) }
             ?.toSet()
 
-        // Instalação nova: nacionais por padrão. O catálogo regional da v2.9 é
-        // grande e deve ser escolhido por Região/UF para não gerar centenas de
-        // consultas em cada varredura automática.
         if (existing == null) {
             val defaults = VideoSourceCatalog.defaultIds
             prefs.edit()
@@ -52,15 +51,11 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             editor.putBoolean(KEY_YOUTUBE_283_MIGRATED, true)
             changed = true
         }
-
-        // Quem salta diretamente de uma versão anterior à 2.8.4 recebe somente
-        // o conjunto inicial já validado, não todo o novo catálogo nacional.
         if (!prefs.getBoolean(KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, false)) {
             selected = selected + V284_STARTER_IDS.filter { VideoSourceCatalog.byId.containsKey(it) }
             editor.putBoolean(KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, true)
             changed = true
         }
-
         if (!prefs.getBoolean(KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, false)) {
             selected = selected + VideoSourceCatalog.globoplayRegionalSweepIds
             editor.putBoolean(KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, true)
@@ -81,7 +76,9 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             periodStartDate = prefs.getString(KEY_PERIOD_START_DATE, formatDate(defaultFrom)) ?: formatDate(defaultFrom),
             periodStartTime = prefs.getString(KEY_PERIOD_START_TIME, formatTime(defaultFrom)) ?: formatTime(defaultFrom),
             periodEndDate = prefs.getString(KEY_PERIOD_END_DATE, formatDate(now)) ?: formatDate(now),
-            periodEndTime = prefs.getString(KEY_PERIOD_END_TIME, formatTime(now)) ?: formatTime(now)
+            periodEndTime = prefs.getString(KEY_PERIOD_END_TIME, formatTime(now)) ?: formatTime(now),
+            totalStored = initialStats.first,
+            capturedToday = initialStats.second
         )
     )
     val state: StateFlow<VideoState> = _state
@@ -94,7 +91,12 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             db.removeInvalidListingEntries()
             db.repairStoredMatches()
-            _state.value = _state.value.copy(items = scopedItems())
+            val stats = currentStats()
+            _state.value = _state.value.copy(
+                items = scopedItems(),
+                totalStored = stats.first,
+                capturedToday = stats.second
+            )
         }
     }
 
@@ -105,24 +107,33 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(status = "⚠ Selecione pelo menos uma fonte de vídeo")
             return
         }
-        _state.value = _state.value.copy(busy = true, status = "Buscando vídeos nos portais, telejornais e canais oficiais do YouTube...")
+        val started = System.currentTimeMillis()
+        _state.value = _state.value.copy(
+            busy = true,
+            status = "Buscando vídeos em tempo real...",
+            searchProgress = LiveSearchProgress(active = true, kind = "Vídeos", startedAt = started)
+        )
         viewModelScope.launch {
-            val result = repo.search(selected)
+            val result = repo.searchProgressive(selected) { update -> publishVideoUpdate(update, false) }
             db.removeInvalidListingEntries()
             db.repairStoredMatches()
-            val now = System.currentTimeMillis()
-            prefs.edit().putLong(KEY_LAST_MANUAL, now).apply()
+            val finished = System.currentTimeMillis()
+            prefs.edit().putLong(KEY_LAST_MANUAL, finished).apply()
+            val stats = currentStats()
             val status = when {
                 result.errors > 0 && result.foundCount == 0 -> "⚠ Busca concluída sem vídeos diretos • ${result.errors} consulta(s) falharam"
-                result.newCount > 0 -> "✓ ${result.newCount} novo(s) vídeo(s) com link direto"
-                result.foundCount > 0 -> "✓ Busca concluída • ${result.foundCount} vídeo(s) com link direto"
-                else -> "✓ Busca concluída • nenhum vídeo direto para os Termos/Demandas"
+                result.newCount > 0 -> "✓ ${result.newCount} novo(s) vídeo(s) • ${result.foundCount} encontrado(s)"
+                result.foundCount > 0 -> "✓ Busca concluída • ${result.foundCount} vídeo(s) encontrado(s)"
+                else -> "✓ Busca concluída • nenhum vídeo para os Termos/Demandas"
             }
             _state.value = _state.value.copy(
                 items = scopedItems(),
                 busy = false,
                 status = status,
-                lastManualAt = now
+                lastManualAt = finished,
+                totalStored = stats.first,
+                capturedToday = stats.second,
+                searchProgress = _state.value.searchProgress.copy(active = false, finishedAt = finished)
             )
         }
     }
@@ -146,14 +157,22 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        _state.value = current.copy(busy = true, status = "Pesquisando vídeos no período...")
+        val started = System.currentTimeMillis()
+        _state.value = current.copy(
+            items = emptyList(),
+            busy = true,
+            status = "Pesquisando vídeos no período em tempo real...",
+            searchProgress = LiveSearchProgress(active = true, kind = "Vídeos • Período", startedAt = started)
+        )
         viewModelScope.launch {
-            val result = repo.searchPeriod(selected, from, to)
+            val result = repo.searchPeriodProgressive(selected, from, to) { update -> publishVideoUpdate(update, true) }
             db.removeInvalidListingEntries()
             db.repairStoredMatches()
             val selectedIds = _state.value.selectedSourceIds
             val periodItems = db.listPeriod(from, to)
                 .filter { it.relevant && it.sourceId in selectedIds }
+            val finished = System.currentTimeMillis()
+            val stats = currentStats()
             val status = when {
                 result.errors > 0 && periodItems.isEmpty() -> "⚠ Pesquisa do período concluída sem vídeos • ${result.errors} consulta(s) falharam"
                 periodItems.isNotEmpty() -> "✓ Período: ${periodItems.size} vídeo(s) relacionado(s) aos Termos/Demandas"
@@ -163,9 +182,34 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
                 items = periodItems,
                 busy = false,
                 status = status,
-                lastManualAt = System.currentTimeMillis()
+                lastManualAt = finished,
+                totalStored = stats.first,
+                capturedToday = stats.second,
+                searchProgress = _state.value.searchProgress.copy(active = false, finishedAt = finished)
             )
         }
+    }
+
+    private fun publishVideoUpdate(update: VideoSearchUpdate, periodMode: Boolean) {
+        val current = _state.value
+        val mergedItems = if (update.items.isEmpty()) current.items else {
+            val map = linkedMapOf<String, VideoItem>()
+            current.items.forEach { map[it.link] = it }
+            update.items.filter { it.relevant }.forEach { map[it.link] = it }
+            map.values.sortedByDescending { it.publishedAt }
+        }
+        val progress = update.progress
+        val liveStatus = if (progress.active) {
+            val position = if (progress.total > 0) "${progress.completed}/${progress.total}" else "…"
+            "Buscando • $position • ${progress.currentSource}"
+        } else current.status
+        _state.value = current.copy(
+            items = mergedItems,
+            busy = progress.active,
+            status = liveStatus,
+            searchProgress = progress,
+            totalStored = current.totalStored + update.items.count { it.capturedAt >= progress.startedAt && it.id > 0L }.coerceAtLeast(0)
+        )
     }
 
     fun setPeriodStartDate(value: String) = updatePeriod { it.copy(periodStartDate = value) }
@@ -216,8 +260,24 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
     fun clearHistory() {
         viewModelScope.launch(Dispatchers.IO) {
             db.clear()
-            _state.value = _state.value.copy(items = emptyList(), status = "✓ Histórico de vídeos limpo")
+            _state.value = _state.value.copy(
+                items = emptyList(),
+                totalStored = 0,
+                capturedToday = 0,
+                status = "✓ Histórico de vídeos limpo"
+            )
         }
+    }
+
+    private fun currentStats(): Pair<Int, Int> {
+        val relevant = db.listAll(1000).filter { it.relevant }
+        val startOfDay = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return relevant.size to relevant.count { it.capturedAt >= startOfDay }
     }
 
     private fun updatePeriod(block: (VideoState) -> VideoState) {

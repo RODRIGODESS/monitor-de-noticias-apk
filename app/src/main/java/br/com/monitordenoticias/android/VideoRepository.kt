@@ -22,15 +22,28 @@ class VideoRepository(
     )
 
     suspend fun search(sources: List<VideoSource>): VideoSearchResult =
-        searchInternal(sources, null, null)
+        searchInternal(sources, null, null, null)
+
+    suspend fun searchProgressive(
+        sources: List<VideoSource>,
+        onUpdate: (VideoSearchUpdate) -> Unit
+    ): VideoSearchResult = searchInternal(sources, null, null, onUpdate)
 
     suspend fun searchPeriod(sources: List<VideoSource>, from: Long, to: Long): VideoSearchResult =
-        searchInternal(sources, from, to)
+        searchInternal(sources, from, to, null)
+
+    suspend fun searchPeriodProgressive(
+        sources: List<VideoSource>,
+        from: Long,
+        to: Long,
+        onUpdate: (VideoSearchUpdate) -> Unit
+    ): VideoSearchResult = searchInternal(sources, from, to, onUpdate)
 
     private suspend fun searchInternal(
         sources: List<VideoSource>,
         from: Long?,
-        to: Long?
+        to: Long?,
+        onUpdate: ((VideoSearchUpdate) -> Unit)?
     ): VideoSearchResult = withContext(Dispatchers.IO) {
         val newsDb = NewsDb(context)
         try {
@@ -40,17 +53,39 @@ class VideoRepository(
                 .distinctBy(::normalize)
             val demands = newsDb.listDemands().filter { it.active }
             val capturedAt = System.currentTimeMillis()
+            val startedAt = capturedAt
             val collected = linkedMapOf<String, VideoItem>()
+            val newKeys = linkedSetOf<String>()
             var errors = 0
+            var completed = 0
 
-            sources.forEach { source ->
-                val specs = buildList {
+            val plan = sources.associateWith { source ->
+                buildList {
                     terms.forEach { term -> add(QuerySpec(query = term, term = term)) }
                     demands
                         .filter { demand -> sourceMatchesDemand(source, demand.vehicle) }
                         .forEach { demand -> add(QuerySpec(query = demand.subject, demand = demand)) }
                 }.distinctBy { spec -> "${normalize(spec.query)}|${spec.term}|${spec.demand?.id ?: 0L}" }
+            }
+            val total = plan.values.sumOf { it.size }
 
+            fun progress(source: String, query: String, active: Boolean = true): LiveSearchProgress = LiveSearchProgress(
+                active = active,
+                kind = if (from != null || to != null) "Vídeos • Período" else "Vídeos",
+                startedAt = startedAt,
+                finishedAt = if (active) 0L else System.currentTimeMillis(),
+                completed = completed,
+                total = total,
+                currentSource = source,
+                currentQuery = query,
+                found = collected.size,
+                newCount = newKeys.size,
+                errors = errors
+            )
+
+            onUpdate?.invoke(VideoSearchUpdate(progress("Preparando", "")))
+
+            plan.forEach { (source, specs) ->
                 var fallbackLoaded = false
                 var fallbackItems: List<VideoItem> = emptyList()
                 val resolvedCache = mutableMapOf<String, VideoItem?>()
@@ -66,13 +101,14 @@ class VideoRepository(
                             .onFailure { errors++ }
                             .getOrDefault(emptyList())
                     } else emptyList()
-                    fallbackItems = (site + youtube)
-                        .distinctBy { canonicalKey(it.link) }
+                    fallbackItems = (site + youtube).distinctBy { canonicalKey(it.link) }
                     return fallbackItems
                 }
 
                 fun resolve(item: VideoItem): VideoItem? {
-                    if (isYoutubeUrl(item.link)) return if (isYoutubeVideoUrl(item.link)) item.copy(link = canonicalizeUrl(item.link)) else null
+                    if (isYoutubeUrl(item.link)) {
+                        return if (isYoutubeVideoUrl(item.link)) item.copy(link = canonicalizeUrl(item.link)) else null
+                    }
                     val cacheKey = canonicalKey(item.link)
                     if (resolvedCache.containsKey(cacheKey)) return resolvedCache[cacheKey]
                     val resolved = runCatching { resolveDirectVideoPage(source, item, capturedAt) }
@@ -83,49 +119,68 @@ class VideoRepository(
                 }
 
                 specs.forEach { spec ->
+                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, spec.query)))
                     val searched = if (source.searchUrlTemplate.isNotBlank()) {
                         runCatching { fetchSearchWebsite(source, spec.query, capturedAt) }
                             .onFailure { errors++ }
                             .getOrDefault(emptyList())
                     } else emptyList()
 
-                    val rawCandidates = searched
-                        .filter { item -> phraseMatches("${item.title} ${item.summary}", spec.query) }
-                        .ifEmpty {
-                            loadFallback().filter { item ->
-                                phraseMatches("${item.title} ${item.summary}", spec.query)
+                    val deepGloboplay = isGloboplaySource(source)
+                    val fallback = if (deepGloboplay || searched.isEmpty()) loadFallback() else emptyList()
+                    val rawCandidates = if (deepGloboplay) {
+                        // No Globoplay a palavra pode existir apenas como tag/keyword do vídeo.
+                        // Por isso não descartamos o card da busca antes de abrir /v/<id>.
+                        (searched + fallback).distinctBy { canonicalKey(it.link) }
+                    } else {
+                        searched
+                            .filter { item -> phraseMatches("${item.title} ${item.summary}", spec.query) }
+                            .ifEmpty {
+                                fallback.filter { item -> phraseMatches("${item.title} ${item.summary}", spec.query) }
                             }
-                        }
+                    }
 
-                    val candidates = rawCandidates
-                        .asSequence()
-                        .take(MAX_RESOLVED_PER_QUERY)
-                        .mapNotNull(::resolve)
-                        .filter { item -> phraseMatches("${item.title} ${item.summary}", spec.query) }
-                        .filter { item -> inPeriod(item, from, to) }
-                        .toList()
-
-                    candidates.forEach { item ->
+                    val resolveLimit = if (deepGloboplay) MAX_GLOBOPLAY_RESOLVED_PER_QUERY else MAX_RESOLVED_PER_QUERY
+                    rawCandidates.asSequence().take(resolveLimit).forEach { raw ->
+                        val item = resolve(raw) ?: return@forEach
                         val body = "${item.title} ${item.summary}"
+                        if (!phraseMatches(body, spec.query)) return@forEach
+                        if (!inPeriod(item, from, to)) return@forEach
+                        if (!isDirectResult(item)) return@forEach
+
                         val key = canonicalKey(item.link)
                         val previous = collected[key]
+                        val actualMatchedTerms = terms.filter { phraseMatches(body, it) }
                         val matchedTerm = when {
-                            spec.term.isNotBlank() -> spec.term
-                            previous?.matchedTerm?.isNotBlank() == true -> previous.matchedTerm
-                            else -> terms.firstOrNull { phraseMatches(body, it) }.orEmpty()
+                            actualMatchedTerms.isNotEmpty() -> actualMatchedTerms.joinToString(", ")
+                            spec.term.isNotBlank() && phraseMatches(body, spec.term) -> spec.term
+                            else -> previous?.matchedTerm.orEmpty()
                         }
-                        val demand = spec.demand
+                        val demand = spec.demand?.takeIf { phraseMatches(body, it.subject) }
                             ?: demands.firstOrNull { d -> sourceMatchesDemand(source, d.vehicle) && phraseMatches(body, d.subject) }
                         val matchedDemand = demand?.let { "${it.vehicle} • ${it.subject}" }
                             ?: previous?.matchedDemand.orEmpty()
 
-                        collected[key] = item.copy(
+                        val candidate = item.copy(
                             link = canonicalizeUrl(item.link),
-                            matchedTerm = matchedTerm.ifBlank { previous?.matchedTerm.orEmpty() },
+                            matchedTerm = matchedTerm,
                             matchedDemand = matchedDemand,
                             capturedAt = capturedAt
                         )
+                        if (!candidate.relevant) return@forEach
+
+                        val merged = if (previous == null) candidate else mergeVideo(previous, candidate)
+                        collected[key] = merged
+                        val inserted = db.insert(listOf(merged))
+                        if (inserted.isNotEmpty()) newKeys += key
+
+                        // Emissão imediata: o card entra na aba Vídeos enquanto as
+                        // demais fontes/termos continuam sendo consultados.
+                        onUpdate?.invoke(VideoSearchUpdate(progress(source.name, spec.query), listOf(merged)))
                     }
+
+                    completed++
+                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, spec.query)))
                 }
             }
 
@@ -134,18 +189,40 @@ class VideoRepository(
                 .filter { item -> inPeriod(item, from, to) }
                 .distinctBy { canonicalKey(it.link) }
                 .sortedByDescending { it.publishedAt }
-            val inserted = db.insert(items)
+
+            onUpdate?.invoke(
+                VideoSearchUpdate(
+                    progress("Concluído", "", active = false).copy(
+                        completed = total,
+                        found = items.size,
+                        newCount = newKeys.size
+                    )
+                )
+            )
+
             VideoSearchResult(
                 items = items,
                 foundCount = items.size,
-                newCount = inserted.size,
+                newCount = newKeys.size,
                 relevantCount = items.size,
-                newRelevantCount = inserted.count { it.relevant },
+                newRelevantCount = newKeys.size,
                 errors = errors
             )
         } finally {
             newsDb.close()
         }
+    }
+
+    private fun mergeVideo(previous: VideoItem, incoming: VideoItem): VideoItem {
+        val terms = (previous.matchedTerm.split(',') + incoming.matchedTerm.split(','))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+        return incoming.copy(
+            matchedTerm = terms.joinToString(", "),
+            matchedDemand = incoming.matchedDemand.ifBlank { previous.matchedDemand },
+            capturedAt = maxOf(previous.capturedAt, incoming.capturedAt)
+        )
     }
 
     private fun fetchSearchWebsite(source: VideoSource, query: String, capturedAt: Long): List<VideoItem> {
@@ -154,8 +231,6 @@ class VideoRepository(
             .joinToString(" ")
         val encoded = URLEncoder.encode(effectiveQuery, "UTF-8")
         val url = source.searchUrlTemplate.replace("{query}", encoded)
-        // O termo consultado nunca é injetado no summary: o casamento precisa
-        // existir no conteúdo real do resultado, não em texto sintético do app.
         return fetchPageLinks(source, url, capturedAt, "Resultado em ${source.name}")
     }
 
@@ -164,7 +239,7 @@ class VideoRepository(
 
     private fun fetchPageLinks(source: VideoSource, pageUrl: String, capturedAt: Long, fallbackSummary: String): List<VideoItem> {
         val doc = Jsoup.connect(pageUrl)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.5")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0")
             .referrer("https://www.google.com/")
             .timeout(14_000)
             .followRedirects(true)
@@ -210,14 +285,14 @@ class VideoRepository(
                 )
             )
         }
-        return out.values.take(40)
+        return out.values.take(if (isGloboplaySource(source)) 80 else 40)
     }
 
     private fun resolveDirectVideoPage(source: VideoSource, candidate: VideoItem, capturedAt: Long): VideoItem? {
         if (!isSpecificVideoUrl(source, candidate.link)) return null
 
         val doc = Jsoup.connect(candidate.link)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.5")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0")
             .referrer(source.landingUrl)
             .timeout(14_000)
             .followRedirects(true)
@@ -241,8 +316,15 @@ class VideoRepository(
             candidate.summary
         ).map(::cleanText).firstOrNull { it.isNotBlank() && !isGenericSummary(it) }.orEmpty()
 
-        val publishedAt = parsePublishedAt(doc) ?: candidate.publishedAt.takeIf { it > 0 } ?: capturedAt
+        val metadataTerms = extractMetadataTerms(doc)
+        val metadataSuffix = if (metadataTerms.isEmpty()) "" else "Tags: ${metadataTerms.take(18).joinToString(", ")}"
+        val enrichedSummary = listOf(description, metadataSuffix)
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString(" • ")
+            .take(900)
 
+        val publishedAt = parsePublishedAt(doc) ?: candidate.publishedAt.takeIf { it > 0 } ?: capturedAt
         val directPattern = isSpecificVideoUrl(source, canonical)
         val hasVideoSignal = pageHasVideoSignal(doc)
         if (!directPattern && !hasVideoSignal) return null
@@ -251,9 +333,55 @@ class VideoRepository(
             title = title.take(220),
             publishedAt = publishedAt,
             link = canonicalizeUrl(canonical),
-            summary = description.take(360)
+            summary = enrichedSummary
         )
     }
+
+    /**
+     * Globoplay frequentemente expõe o assunto apenas como tag/keyword da página,
+     * não no título do card de busca. A v3.0 incorpora essas informações ao texto
+     * classificável antes de comparar com Termos/Demandas.
+     */
+    private fun extractMetadataTerms(doc: Document): List<String> {
+        val values = linkedSetOf<String>()
+
+        doc.select("meta[name=keywords], meta[property=article:tag], meta[property=video:tag], meta[name=news_keywords]")
+            .forEach { meta -> splitMetadata(meta.attr("content")).forEach(values::add) }
+
+        doc.select("a[href*=/tag/], a[href*=/tags/], [data-tag], [data-tags]").take(40).forEach { element ->
+            splitMetadata(element.attr("data-tag")).forEach(values::add)
+            splitMetadata(element.attr("data-tags")).forEach(values::add)
+            val text = cleanText(element.text())
+            if (text.length in 2..80) values += text
+        }
+
+        doc.select("script[type=application/ld+json], script").take(80).forEach { script ->
+            val text = script.data().ifBlank { script.html() }
+            JSON_METADATA_REGEX.findAll(text).take(20).forEach { match ->
+                val raw = match.groupValues.drop(1).firstOrNull { it.isNotBlank() }.orEmpty()
+                QUOTED_VALUE_REGEX.findAll(raw).forEach { q ->
+                    val item = cleanText(q.groupValues[1])
+                    if (item.length in 2..80) values += item
+                }
+                splitMetadata(raw.replace("\\\"", "\"")).forEach(values::add)
+            }
+        }
+
+        return values
+            .map(::cleanText)
+            .filter { it.length in 2..80 && normalize(it) !in GENERIC_METADATA }
+            .distinctBy(::normalize)
+            .take(40)
+    }
+
+    private fun splitMetadata(value: String): List<String> = value
+        .replace("[", " ")
+        .replace("]", " ")
+        .replace("{", " ")
+        .replace("}", " ")
+        .split(',', ';', '|')
+        .map { cleanText(it.trim(' ', '\"', '\'')) }
+        .filter { it.length in 2..80 }
 
     private fun resolveCanonicalUrl(doc: Document, fallback: String): String {
         val candidates = listOf(
@@ -298,7 +426,7 @@ class VideoRepository(
     private fun fetchYoutube(source: VideoSource, capturedAt: Long): List<VideoItem> {
         val handle = source.youtubeHandle.removePrefix("@")
         val channelPage = Jsoup.connect("https://www.youtube.com/@$handle/videos")
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.5")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0")
             .timeout(14_000)
             .get()
             .html()
@@ -307,7 +435,7 @@ class VideoRepository(
             ?: return emptyList()
 
         val feed = Jsoup.connect("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
-            .userAgent("Mozilla/5.0 MonitorNoticias/2.8.5")
+            .userAgent("Mozilla/5.0 MonitorNoticias/3.0")
             .timeout(14_000)
             .parser(Parser.xmlParser())
             .get()
@@ -342,7 +470,7 @@ class VideoRepository(
         if (normalizedPath.contains("/busca") || normalizedPath.contains("/search")) return false
 
         return when {
-            source.id == "video-globoplay-jornalismo" -> Regex("/v/[0-9]+/?$", RegexOption.IGNORE_CASE).containsMatchIn(path)
+            isGloboplaySource(source) -> Regex("/v/[0-9]+/?$", RegexOption.IGNORE_CASE).containsMatchIn(path)
             source.id == "video-r7-record" -> hasSpecificSuffix(path, "/videos/") || hasSpecificSuffix(path, "/video/")
             source.id == "video-sbt-news" -> hasSpecificSuffix(path, "/videos/")
             source.id == "video-cnn-brasil" -> hasSpecificSuffix(path, "/videos/") || hasSpecificSuffix(path, "/video/")
@@ -350,6 +478,11 @@ class VideoRepository(
             else -> source.linkHints.any { hint -> hasSpecificSuffix(path, hint) }
         }
     }
+
+    private fun isGloboplaySource(source: VideoSource): Boolean =
+        source.landingUrl.contains("globoplay.globo.com", ignoreCase = true) ||
+            source.searchUrlTemplate.contains("globoplay.globo.com", ignoreCase = true) ||
+            source.id.startsWith("globoplay-") || source.id.startsWith("video-globoplay")
 
     private fun hasSpecificSuffix(path: String, marker: String): Boolean {
         val index = path.indexOf(marker, ignoreCase = true)
@@ -433,11 +566,6 @@ class VideoRepository(
         }
     }
 
-    /**
-     * Casamento por palavras inteiras. Isso impede que termos curtos como "FAB"
-     * sejam encontrados dentro de "fábrica", mantendo o comportamento flexível
-     * para expressões com várias palavras.
-     */
     private fun phraseMatches(text: String, phrase: String): Boolean {
         val haystack = normalize(text)
         val wanted = normalize(phrase)
@@ -489,11 +617,18 @@ class VideoRepository(
 
     companion object {
         private const val MAX_RESOLVED_PER_QUERY = 8
+        private const val MAX_GLOBOPLAY_RESOLVED_PER_QUERY = 20
+        private val JSON_METADATA_REGEX = Regex(
+            "\\\"(?:keywords|tags|tag|subjects?)\\\"\\s*:\\s*(?:\\\"([^\\\"]+)\\\"|\\[([^]]+)])",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        )
+        private val QUOTED_VALUE_REGEX = Regex("\\\"([^\\\"]{2,80})\\\"")
         private val STOP_WORDS = setOf("de", "do", "da", "dos", "das", "e", "em", "no", "na", "nos", "nas", "a", "o", "as", "os")
         private val GENERIC_TITLES = setOf(
             "videos", "video", "todos os videos", "todos videos", "ultimos videos", "mais videos",
             "ver videos", "ver todos os videos", "ao vivo", "assistir ao vivo", "carregar mais", "ver mais", "ver tudo"
         )
+        private val GENERIC_METADATA = setOf("video", "videos", "globoplay", "globo", "jornalismo", "noticias", "noticia")
         private val GENERIC_SLUGS = setOf("videos", "video", "ao vivo", "todos os videos", "ultimos videos")
         private val GENERIC_PATHS = setOf(
             "/videos", "/video", "/ao-vivo", "/busca", "/search", "/categorias/jornalismo"

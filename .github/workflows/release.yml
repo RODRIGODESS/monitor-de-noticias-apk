@@ -92,37 +92,37 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v2.8.3 release asset
+      - name: Prepare v2.8.4 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.8.3.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.8.4.apk
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.8.3
+          tag_name: v2.8.4
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v2.8.3
+          name: Monitor de Notícias Android v2.8.4
           body: |
-            Versão 2.8.3 do Monitor de Notícias Android.
+            Versão 2.8.4 do Monitor de Notícias Android.
 
-            Monitor de Vídeos — YouTube oficial:
-            - adiciona canais oficiais do YouTube como fontes independentes de monitoramento;
-            - CNN Brasil, Jovem Pan News, GloboNews, Record News, Jornal da Record, Band Jornalismo/BandNews e SBT News;
-            - os vídeos recentes de cada canal são cruzados com os Termos e Demandas cadastrados no app;
-            - o resultado usa o link direto do YouTube (watch?v=...), pronto para abrir no app ou navegador;
-            - mantém deduplicação, links diretos e limpeza de páginas genéricas da v2.8.2;
-            - as novas fontes do YouTube são habilitadas automaticamente uma única vez para usuários que já tinham a v2.8.2;
-            - o usuário continua podendo ativar/desativar cada fonte normalmente;
+            Monitor de Vídeos — varredura de telejornais Globo/Globoplay:
+            - mantém a busca geral do Globoplay, mas adiciona fontes específicas por telejornal;
+            - telejornais nacionais iniciais: Bom Dia Brasil, Hora 1, Jornal Hoje, Jornal Nacional e Jornal da Globo;
+            - telejornais regionais iniciais: Bom Dia SP, SP1, SP2, Bom Dia Rio, RJ1, RJ2, Bom Dia ES, Gazeta Meio Dia/ESTV1, Bom Dia Minas, MG1, DF1, Bom Dia Rio Grande, TJ1 e TJ2 da TV Tapajós;
+            - páginas de trechos dos telejornais regionais são varridas e cruzadas com os Termos/Demandas cadastrados;
+            - cada telejornal aparece como fonte independente para ativar/desativar;
+            - os novos telejornais são habilitados automaticamente uma única vez na atualização para a 2.8.4;
+            - resultados continuam exigindo link direto de vídeo e passam pela deduplicação existente;
             - busca manual e automática aproximadamente a cada 1 hora.
 
-            Fontes já existentes:
-            - mantém Globoplay/Globo, R7/Record, CNN Brasil, SBT News, Band e fontes regionais por portal;
-            - fontes de portal e YouTube ficam separadas para identificar claramente a origem do vídeo.
+            YouTube e demais portais:
+            - mantém CNN Brasil, Jovem Pan News, GloboNews, Record News, Jornal da Record, Band Jornalismo/BandNews e SBT News no YouTube;
+            - mantém R7/Record, CNN, SBT, Band e demais fontes de vídeo já cadastradas.
 
             Atualização:
-            - versionCode 283 / versionName 2.8.3;
+            - versionCode 284 / versionName 2.8.4;
             - mesmo applicationId e mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v2.8.2 preservando dados e configurações.
-          files: monitor-de-noticias-v2.8.3.apk
+            - instalação direta sobre v2.8.3 preservando dados e configurações.
+          files: monitor-de-noticias-v2.8.4.apk
           make_latest: true

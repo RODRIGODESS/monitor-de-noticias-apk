@@ -4,7 +4,7 @@ object VideoSourceCatalog {
     private val portalNational = listOf(
         VideoSource(
             id = "video-globoplay-jornalismo",
-            name = "Globoplay Jornalismo",
+            name = "Globoplay Jornalismo (geral)",
             group = "Globo / Globoplay",
             landingUrl = "https://globoplay.globo.com/categorias/jornalismo/",
             linkHints = listOf("/v/"),
@@ -51,11 +51,6 @@ object VideoSourceCatalog {
 
     /**
      * Canais oficiais no YouTube monitorados como fontes independentes.
-     *
-     * Eles ficam separados dos portais para que o card indique claramente que o
-     * resultado veio do YouTube e para que o link salvo seja sempre o watch?v=...
-     * do vídeo específico. A coleta usa o feed oficial do próprio canal e cruza
-     * os vídeos recentes com os Termos e Demandas cadastrados no app.
      */
     val youtubeOfficial = listOf(
         VideoSource(
@@ -123,9 +118,177 @@ object VideoSourceCatalog {
         )
     )
 
-    val national: List<VideoSource> = portalNational + youtubeOfficial
+    /**
+     * Telejornais nacionais da Globo. Cada item é tratado como uma fonte própria.
+     * A landingUrl aponta para a busca do próprio programa no Globoplay, permitindo
+     * varrer os vídeos/edições daquele telejornal e cruzar localmente com os Termos.
+     */
+    val globoplayTelejournalsNational = listOf(
+        globoplayTelejournal(
+            id = "globoplay-bom-dia-brasil",
+            name = "Globoplay • Bom Dia Brasil",
+            program = "Bom Dia Brasil",
+            landingUrl = "https://globoplay.globo.com/busca/?q=Bom%20Dia%20Brasil"
+        ),
+        globoplayTelejournal(
+            id = "globoplay-hora-1",
+            name = "Globoplay • Hora 1",
+            program = "Hora 1",
+            landingUrl = "https://globoplay.globo.com/busca/?q=Hora%201"
+        ),
+        globoplayTelejournal(
+            id = "globoplay-jornal-hoje",
+            name = "Globoplay • Jornal Hoje",
+            program = "Jornal Hoje",
+            landingUrl = "https://globoplay.globo.com/busca/?q=Jornal%20Hoje"
+        ),
+        globoplayTelejournal(
+            id = "globoplay-jornal-nacional",
+            name = "Globoplay • Jornal Nacional",
+            program = "Jornal Nacional",
+            landingUrl = "https://globoplay.globo.com/busca/?q=Jornal%20Nacional"
+        ),
+        globoplayTelejournal(
+            id = "globoplay-jornal-da-globo",
+            name = "Globoplay • Jornal da Globo",
+            program = "Jornal da Globo",
+            landingUrl = "https://globoplay.globo.com/busca/?q=Jornal%20da%20Globo"
+        )
+    )
 
-    val regional = listOf(
+    /**
+     * Telejornais locais/afiliadas com páginas de programa ou trechos no Globoplay.
+     * Muitas páginas de um trecho antigo continuam expondo a seção "Trechos" atual
+     * do programa, por isso funcionam como ponto de entrada para a varredura recente.
+     */
+    val globoplayTelejournalsRegional = listOf(
+        globoplayTelejournal(
+            id = "globoplay-bom-dia-sp",
+            name = "Globoplay • Bom Dia SP",
+            program = "Bom Dia SP",
+            landingUrl = "https://globoplay.globo.com/v/5701776/",
+            region = "Sudeste",
+            state = "SP",
+            extraAliases = listOf("Bom Dia São Paulo", "BDSP")
+        ),
+        globoplayTelejournal(
+            id = "globoplay-sp1",
+            name = "Globoplay • SP1",
+            program = "SP1",
+            landingUrl = "https://globoplay.globo.com/v/12096579/",
+            region = "Sudeste",
+            state = "SP",
+            extraAliases = listOf("SPTV 1ª Edição", "SP Primeira Edição")
+        ),
+        globoplayTelejournal(
+            id = "globoplay-sp2",
+            name = "Globoplay • SP2",
+            program = "SP2",
+            landingUrl = "https://globoplay.globo.com/v/5854721/",
+            region = "Sudeste",
+            state = "SP",
+            extraAliases = listOf("SPTV 2ª Edição", "SP Segunda Edição")
+        ),
+        globoplayTelejournal(
+            id = "globoplay-bom-dia-rio",
+            name = "Globoplay • Bom Dia Rio",
+            program = "Bom Dia Rio",
+            landingUrl = "https://globoplay.globo.com/v/8383434/",
+            region = "Sudeste",
+            state = "RJ"
+        ),
+        globoplayTelejournal(
+            id = "globoplay-rj1",
+            name = "Globoplay • RJ1",
+            program = "RJ1",
+            landingUrl = "https://globoplay.globo.com/v/5976232/",
+            region = "Sudeste",
+            state = "RJ",
+            extraAliases = listOf("RJTV 1ª Edição", "RJ Primeira Edição")
+        ),
+        globoplayTelejournal(
+            id = "globoplay-rj2",
+            name = "Globoplay • RJ2",
+            program = "RJ2",
+            landingUrl = "https://globoplay.globo.com/v/12954402/",
+            region = "Sudeste",
+            state = "RJ",
+            extraAliases = listOf("RJTV 2ª Edição", "RJ Segunda Edição")
+        ),
+        globoplayTelejournal(
+            id = "globoplay-bom-dia-es",
+            name = "Globoplay • Bom Dia ES",
+            program = "Bom Dia ES",
+            landingUrl = "https://globoplay.globo.com/v/11645540/",
+            region = "Sudeste",
+            state = "ES"
+        ),
+        globoplayTelejournal(
+            id = "globoplay-gazeta-meio-dia-es",
+            name = "Globoplay • Gazeta Meio Dia / ESTV1",
+            program = "Gazeta Meio Dia",
+            landingUrl = "https://globoplay.globo.com/v/5423638/",
+            region = "Sudeste",
+            state = "ES",
+            extraAliases = listOf("ESTV 1ª Edição", "ESTV1", "ES1")
+        ),
+        globoplayTelejournal(
+            id = "globoplay-bom-dia-minas",
+            name = "Globoplay • Bom Dia Minas",
+            program = "Bom Dia Minas",
+            landingUrl = "https://globoplay.globo.com/v/5535965/",
+            region = "Sudeste",
+            state = "MG"
+        ),
+        globoplayTelejournal(
+            id = "globoplay-mg1",
+            name = "Globoplay • MG1",
+            program = "MG1",
+            landingUrl = "https://globoplay.globo.com/v/12552834/",
+            region = "Sudeste",
+            state = "MG",
+            extraAliases = listOf("MGTV 1ª Edição", "MG Primeira Edição")
+        ),
+        globoplayTelejournal(
+            id = "globoplay-df1",
+            name = "Globoplay • DF1",
+            program = "DF1",
+            landingUrl = "https://globoplay.globo.com/v/14711882/",
+            region = "Centro-Oeste",
+            state = "DF",
+            extraAliases = listOf("DF 1", "DFTV 1ª Edição")
+        ),
+        globoplayTelejournal(
+            id = "globoplay-bom-dia-rio-grande",
+            name = "Globoplay • Bom Dia Rio Grande",
+            program = "Bom Dia Rio Grande",
+            landingUrl = "https://globoplay.globo.com/v/12316554/",
+            region = "Sul",
+            state = "RS"
+        ),
+        globoplayTelejournal(
+            id = "globoplay-tj1-tapajos",
+            name = "Globoplay • TJ1 / Jornal Tapajós 1ª",
+            program = "Jornal Tapajós 1ª Edição",
+            landingUrl = "https://globoplay.globo.com/v/6897326/",
+            region = "Norte",
+            state = "PA",
+            extraAliases = listOf("TJ1", "Jornal Tapajós 1", "TV Tapajós")
+        ),
+        globoplayTelejournal(
+            id = "globoplay-tj2-tapajos",
+            name = "Globoplay • TJ2 / Jornal Tapajós 2ª",
+            program = "Jornal Tapajós 2ª Edição",
+            landingUrl = "https://globoplay.globo.com/v/13630892/",
+            region = "Norte",
+            state = "PA",
+            extraAliases = listOf("TJ2", "Jornal Tapajós 2", "TV Tapajós")
+        )
+    )
+
+    val national: List<VideoSource> = portalNational + youtubeOfficial + globoplayTelejournalsNational
+
+    private val bandRegional = listOf(
         VideoSource(
             id = "video-band-brasilia",
             name = "Band Brasília",
@@ -183,10 +346,33 @@ object VideoSourceCatalog {
         )
     )
 
+    val regional: List<VideoSource> = bandRegional + globoplayTelejournalsRegional
+
     val all: List<VideoSource> = national + regional
     val byId: Map<String, VideoSource> = all.associateBy { it.id }
     val youtubeOfficialIds: Set<String> = youtubeOfficial.map { it.id }.toSet()
+    val globoplayTelejournalIds: Set<String> =
+        (globoplayTelejournalsNational + globoplayTelejournalsRegional).map { it.id }.toSet()
     val defaultIds: Set<String> = national.map { it.id }.toSet()
 
     fun selected(ids: Set<String>): List<VideoSource> = ids.mapNotNull(byId::get)
+
+    private fun globoplayTelejournal(
+        id: String,
+        name: String,
+        program: String,
+        landingUrl: String,
+        region: String = "Nacional",
+        state: String = "",
+        extraAliases: List<String> = emptyList()
+    ): VideoSource = VideoSource(
+        id = id,
+        name = name,
+        group = if (state.isBlank()) "Globo / Globoplay • Telejornal nacional" else "Globo / Globoplay • Telejornal regional",
+        region = region,
+        state = state,
+        landingUrl = landingUrl,
+        linkHints = listOf("/v/"),
+        aliases = (listOf("Globo", "Globoplay", program) + extraAliases).distinct()
+    )
 }

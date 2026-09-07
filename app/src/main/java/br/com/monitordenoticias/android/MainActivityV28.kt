@@ -147,7 +147,7 @@ private fun V28TopBar(section: V28Section) {
     }
     val subtitle = when (section) {
         V28Section.HOME -> "Inteligência de mídia em tempo real"
-        V28Section.VIDEOS -> "TV, portais e conteúdo audiovisual"
+        V28Section.VIDEOS -> "TV, portais, YouTube e conteúdo audiovisual"
         V28Section.SOURCES -> "Escolha os veículos de notícias"
         V28Section.DEMANDS -> "Alertas por veículo e assunto"
         V28Section.PERIOD -> "Defina o intervalo da pesquisa"
@@ -166,7 +166,7 @@ private fun V28TopBar(section: V28Section) {
                 Text(subtitle, color = V28Text2, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Surface(color = V28Accent.copy(alpha = .10f), shape = RoundedCornerShape(9.dp)) {
-                Text("2.8.2", color = V28Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
+                Text(BuildConfig.VERSION_NAME, color = V28Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
             }
         }
     }

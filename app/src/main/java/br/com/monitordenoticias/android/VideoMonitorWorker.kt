@@ -10,10 +10,21 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
         val db = VideoDb(applicationContext).apply { removeInvalidListingEntries() }
         return try {
             val prefs = applicationContext.getSharedPreferences(BackgroundMonitor.PREFS, 0)
-            val selectedIds = prefs.getStringSet(VideoViewModel.KEY_SELECTED_SOURCES, null)
+            val existing = prefs.getStringSet(VideoViewModel.KEY_SELECTED_SOURCES, null)
                 ?.filter { VideoSourceCatalog.byId.containsKey(it) }
                 ?.toSet()
-                ?: VideoSourceCatalog.defaultIds
+
+            val selectedIds = if (!prefs.getBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, false)) {
+                val merged = (existing ?: VideoSourceCatalog.defaultIds) + VideoSourceCatalog.youtubeOfficialIds
+                prefs.edit()
+                    .putStringSet(VideoViewModel.KEY_SELECTED_SOURCES, merged)
+                    .putBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, true)
+                    .apply()
+                merged
+            } else {
+                existing ?: VideoSourceCatalog.defaultIds
+            }
+
             val sources = VideoSourceCatalog.selected(selectedIds)
             if (sources.isEmpty()) {
                 val empty = VideoSearchResult(emptyList(), 0, 0, 0, 0, 0)

@@ -92,37 +92,37 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v2.8.2 release asset
+      - name: Prepare v2.8.3 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.8.2.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.8.3.apk
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.8.2
+          tag_name: v2.8.3
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v2.8.2
+          name: Monitor de Notícias Android v2.8.3
           body: |
-            Versão 2.8.2 do Monitor de Notícias Android.
+            Versão 2.8.3 do Monitor de Notícias Android.
 
-            Monitor de Vídeos — links diretos:
-            - elimina resultados genéricos como "Todos os vídeos", páginas de listagem, busca e páginas principais;
-            - cada resultado passa a ser validado como página específica de vídeo antes de entrar no histórico;
-            - usa URL canônica da página específica quando disponível;
-            - melhora título, descrição e data a partir dos metadados da página do vídeo;
-            - mantém os Termos e Demandas como base das consultas;
-            - deduplicação reforçada por URL canônica;
-            - cards exibem indicador "Link direto" e botão "Abrir vídeo";
-            - limpa automaticamente resultados genéricos que tenham sido salvos pela v2.8/v2.8.1;
-            - mantém busca manual e automática aproximadamente a cada 1 hora.
+            Monitor de Vídeos — YouTube oficial:
+            - adiciona canais oficiais do YouTube como fontes independentes de monitoramento;
+            - CNN Brasil, Jovem Pan News, GloboNews, Record News, Jornal da Record, Band Jornalismo/BandNews e SBT News;
+            - os vídeos recentes de cada canal são cruzados com os Termos e Demandas cadastrados no app;
+            - o resultado usa o link direto do YouTube (watch?v=...), pronto para abrir no app ou navegador;
+            - mantém deduplicação, links diretos e limpeza de páginas genéricas da v2.8.2;
+            - as novas fontes do YouTube são habilitadas automaticamente uma única vez para usuários que já tinham a v2.8.2;
+            - o usuário continua podendo ativar/desativar cada fonte normalmente;
+            - busca manual e automática aproximadamente a cada 1 hora.
 
-            Fontes:
-            - mantém Globoplay/Globo, R7/Record, CNN Brasil, SBT News, Band e fontes regionais já cadastradas;
-            - YouTube oficial continua disponível como fallback quando configurado.
+            Fontes já existentes:
+            - mantém Globoplay/Globo, R7/Record, CNN Brasil, SBT News, Band e fontes regionais por portal;
+            - fontes de portal e YouTube ficam separadas para identificar claramente a origem do vídeo.
 
             Atualização:
+            - versionCode 283 / versionName 2.8.3;
             - mesmo applicationId e mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v2.8.1 preservando dados e configurações.
-          files: monitor-de-noticias-v2.8.2.apk
+            - instalação direta sobre v2.8.2 preservando dados e configurações.
+          files: monitor-de-noticias-v2.8.3.apk
           make_latest: true

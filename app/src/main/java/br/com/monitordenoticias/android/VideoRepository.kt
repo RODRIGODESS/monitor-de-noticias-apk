@@ -62,7 +62,7 @@ class VideoRepository(
                 }
 
                 fun resolve(item: VideoItem): VideoItem? {
-                    if (isYoutubeUrl(item.link)) return item.copy(link = canonicalizeUrl(item.link))
+                    if (isYoutubeUrl(item.link)) return if (isYoutubeVideoUrl(item.link)) item.copy(link = canonicalizeUrl(item.link)) else null
                     val cacheKey = canonicalKey(item.link)
                     if (resolvedCache.containsKey(cacheKey)) return resolvedCache[cacheKey]
                     val resolved = runCatching { resolveDirectVideoPage(source, item, capturedAt) }
@@ -150,7 +150,7 @@ class VideoRepository(
 
     private fun fetchPageLinks(source: VideoSource, pageUrl: String, capturedAt: Long, fallbackSummary: String): List<VideoItem> {
         val doc = Jsoup.connect(pageUrl)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.2")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.3")
             .referrer("https://www.google.com/")
             .timeout(14_000)
             .followRedirects(true)
@@ -203,7 +203,7 @@ class VideoRepository(
         if (!isSpecificVideoUrl(source, candidate.link)) return null
 
         val doc = Jsoup.connect(candidate.link)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.2")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.3")
             .referrer(source.landingUrl)
             .timeout(14_000)
             .followRedirects(true)
@@ -288,7 +288,7 @@ class VideoRepository(
     private fun fetchYoutube(source: VideoSource, capturedAt: Long): List<VideoItem> {
         val handle = source.youtubeHandle.removePrefix("@")
         val channelPage = Jsoup.connect("https://www.youtube.com/@$handle/videos")
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.2")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.3")
             .timeout(14_000)
             .get()
             .html()
@@ -297,7 +297,7 @@ class VideoRepository(
             ?: return emptyList()
 
         val feed = Jsoup.connect("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
-            .userAgent("Mozilla/5.0 MonitorNoticias/2.8.2")
+            .userAgent("Mozilla/5.0 MonitorNoticias/2.8.3")
             .timeout(14_000)
             .parser(Parser.xmlParser())
             .get()
@@ -323,7 +323,7 @@ class VideoRepository(
 
     private fun isSpecificVideoUrl(source: VideoSource, url: String): Boolean {
         if (url.isBlank()) return false
-        if (isYoutubeUrl(url)) return true
+        if (isYoutubeUrl(url)) return isYoutubeVideoUrl(url)
         val uri = runCatching { URI(url) }.getOrNull() ?: return false
         val path = uri.path.orEmpty()
         val normalizedPath = path.lowercase().trimEnd('/')
@@ -352,7 +352,7 @@ class VideoRepository(
 
     private fun isDirectResult(item: VideoItem): Boolean {
         if (!usefulTitle(item.title)) return false
-        if (isYoutubeUrl(item.link)) return true
+        if (isYoutubeUrl(item.link)) return isYoutubeVideoUrl(item.link)
         val source = VideoSourceCatalog.byId[item.sourceId] ?: return false
         return isSpecificVideoUrl(source, item.link)
     }
@@ -360,6 +360,26 @@ class VideoRepository(
     private fun isYoutubeUrl(url: String): Boolean {
         val host = runCatching { URI(url).host.orEmpty().lowercase() }.getOrDefault("")
         return host == "youtu.be" || host.endsWith("youtube.com")
+    }
+
+    private fun isYoutubeVideoUrl(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val host = uri.host.orEmpty().lowercase()
+        val path = uri.path.orEmpty().trim('/')
+        if (host == "youtu.be") return path.substringBefore('/').length >= 6
+        if (!host.endsWith("youtube.com")) return false
+
+        if (uri.path.equals("/watch", ignoreCase = true)) {
+            val videoId = uri.rawQuery.orEmpty()
+                .split('&')
+                .firstOrNull { it.startsWith("v=") }
+                ?.substringAfter("v=")
+                .orEmpty()
+            return videoId.length >= 6
+        }
+
+        val parts = path.split('/').filter { it.isNotBlank() }
+        return parts.size >= 2 && parts.first().lowercase() in setOf("shorts", "live") && parts[1].length >= 6
     }
 
     private fun canonicalizeUrl(value: String): String {

@@ -92,57 +92,42 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v3.0.0 release asset
+      - name: Prepare v3.0.1 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.0.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.1.apk
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.0
+          tag_name: v3.0.1
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v3.0.0
+          name: Monitor de Notícias Android v3.0.1
           body: |
-            Monitor de Notícias Android v3.0.0 — buscas em tempo real.
+            Monitor de Notícias Android v3.0.1 — Demandas silenciosas sem achados e varredura de Vídeos otimizada.
 
-            Resultados progressivos:
-            - notícias encontradas entram na tela enquanto as demais consultas continuam;
-            - vídeos validados entram imediatamente na aba Vídeos, sem esperar o fim da varredura;
-            - Demandas são atualizadas progressivamente durante a busca manual;
-            - busca por período de Notícias e Vídeos também usa atualização progressiva.
+            Demandas na tela inicial:
+            - o card deixa de mostrar apenas a quantidade de Demandas cadastradas;
+            - passa a destacar somente Demandas que realmente tiveram resultado na última verificação;
+            - quando nenhuma Demanda é encontrada, a tela inicial não exibe mais uma faixa de sucesso só porque as Demandas foram verificadas;
+            - falhas continuam sendo exibidas e resultados encontrados continuam sendo destacados.
 
-            Painel operacional em tempo real:
-            - cronômetro da busca em segundos;
-            - consulta atual, fonte/canal atual e Termo/Demanda em execução;
-            - consultas concluídas/total, encontrados, novos e falhas;
-            - barra de progresso durante Notícias, Vídeos e Demandas.
+            Monitor de Vídeos:
+            - Globoplay/telejornais e canais oficiais do YouTube passam a fazer uma coleta recente por fonte;
+            - todos os Termos e Demandas são cruzados localmente depois da coleta, reduzindo drasticamente o número de requisições;
+            - evita o cenário de milhares de consultas geradas pela combinação fonte x termo;
+            - mantém análise profunda de título, descrição, tags, keywords e metadados estruturados do Globoplay;
+            - mantém resultados progressivos, links diretos, deduplicação e palavra inteira para siglas.
 
-            Fontes:
-            - Fontes agora funciona como uma área própria com abas Notícias e Vídeos;
-            - Fontes de Vídeo saem da lista principal da aba Vídeos;
-            - mantém Nacionais / Estados / Região / UF, pesquisa e Selecionar/Limpar visíveis;
-            - mantém catálogo de telejornais Globo/Globoplay, portais e canais oficiais do YouTube.
-
-            Tela inicial:
-            - card Monitor de Vídeos padronizado com total armazenado, novos de hoje, Demandas e fontes ativas;
-            - durante uma busca o card mostra o progresso e os números em tempo real.
-
-            Globoplay profundo:
-            - resultados /v/<id> do Globoplay são resolvidos antes do descarte por Termo;
-            - título, descrição, keywords, tags, article:tag, video:tag e metadados estruturados passam a ser analisados;
-            - aumenta a quantidade de candidatos analisados por consulta no Globoplay;
-            - permite encontrar vídeos em que o Termo aparece em tags/metadados, mesmo que não esteja no título do card da busca;
-            - mantém link direto, palavra inteira para siglas e deduplicação.
-
-            Cobertura e segundo plano:
-            - mantém telejornais nacionais e regionais por UF;
-            - mantém CNN Brasil, Jovem Pan News, GloboNews, Record News, Jornal da Record, Band Jornalismo/BandNews e SBT News no YouTube;
-            - busca automática continua aproximadamente a cada 1 hora, sujeita ao gerenciamento de bateria/Doze do Android.
+            Agenda automática de vídeos:
+            - horários-alvo: 08h, 12h, 15h, 19h e 21h no horário local do aparelho;
+            - a busca manual continua disponível a qualquer momento;
+            - Android/Doze pode atrasar alguns minutos uma execução em segundo plano;
+            - a agenda horária antiga é removida automaticamente ao atualizar.
 
             Atualização:
-            - versionCode 300 / versionName 3.0.0;
+            - versionCode 301 / versionName 3.0.1;
             - mesmo applicationId e mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v2.9.0 preservando dados e configurações.
-          files: monitor-de-noticias-v3.0.0.apk
+            - instalação direta sobre v3.0.0 preservando dados e configurações.
+          files: monitor-de-noticias-v3.0.1.apk
           make_latest: true

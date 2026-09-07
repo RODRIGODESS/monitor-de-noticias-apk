@@ -60,12 +60,16 @@ class VideoRepository(
             var completed = 0
 
             val plan = sources.associateWith { source ->
-                buildList {
-                    terms.forEach { term -> add(QuerySpec(query = term, term = term)) }
-                    demands
-                        .filter { demand -> sourceMatchesDemand(source, demand.vehicle) }
-                        .forEach { demand -> add(QuerySpec(query = demand.subject, demand = demand)) }
-                }.distinctBy { spec -> "${normalize(spec.query)}|${spec.term}|${spec.demand?.id ?: 0L}" }
+                if (isSourceScanMode(source)) {
+                    listOf(QuerySpec(query = ""))
+                } else {
+                    buildList {
+                        terms.forEach { term -> add(QuerySpec(query = term, term = term)) }
+                        demands
+                            .filter { demand -> sourceMatchesDemand(source, demand.vehicle) }
+                            .forEach { demand -> add(QuerySpec(query = demand.subject, demand = demand)) }
+                    }.distinctBy { spec -> "${normalize(spec.query)}|${spec.term}|${spec.demand?.id ?: 0L}" }
+                }
             }
             val total = plan.values.sumOf { it.size }
 
@@ -119,7 +123,8 @@ class VideoRepository(
                 }
 
                 specs.forEach { spec ->
-                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, spec.query)))
+                    val progressQuery = spec.query.ifBlank { "Termos/Demandas" }
+                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery)))
                     val searched = if (source.searchUrlTemplate.isNotBlank()) {
                         runCatching { fetchSearchWebsite(source, spec.query, capturedAt) }
                             .onFailure { errors++ }
@@ -176,11 +181,11 @@ class VideoRepository(
 
                         // Emissão imediata: o card entra na aba Vídeos enquanto as
                         // demais fontes/termos continuam sendo consultados.
-                        onUpdate?.invoke(VideoSearchUpdate(progress(source.name, spec.query), listOf(merged)))
+                        onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery), listOf(merged)))
                     }
 
                     completed++
-                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, spec.query)))
+                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery)))
                 }
             }
 
@@ -483,6 +488,9 @@ class VideoRepository(
         source.landingUrl.contains("globoplay.globo.com", ignoreCase = true) ||
             source.searchUrlTemplate.contains("globoplay.globo.com", ignoreCase = true) ||
             source.id.startsWith("globoplay-") || source.id.startsWith("video-globoplay")
+
+    private fun isSourceScanMode(source: VideoSource): Boolean =
+        isGloboplaySource(source) || source.youtubeHandle.isNotBlank()
 
     private fun hasSpecificSuffix(path: String, marker: String): Boolean {
         val index = path.indexOf(marker, ignoreCase = true)

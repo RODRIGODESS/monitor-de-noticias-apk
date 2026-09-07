@@ -179,8 +179,8 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
             val finished = System.currentTimeMillis()
             val status = when {
                 errors == active.size -> "⚠ As buscas de demandas falharam"
-                fresh > 0 -> "✓ ${active.size} demanda(s) verificadas • $fresh nova(s) matéria(s)"
-                else -> "✓ ${active.size} demanda(s) verificadas • nenhuma matéria nova"
+                found > 0 -> "✓ $found resultado(s) de demanda encontrado(s)"
+                else -> "Pronto"
             }
             _state.value = _state.value.copy(
                 demandSearchBusy = false,
@@ -221,10 +221,10 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
             val finished = System.currentTimeMillis()
             val status = if (result.error != null) {
                 "⚠ Falha ao pesquisar ${demand.vehicle}"
-            } else if (result.newCount > 0) {
-                "✓ ${demand.vehicle}: ${result.newCount} nova(s) matéria(s)"
+            } else if (result.foundCount > 0) {
+                "✓ ${demand.vehicle}: ${result.foundCount} resultado(s) encontrado(s)"
             } else {
-                "✓ ${demand.vehicle}: busca concluída • ${result.foundCount} resultado(s)"
+                "Pronto"
             }
             _state.value = _state.value.copy(
                 demandBusyId = null,

@@ -4,6 +4,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import java.net.URI
+import java.text.Normalizer
 
 class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1) {
     override fun onCreate(db: SQLiteDatabase) {
@@ -44,9 +46,6 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
                 if (id != -1L) {
                     inserted += item.copy(id = id)
                 } else {
-                    // Vídeos já capturados na v2.8 podem passar a corresponder a um
-                    // Termo/Demanda na v2.8.1. Atualizamos a classificação sem
-                    // contabilizar novamente como conteúdo novo.
                     val update = ContentValues().apply {
                         put("title", item.title)
                         put("source_id", item.sourceId)
@@ -65,6 +64,32 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
             writableDatabase.endTransaction()
         }
         return inserted
+    }
+
+    /**
+     * Remove resultados antigos da v2.8/v2.8.1 que eram páginas de listagem,
+     * como "Todos os vídeos", /videos ou páginas de busca. Eles não são vídeos
+     * individuais e por isso não devem aparecer na interface da v2.8.2.
+     */
+    fun removeInvalidListingEntries(): Int {
+        val ids = mutableListOf<Long>()
+        readableDatabase.rawQuery("SELECT id,title,link FROM videos", null).use { c ->
+            while (c.moveToNext()) {
+                val id = c.getLong(0)
+                val title = c.getString(1).orEmpty()
+                val link = c.getString(2).orEmpty()
+                if (isGenericStoredResult(title, link)) ids += id
+            }
+        }
+        if (ids.isEmpty()) return 0
+        writableDatabase.beginTransaction()
+        try {
+            ids.forEach { id -> writableDatabase.delete("videos", "id=?", arrayOf(id.toString())) }
+            writableDatabase.setTransactionSuccessful()
+        } finally {
+            writableDatabase.endTransaction()
+        }
+        return ids.size
     }
 
     fun listRecent(days: Int = 7, limit: Int = 500): List<VideoItem> {
@@ -105,5 +130,32 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
                 }
             }
         }
+    }
+
+    private fun isGenericStoredResult(title: String, link: String): Boolean {
+        val normalizedTitle = normalize(title)
+        if (normalizedTitle in GENERIC_TITLES || normalizedTitle.startsWith("todos os videos")) return true
+
+        val uri = runCatching { URI(link) }.getOrNull() ?: return false
+        val path = uri.path.orEmpty().lowercase().trimEnd('/')
+        if (path in GENERIC_PATHS) return true
+        if (path.endsWith("/busca") || path.endsWith("/search")) return true
+        if (path.contains("/busca/") || path.contains("/search/")) return true
+        return false
+    }
+
+    private fun normalize(value: String): String = Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
+        .replace(Regex("\\p{Mn}+"), "")
+        .replace(Regex("[^a-z0-9]+"), " ")
+        .trim()
+
+    companion object {
+        private val GENERIC_TITLES = setOf(
+            "videos", "video", "todos os videos", "todos videos", "ultimos videos", "mais videos",
+            "ver videos", "ver todos os videos", "ao vivo", "assistir ao vivo", "carregar mais", "ver mais", "ver tudo"
+        )
+        private val GENERIC_PATHS = setOf(
+            "/videos", "/video", "/ao-vivo", "/busca", "/search", "/categorias/jornalismo"
+        )
     }
 }

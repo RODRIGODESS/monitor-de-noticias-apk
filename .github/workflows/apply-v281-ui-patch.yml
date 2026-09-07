@@ -1,0 +1,36 @@
+name: Apply v2.8.1 UI patch
+
+on:
+  push:
+    branches: ["feature/v2.8.1-demand-links-video-terms"]
+    paths:
+      - "scripts/apply_v281_ui_patch.py"
+      - ".github/workflows/apply-v281-ui-patch.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/v2.8.1-demand-links-video-terms
+          fetch-depth: 0
+
+      - name: Apply patch
+        run: python3 scripts/apply_v281_ui_patch.py
+
+      - name: Commit patched UI
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt
+          if git diff --cached --quiet; then
+            echo "UI already patched"
+            exit 0
+          fi
+          git commit -m "ui: expose demand search results in v2.8.1"
+          git push origin HEAD:feature/v2.8.1-demand-links-video-terms

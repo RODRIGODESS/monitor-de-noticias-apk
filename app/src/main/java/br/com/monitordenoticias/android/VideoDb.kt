@@ -66,11 +66,6 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
         return inserted
     }
 
-    /**
-     * Remove resultados antigos da v2.8/v2.8.1 que eram páginas de listagem,
-     * como "Todos os vídeos", /videos ou páginas de busca. Eles não são vídeos
-     * individuais e por isso não devem aparecer na interface da v2.8.2.
-     */
     fun removeInvalidListingEntries(): Int {
         val ids = mutableListOf<Long>()
         readableDatabase.rawQuery("SELECT id,title,link FROM videos", null).use { c ->
@@ -97,7 +92,22 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
         return query("published_at>=?", arrayOf(cutoff.toString()), limit)
     }
 
+    fun listBetween(from: Long, to: Long, limit: Int = 1000): List<VideoItem> =
+        query("published_at>=? AND published_at<=?", arrayOf(from.toString(), to.toString()), limit)
+
     fun listAll(limit: Int = 1000): List<VideoItem> = query(null, null, limit)
+
+    fun updateClassification(link: String, matchedTerm: String, matchedDemand: String) {
+        val values = ContentValues().apply {
+            put("matched_term", matchedTerm)
+            put("matched_demand", matchedDemand)
+        }
+        writableDatabase.update("videos", values, "link=?", arrayOf(link))
+    }
+
+    fun deleteByLink(link: String) {
+        writableDatabase.delete("videos", "link=?", arrayOf(link))
+    }
 
     fun clear() {
         writableDatabase.delete("videos", null, null)

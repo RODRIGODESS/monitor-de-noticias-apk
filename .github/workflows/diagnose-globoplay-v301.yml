@@ -12,22 +12,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Test Globoplay seed expansion
+      - name: Test G1 program pages
         run: |
           set -u
           UA='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36'
-          for pair in '14693620|14938901' '13890065|14937180'; do
-            seed=${pair%%|*}; target=${pair##*|}
-            curl -L --max-time 20 -A "$UA" -o "/tmp/$seed.html" -sS "https://globoplay.globo.com/v/$seed/" || true
-            echo "=== SEED $seed -> TARGET $target ==="
-            if grep -q "/v/$target" "/tmp/$seed.html"; then echo 'TARGET=yes'; else echo 'TARGET=no'; fi
-            grep -Eio '/v/[0-9]+' "/tmp/$seed.html" | sort -u | tail -30 || true
-          done
-
-          echo '=== G1 SEARCH militares ==='
-          curl -L --max-time 20 -A "$UA" -o /tmp/g1.html -sS 'https://g1.globo.com/busca/?q=militares' || true
-          echo "bytes=$(wc -c < /tmp/g1.html)"
-          for id in 14938901 14937913 14937180; do
-            if grep -q "$id" /tmp/g1.html; then echo "G1_$id=yes"; else echo "G1_$id=no"; fi
-          done
-          grep -Eio 'https?[^" ]+[0-9]{8}\.ghtml' /tmp/g1.html | head -20 || true
+          while IFS='|' read -r url target; do
+            [ -z "$url" ] && continue
+            echo "=== $url ==="
+            code=$(curl -L --max-time 20 -A "$UA" -o /tmp/g1prog.html -sS -w '%{http_code}' "$url" || true)
+            echo "HTTP=$code bytes=$(wc -c < /tmp/g1prog.html 2>/dev/null || echo 0)"
+            if grep -q "$target" /tmp/g1prog.html; then echo "TARGET_$target=yes"; else echo "TARGET_$target=no"; fi
+            grep -Eio 'https?[^" ]+video/[^" ]+[0-9]{7,9}\.ghtml' /tmp/g1prog.html | head -10 || true
+            grep -Eio '/v/[0-9]+' /tmp/g1prog.html | sort -u | tail -15 || true
+          done <<'EOF'
+          https://g1.globo.com/to/tocantins/videos-bom-dia-tocantins/|14937913
+          https://g1.globo.com/ma/maranhao/videos-bom-dia-mirante/|14937180
+          https://g1.globo.com/se/sergipe/videos-setv-1-edicao/|14938901
+          EOF

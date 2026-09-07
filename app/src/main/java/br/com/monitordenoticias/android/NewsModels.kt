@@ -14,7 +14,12 @@ data class News(
     val capturedAt: Long = System.currentTimeMillis()
 )
 
-data class Demand(val id: Long = 0, val vehicle: String, val subject: String, val active: Boolean = true)
+data class Demand(
+    val id: Long = 0,
+    val vehicle: String,
+    val subject: String,
+    val active: Boolean = true
+)
 
 data class SearchResult(
     val items: List<News>,
@@ -34,5 +39,11 @@ data class AppState(
     val status: String = "Pronto",
     val intervalMinutes: Int = 30,
     val lastUpdatedAt: Long? = null,
-    val showOnlyDemands: Boolean = false
+    val showOnlyDemands: Boolean = false,
+    val selectedSourceIds: Set<String> = emptySet(),
+    val searchAllSources: Boolean = true,
+    val periodStartDate: String = "",
+    val periodStartTime: String = "00:00",
+    val periodEndDate: String = "",
+    val periodEndTime: String = "23:59"
 )

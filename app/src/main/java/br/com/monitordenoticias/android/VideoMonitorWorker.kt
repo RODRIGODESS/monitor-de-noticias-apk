@@ -62,7 +62,7 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
                 return Result.success()
             }
 
-            val result = VideoRepository(applicationContext, db).search(sources)
+            val result = VideoRepositoryV301(applicationContext, db).search(sources)
             db.removeInvalidListingEntries()
             db.repairStoredMatches()
             VideoAutoRunLog.markCompleted(applicationContext, result)

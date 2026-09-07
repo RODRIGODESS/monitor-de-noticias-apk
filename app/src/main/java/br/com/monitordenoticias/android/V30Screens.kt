@@ -52,6 +52,7 @@ fun V30Home(
     val now = System.currentTimeMillis()
     val news24h = news.news.count { it.date >= now - 24L * 60L * 60L * 1000L }
     val videoDemands = videos.items.count { it.demand }
+    val matchedDemands = news.demands.count { it.lastFoundCount > 0 }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -95,7 +96,7 @@ fun V30Home(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 V30Metric("Notícias 24h", news24h.toString(), Icons.Outlined.Article, V30Accent, Modifier.weight(1f))
-                V30Metric("Demandas", news.demands.size.toString(), Icons.Outlined.NotificationsActive, V30Amber, Modifier.weight(1f))
+                V30Metric("Demandas", matchedDemands.toString(), Icons.Outlined.NotificationsActive, if (matchedDemands > 0) V30Amber else V30Text2, Modifier.weight(1f))
             }
         }
 
@@ -198,6 +199,7 @@ fun V30Videos(s: VideoState, vm: VideoViewModel, openSources: () -> Unit) {
                     } else {
                         Spacer(Modifier.height(8.dp))
                         Text("Os cards entram nesta tela assim que cada vídeo é validado, sem esperar o fim da varredura.", color = V30Text2, fontSize = 10.5.sp)
+                        Text("Automática: 08h • 12h • 15h • 19h • 21h • busca manual sempre disponível", color = V30Purple, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }

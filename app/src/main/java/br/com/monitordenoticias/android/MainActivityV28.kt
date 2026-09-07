@@ -778,7 +778,7 @@ private fun V28Settings(s: AppState, vm: MonitorViewModel, videos: VideoState) {
             Surface(color = V28Surface, shape = RoundedCornerShape(17.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
                     Text("Intervalo de notícias", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Text("Vídeos e demandas permanecem em aproximadamente 1 hora", color = V28Text2, fontSize = 11.sp)
+                    Text("Vídeos: 08h, 12h, 15h, 19h e 21h • Demandas: aproximadamente 1 hora", color = V28Text2, fontSize = 11.sp)
                     Spacer(Modifier.height(9.dp))
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         listOf(15, 30, 45, 60).forEach { minutes -> V28Chip("$minutes min", s.intervalMinutes == minutes) { vm.setInterval(minutes) } }

@@ -17,7 +17,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         removeInvalidListingEntries()
         repairStoredMatches()
     }
-    private val repo = VideoRepository(app, db)
+    private val repo = VideoRepositoryV301(app, db)
     private val prefs = app.getSharedPreferences(BackgroundMonitor.PREFS, 0)
     private val locale = Locale("pt", "BR")
 

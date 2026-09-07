@@ -14,15 +14,24 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
                 ?.filter { VideoSourceCatalog.byId.containsKey(it) }
                 ?.toSet()
 
-            val selectedIds = if (!prefs.getBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, false)) {
-                val merged = (existing ?: VideoSourceCatalog.defaultIds) + VideoSourceCatalog.youtubeOfficialIds
-                prefs.edit()
-                    .putStringSet(VideoViewModel.KEY_SELECTED_SOURCES, merged)
-                    .putBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, true)
-                    .apply()
-                merged
-            } else {
-                existing ?: VideoSourceCatalog.defaultIds
+            var selectedIds = existing ?: VideoSourceCatalog.defaultIds
+            var changed = false
+            val editor = prefs.edit()
+
+            if (!prefs.getBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, false)) {
+                selectedIds = selectedIds + VideoSourceCatalog.youtubeOfficialIds
+                editor.putBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, true)
+                changed = true
+            }
+
+            if (!prefs.getBoolean(VideoViewModel.KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, false)) {
+                selectedIds = selectedIds + VideoSourceCatalog.globoplayTelejournalIds
+                editor.putBoolean(VideoViewModel.KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, true)
+                changed = true
+            }
+
+            if (changed || existing == null) {
+                editor.putStringSet(VideoViewModel.KEY_SELECTED_SOURCES, selectedIds).apply()
             }
 
             val sources = VideoSourceCatalog.selected(selectedIds)

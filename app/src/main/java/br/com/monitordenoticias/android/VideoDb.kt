@@ -69,7 +69,7 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
     /**
      * Remove resultados antigos da v2.8/v2.8.1 que eram páginas de listagem,
      * como "Todos os vídeos", /videos ou páginas de busca. Eles não são vídeos
-     * individuais e por isso não devem aparecer na interface da v2.8.2.
+     * individuais e por isso não devem aparecer na interface.
      */
     fun removeInvalidListingEntries(): Int {
         val ids = mutableListOf<Long>()
@@ -92,10 +92,73 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
         return ids.size
     }
 
+    /**
+     * Corrige resultados salvos por versões anteriores quando um termo curto foi
+     * confundido com parte de outra palavra. Ex.: o termo "FAB" não pode casar
+     * com "fábrica". Mantém o vídeo quando ainda existir outro vínculo válido.
+     */
+    fun repairStoredMatches(): Int {
+        data class Repair(val id: Long, val term: String?, val demand: String?, val delete: Boolean)
+        val repairs = mutableListOf<Repair>()
+
+        readableDatabase.rawQuery(
+            "SELECT id,title,summary,matched_term,matched_demand FROM videos",
+            null
+        ).use { c ->
+            while (c.moveToNext()) {
+                val id = c.getLong(0)
+                val body = "${c.getString(1).orEmpty()} ${c.getString(2).orEmpty()}"
+                val matchedTerm = c.getString(3).orEmpty()
+                val matchedDemand = c.getString(4).orEmpty()
+
+                val termValid = matchedTerm.isBlank() || phraseMatchesStrict(body, matchedTerm)
+                val demandSubject = matchedDemand.substringAfter(" • ", missingDelimiterValue = matchedDemand).trim()
+                val demandValid = matchedDemand.isBlank() || (demandSubject.isNotBlank() && phraseMatchesStrict(body, demandSubject))
+
+                if (termValid && demandValid) continue
+                val keepTerm = if (termValid) matchedTerm else ""
+                val keepDemand = if (demandValid) matchedDemand else ""
+                repairs += Repair(
+                    id = id,
+                    term = keepTerm,
+                    demand = keepDemand,
+                    delete = keepTerm.isBlank() && keepDemand.isBlank()
+                )
+            }
+        }
+
+        if (repairs.isEmpty()) return 0
+        writableDatabase.beginTransaction()
+        try {
+            repairs.forEach { repair ->
+                if (repair.delete) {
+                    writableDatabase.delete("videos", "id=?", arrayOf(repair.id.toString()))
+                } else {
+                    val values = ContentValues().apply {
+                        put("matched_term", repair.term.orEmpty())
+                        put("matched_demand", repair.demand.orEmpty())
+                    }
+                    writableDatabase.update("videos", values, "id=?", arrayOf(repair.id.toString()))
+                }
+            }
+            writableDatabase.setTransactionSuccessful()
+        } finally {
+            writableDatabase.endTransaction()
+        }
+        return repairs.size
+    }
+
     fun listRecent(days: Int = 7, limit: Int = 500): List<VideoItem> {
         val cutoff = System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L
         return query("published_at>=?", arrayOf(cutoff.toString()), limit)
     }
+
+    fun listPeriod(from: Long, to: Long, limit: Int = 1000): List<VideoItem> =
+        query(
+            "published_at>=? AND published_at<=?",
+            arrayOf(from.toString(), to.toString()),
+            limit
+        )
 
     fun listAll(limit: Int = 1000): List<VideoItem> = query(null, null, limit)
 
@@ -144,12 +207,26 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
         return false
     }
 
+    private fun phraseMatchesStrict(text: String, phrase: String): Boolean {
+        val haystack = normalize(text)
+        val wanted = normalize(phrase)
+        if (wanted.isBlank()) return false
+        val hayTokens = haystack.split(' ').filter { it.isNotBlank() }.toSet()
+        val wantedTokens = wanted.split(' ').filter { it.isNotBlank() }
+        if (wantedTokens.isEmpty()) return false
+        if (wantedTokens.size == 1) return wantedTokens.first() in hayTokens
+        if (" $haystack ".contains(" $wanted ")) return true
+        val meaningful = wantedTokens.filter { it.length >= 3 && it !in STOP_WORDS }
+        return meaningful.isNotEmpty() && meaningful.all { it in hayTokens }
+    }
+
     private fun normalize(value: String): String = Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
         .replace(Regex("\\p{Mn}+"), "")
         .replace(Regex("[^a-z0-9]+"), " ")
         .trim()
 
     companion object {
+        private val STOP_WORDS = setOf("de", "do", "da", "dos", "das", "e", "em", "no", "na", "nos", "nas", "a", "o", "as", "os")
         private val GENERIC_TITLES = setOf(
             "videos", "video", "todos os videos", "todos videos", "ultimos videos", "mais videos",
             "ver videos", "ver todos os videos", "ao vivo", "assistir ao vivo", "carregar mais", "ver mais", "ver tudo"

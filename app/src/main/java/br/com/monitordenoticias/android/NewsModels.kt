@@ -67,5 +67,19 @@ data class AppState(
     val periodStartDate: String = "",
     val periodStartTime: String = "00:00",
     val periodEndDate: String = "",
-    val periodEndTime: String = "23:59"
+    val periodEndTime: String = "23:59",
+    val autoNewsAttemptAt: Long = 0L,
+    val autoNewsCompletedAt: Long = 0L,
+    val autoNewsFound: Int = 0,
+    val autoNewsNew: Int = 0,
+    val autoNewsErrors: Int = 0,
+    val autoNewsErrorText: String = "",
+    val autoDemandAttemptAt: Long = 0L,
+    val autoDemandCompletedAt: Long = 0L,
+    val autoDemandChecked: Int = 0,
+    val autoDemandFound: Int = 0,
+    val autoDemandNew: Int = 0,
+    val autoDemandErrors: Int = 0,
+    val autoDemandErrorText: String = "",
+    val nextBackgroundHeartbeatAt: Long = 0L
 )

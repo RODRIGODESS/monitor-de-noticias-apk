@@ -39,6 +39,11 @@ data class VideoSearchResult(
     val errors: Int
 )
 
+data class VideoSearchUpdate(
+    val progress: LiveSearchProgress,
+    val items: List<VideoItem> = emptyList()
+)
+
 data class VideoState(
     val items: List<VideoItem> = emptyList(),
     val selectedSourceIds: Set<String> = emptySet(),
@@ -49,7 +54,10 @@ data class VideoState(
     val periodStartDate: String = "",
     val periodStartTime: String = "",
     val periodEndDate: String = "",
-    val periodEndTime: String = ""
+    val periodEndTime: String = "",
+    val searchProgress: LiveSearchProgress = LiveSearchProgress(),
+    val totalStored: Int = 0,
+    val capturedToday: Int = 0
 )
 
 enum class VideoFilter { ALL, RELEVANT, DEMANDS }

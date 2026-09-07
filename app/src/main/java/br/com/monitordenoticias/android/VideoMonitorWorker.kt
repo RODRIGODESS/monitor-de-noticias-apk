@@ -17,30 +17,42 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
                 ?.filter { VideoSourceCatalog.byId.containsKey(it) }
                 ?.toSet()
 
-            var selectedIds = existing ?: VideoSourceCatalog.defaultIds
-            var changed = false
-            val editor = prefs.edit()
+            val selectedIds = if (existing == null) {
+                // Instalações novas da v2.9 começam apenas com as fontes nacionais.
+                // O catálogo regional é grande e deve ser escolhido por Região/UF.
+                VideoSourceCatalog.defaultIds.also { defaults ->
+                    prefs.edit()
+                        .putStringSet(VideoViewModel.KEY_SELECTED_SOURCES, defaults)
+                        .putBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, true)
+                        .putBoolean(VideoViewModel.KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, true)
+                        .putBoolean(VideoViewModel.KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, true)
+                        .apply()
+                }
+            } else {
+                var selected = existing
+                var changed = false
+                val editor = prefs.edit()
 
-            if (!prefs.getBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, false)) {
-                selectedIds = selectedIds + VideoSourceCatalog.youtubeOfficialIds
-                editor.putBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, true)
-                changed = true
-            }
+                if (!prefs.getBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, false)) {
+                    selected = selected + VideoSourceCatalog.youtubeOfficialIds
+                    editor.putBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, true)
+                    changed = true
+                }
 
-            if (!prefs.getBoolean(VideoViewModel.KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, false)) {
-                selectedIds = selectedIds + VideoSourceCatalog.globoplayTelejournalIds
-                editor.putBoolean(VideoViewModel.KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, true)
-                changed = true
-            }
+                if (!prefs.getBoolean(VideoViewModel.KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, false)) {
+                    selected = selected + V284_STARTER_IDS.filter { VideoSourceCatalog.byId.containsKey(it) }
+                    editor.putBoolean(VideoViewModel.KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, true)
+                    changed = true
+                }
 
-            if (!prefs.getBoolean(VideoViewModel.KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, false)) {
-                selectedIds = selectedIds + VideoSourceCatalog.globoplayRegionalSweepIds
-                editor.putBoolean(VideoViewModel.KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, true)
-                changed = true
-            }
+                if (!prefs.getBoolean(VideoViewModel.KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, false)) {
+                    selected = selected + VideoSourceCatalog.globoplayRegionalSweepIds
+                    editor.putBoolean(VideoViewModel.KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, true)
+                    changed = true
+                }
 
-            if (changed || existing == null) {
-                editor.putStringSet(VideoViewModel.KEY_SELECTED_SOURCES, selectedIds).apply()
+                if (changed) editor.putStringSet(VideoViewModel.KEY_SELECTED_SOURCES, selected).apply()
+                selected
             }
 
             val sources = VideoSourceCatalog.selected(selectedIds)
@@ -67,5 +79,14 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
         } finally {
             db.close()
         }
+    }
+
+    companion object {
+        private val V284_STARTER_IDS = setOf(
+            "globoplay-bom-dia-brasil", "globoplay-hora-1", "globoplay-jornal-hoje", "globoplay-jornal-nacional", "globoplay-jornal-da-globo",
+            "globoplay-bom-dia-sp", "globoplay-sp1", "globoplay-sp2", "globoplay-bom-dia-rio", "globoplay-rj1", "globoplay-rj2",
+            "globoplay-bom-dia-es", "globoplay-gazeta-meio-dia-es", "globoplay-bom-dia-minas", "globoplay-mg1", "globoplay-df1",
+            "globoplay-bom-dia-rio-grande", "globoplay-tj1-tapajos", "globoplay-tj2-tapajos"
+        )
     }
 }

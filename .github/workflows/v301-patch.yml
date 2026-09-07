@@ -1,0 +1,127 @@
+name: Apply v3.0.1 fixes
+
+on:
+  push:
+    branches: ["fix/v3.0.1-demand-video-schedule"]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v3.0.1-demand-video-schedule
+          fetch-depth: 0
+
+      - name: Apply targeted fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, label):
+              p = Path(path)
+              text = p.read_text()
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f"{label}: expected snippet not found in {path}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Home: Demandas only highlights actual findings, not number configured.
+          replace_once(
+              'app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt',
+              '    val videoDemands = videos.items.count { it.demand }\n',
+              '    val videoDemands = videos.items.count { it.demand }\n    val demandHits = news.demands.count { it.lastFoundCount > 0 }\n',
+              'home demand hit count'
+          )
+          replace_once(
+              'app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt',
+              '                V30Metric("Demandas", news.demands.size.toString(), Icons.Outlined.NotificationsActive, V30Amber, Modifier.weight(1f))',
+              '                V30Metric("Demandas encontradas", demandHits.toString(), Icons.Outlined.NotificationsActive, if (demandHits > 0) V30Amber else V30Text2, Modifier.weight(1f))',
+              'home demand metric'
+          )
+
+          # Demand status strip: no success banner merely for checking with zero hits.
+          replace_once(
+              'app/src/main/java/br/com/monitordenoticias/android/MonitorViewModel.kt',
+              '''                result.checkedCount == 0 -> "Nenhuma demanda ativa para pesquisar"\n                result.errors == result.checkedCount -> "⚠ As buscas de demandas falharam"\n                result.newCount > 0 -> "✓ ${result.checkedCount} demanda(s) verificadas • ${result.newCount} nova(s) matéria(s)"\n                else -> "✓ ${result.checkedCount} demanda(s) verificadas • nenhuma matéria nova"''',
+              '''                result.checkedCount == 0 -> "Pronto"\n                result.errors == result.checkedCount -> "⚠ As buscas de demandas falharam"\n                result.foundCount > 0 -> "✓ ${result.foundCount} resultado(s) de demanda encontrado(s)"\n                else -> "Pronto"''',
+              'all demands status'
+          )
+          replace_once(
+              'app/src/main/java/br/com/monitordenoticias/android/MonitorViewModel.kt',
+              '''            val status = if (result.error != null) {\n                "⚠ Falha ao pesquisar ${demand.vehicle}"\n            } else if (result.newCount > 0) {\n                "✓ ${demand.vehicle}: ${result.newCount} nova(s) matéria(s)"\n            } else {\n                "✓ ${demand.vehicle}: busca concluída • ${result.foundCount} resultado(s)"\n            }''',
+              '''            val status = if (result.error != null) {\n                "⚠ Falha ao pesquisar ${demand.vehicle}"\n            } else if (result.foundCount > 0) {\n                "✓ ${demand.vehicle}: ${result.foundCount} resultado(s) encontrado(s)"\n            } else {\n                "Pronto"\n            }''',
+              'single demand status'
+          )
+
+          # Video search: Globoplay and official YouTube are scanned once per source,
+          # then all configured Terms/Demands are matched locally. This replaces the
+          # source x term explosion that produced thousands of requests and many failures.
+          replace_once(
+              'app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt',
+              '''            val plan = sources.associateWith { source ->\n                buildList {\n                    terms.forEach { term -> add(QuerySpec(query = term, term = term)) }\n                    demands\n                        .filter { demand -> sourceMatchesDemand(source, demand.vehicle) }\n                        .forEach { demand -> add(QuerySpec(query = demand.subject, demand = demand)) }\n                }.distinctBy { spec -> "${normalize(spec.query)}|${spec.term}|${spec.demand?.id ?: 0L}" }\n            }''',
+              '''            val plan = sources.associateWith { source ->\n                if (isSourceScanMode(source)) {\n                    // Uma única coleta recente por canal/telejornal. Os Termos e\n                    // Demandas são cruzados localmente depois que título, descrição\n                    // e metadados do vídeo foram resolvidos.\n                    listOf(QuerySpec(query = ""))\n                } else {\n                    buildList {\n                        terms.forEach { term -> add(QuerySpec(query = term, term = term)) }\n                        demands\n                            .filter { demand -> sourceMatchesDemand(source, demand.vehicle) }\n                            .forEach { demand -> add(QuerySpec(query = demand.subject, demand = demand)) }\n                    }.distinctBy { spec -> "${normalize(spec.query)}|${spec.term}|${spec.demand?.id ?: 0L}" }\n                }\n            }''',
+              'video search plan'
+          )
+          replace_once(
+              'app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt',
+              '                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, spec.query)))',
+              '                    val progressQuery = spec.query.ifBlank { "Termos/Demandas" }\n                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery)))',
+              'video progress label'
+          )
+          replace_once(
+              'app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt',
+              '                        onUpdate?.invoke(VideoSearchUpdate(progress(source.name, spec.query), listOf(merged)))',
+              '                        onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery), listOf(merged)))',
+              'video progressive result label'
+          )
+          replace_once(
+              'app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt',
+              '                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, spec.query)))\n                }',
+              '                    onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery)))\n                }',
+              'video completed progress label'
+          )
+          replace_once(
+              'app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt',
+              '''    private fun isGloboplaySource(source: VideoSource): Boolean =\n        source.landingUrl.contains("globoplay.globo.com", ignoreCase = true) ||\n            source.searchUrlTemplate.contains("globoplay.globo.com", ignoreCase = true) ||\n            source.id.startsWith("globoplay-") || source.id.startsWith("video-globoplay")\n''',
+              '''    private fun isGloboplaySource(source: VideoSource): Boolean =\n        source.landingUrl.contains("globoplay.globo.com", ignoreCase = true) ||\n            source.searchUrlTemplate.contains("globoplay.globo.com", ignoreCase = true) ||\n            source.id.startsWith("globoplay-") || source.id.startsWith("video-globoplay")\n\n    private fun isSourceScanMode(source: VideoSource): Boolean =\n        isGloboplaySource(source) || source.youtubeHandle.isNotBlank()\n''',
+              'video scan-mode helper'
+          )
+
+          # Version and release metadata.
+          replace_once(
+              'app/build.gradle.kts',
+              '        versionCode = 300\n        versionName = "3.0.0"',
+              '        versionCode = 301\n        versionName = "3.0.1"',
+              'version bump'
+          )
+
+          p = Path('.github/workflows/release.yml')
+          text = p.read_text()
+          text = text.replace('v3.0.0', 'v3.0.1').replace('versionCode 300 / versionName 3.0.0', 'versionCode 301 / versionName 3.0.1')
+          text = text.replace(
+              'busca automática continua aproximadamente a cada 1 hora, sujeita ao gerenciamento de bateria/Doze do Android.',
+              'busca automática de vídeos passa a ter horários-alvo 08h, 12h, 15h, 19h e 21h no horário local do aparelho; o Android pode atrasar alguns minutos por Doze/bateria; busca manual permanece disponível.'
+          )
+          text = text.replace(
+              'Monitor de Notícias Android v3.0.1 — buscas em tempo real.',
+              'Monitor de Notícias Android v3.0.1 — correções de Demandas e varredura de Vídeos.'
+          )
+          p.write_text(text)
+
+          # Remove this one-shot patch workflow before committing.
+          Path('.github/workflows/v301-patch.yml').unlink(missing_ok=True)
+          PY
+
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: demand alerts and efficient scheduled video scans"
+          git push origin HEAD:fix/v3.0.1-demand-video-schedule

@@ -31,37 +31,54 @@ jobs:
           curl -L -o gradle.zip https://services.gradle.org/distributions/gradle-8.11.1-bin.zip
           unzip -q gradle.zip
 
-      - name: Build installable APK
+      - name: Validate code on pull request
+        if: github.event_name == 'pull_request'
         run: ./gradle-8.11.1/bin/gradle --no-daemon :app:assembleDebug
 
-      - name: Verify update compatibility with v2.4.0
+      - name: Prepare permanent signing key
+        if: github.event_name != 'pull_request'
         env:
-          GH_TOKEN: ${{ github.token }}
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          mkdir -p previous
-          gh release download v2.4.0 --repo "$GITHUB_REPOSITORY" --pattern "monitor-de-noticias-v2.4.0.apk" --dir previous
-          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
-          test -n "$APKSIGNER"
-          CURRENT="app/build/outputs/apk/debug/app-debug.apk"
-          PREVIOUS="previous/monitor-de-noticias-v2.4.0.apk"
-          echo "=== v2.4.0 certificate ==="
-          "$APKSIGNER" verify --print-certs "$PREVIOUS"
-          echo "=== v2.5.0 certificate ==="
-          "$APKSIGNER" verify --print-certs "$CURRENT"
-          OLD_CERT=$("$APKSIGNER" verify --print-certs "$PREVIOUS" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
-          NEW_CERT=$("$APKSIGNER" verify --print-certs "$CURRENT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
-          echo "OLD_CERT=$OLD_CERT"
-          echo "NEW_CERT=$NEW_CERT"
-          test -n "$OLD_CERT"
-          test -n "$NEW_CERT"
-          if [ "$OLD_CERT" != "$NEW_CERT" ]; then
-            echo "ERROR: APK signing certificates differ. Publishing would require uninstalling the installed app and could lose local data."
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "ERROR: configure ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD in repository Actions secrets."
             exit 1
           fi
-          echo "UPDATE_COMPATIBLE=true"
+          mkdir -p signing
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > signing/monitor-noticias-release.jks
+          test -s signing/monitor-noticias-release.jks
 
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v2.5.0.apk
+      - name: Build permanently signed migration and release APKs
+        if: github.event_name != 'pull_request'
+        env:
+          ANDROID_SIGNING_STORE_FILE: ${{ github.workspace }}/signing/monitor-noticias-release.jks
+          ANDROID_SIGNING_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: ./gradle-8.11.1/bin/gradle --no-daemon :app:assembleDebug :app:assembleRelease
+
+      - name: Verify permanent signing certificate
+        if: github.event_name != 'pull_request'
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
+          test -n "$APKSIGNER"
+          MIGRATION="app/build/outputs/apk/debug/app-debug.apk"
+          FINAL="app/build/outputs/apk/release/app-release.apk"
+          EXPECTED_CERT="07164d3faf3ee09f241a547d403767c454b226faac26c4b058bc5011d773b1b0"
+          MIGRATION_CERT=$("$APKSIGNER" verify --print-certs "$MIGRATION" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          FINAL_CERT=$("$APKSIGNER" verify --print-certs "$FINAL" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          echo "Migration certificate: $MIGRATION_CERT"
+          echo "Release certificate:   $FINAL_CERT"
+          test "$MIGRATION_CERT" = "$EXPECTED_CERT"
+          test "$FINAL_CERT" = "$EXPECTED_CERT"
+          test "$MIGRATION_CERT" = "$FINAL_CERT"
+          echo "PERMANENT_SIGNING_OK=true"
+
+      - name: Prepare v2.5.0 release assets
+        if: github.event_name != 'pull_request'
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v2.5.0-migration.apk
+          cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.5.0.apk
+          cp tools/migrate_v24_data.py migrate_v24_data.py
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -75,15 +92,24 @@ jobs:
 
             Demandas:
             - pesquisa independente de cada demanda;
-            - monitoramento automático a cada 1 hora via WorkManager;
+            - monitoramento automático aproximadamente a cada 1 hora via WorkManager;
             - botão para pesquisar todas as demandas manualmente;
             - botão de pesquisa individual em cada demanda;
             - registro persistente da última execução, resultados, matérias novas e erros.
 
-            Dados e atualização:
-            - mesma identidade de pacote da v2.4.0;
-            - assinatura digital comparada automaticamente com o APK v2.4.0 antes da publicação;
-            - migração do banco 2 → 3 sem apagar notícias, termos ou demandas existentes;
-            - preferências de fontes, período e intervalo continuam preservadas.
-          files: monitor-de-noticias-v2.5.0.apk
+            Preservação dos dados da v2.4:
+            - a v2.4 foi assinada por uma chave de debug efêmera que não existe mais;
+            - NÃO desinstale a v2.4 antes de criar o backup;
+            - use migrate_v24_data.py com ADB para fazer a transição única;
+            - o APK `-migration` é debuggable e assinado com a nova chave permanente;
+            - o APK final usa a mesma chave permanente;
+            - depois desta migração, futuras versões poderão atualizar normalmente sem apagar os dados.
+
+            Banco:
+            - migração SQLite 2 → 3 sem apagar notícias, termos ou demandas;
+            - fontes, período, intervalo e demais SharedPreferences são preservados pelo backup/restauração.
+          files: |
+            monitor-de-noticias-v2.5.0-migration.apk
+            monitor-de-noticias-v2.5.0.apk
+            migrate_v24_data.py
           make_latest: true

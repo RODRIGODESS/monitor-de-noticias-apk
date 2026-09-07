@@ -16,16 +16,27 @@ class NewsRepository(private val db: NewsDb) {
         "Cisne Branco","Fragata Marinha do Brasil","Navio-Patrulha Marinha","Programa Nuclear da Marinha"
     )
 
-    suspend fun search(selectedSources: List<MediaSource> = emptyList(), searchAllSources: Boolean = true): SearchResult = withContext(Dispatchers.IO) {
+    suspend fun search(
+        selectedSources: List<MediaSource> = emptyList(),
+        searchAllSources: Boolean = true
+    ): SearchResult = withContext(Dispatchers.IO) {
         val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
         performSearch(cutoff, System.currentTimeMillis(), selectedSources, searchAllSources)
     }
 
-    suspend fun searchPeriod(from: Long, to: Long, selectedSources: List<MediaSource> = emptyList(), searchAllSources: Boolean = true): SearchResult = withContext(Dispatchers.IO) {
+    suspend fun searchPeriod(
+        from: Long,
+        to: Long,
+        selectedSources: List<MediaSource> = emptyList(),
+        searchAllSources: Boolean = true
+    ): SearchResult = withContext(Dispatchers.IO) {
         performSearch(from, to, selectedSources, searchAllSources)
     }
 
-    suspend fun searchBlockingCompatible(selectedSources: List<MediaSource> = emptyList(), searchAllSources: Boolean = true): SearchResult = withContext(Dispatchers.IO) {
+    suspend fun searchBlockingCompatible(
+        selectedSources: List<MediaSource> = emptyList(),
+        searchAllSources: Boolean = true
+    ): SearchResult = withContext(Dispatchers.IO) {
         val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
         performSearch(cutoff, System.currentTimeMillis(), selectedSources, searchAllSources)
     }
@@ -41,13 +52,11 @@ class NewsRepository(private val db: NewsDb) {
         var errors = 0
         val raw = mutableListOf<Pair<News, String>>()
 
-        // Always make the broad search so small/local outlets remain discoverable.
         terms.forEach { term ->
             val result = fetchGoogleNews(term)
             if (result == null) errors++ else result.forEach { raw += it to term }
         }
 
-        // With a focused selection, make additional source-targeted searches to improve recall.
         if (!searchAllSources && selectedSources.isNotEmpty() && selectedSources.size <= 24) {
             selectedSources.chunked(8).forEach { batch ->
                 val sourceClause = batch.joinToString(" OR ") { "\"${it.name}\"" }
@@ -61,7 +70,11 @@ class NewsRepository(private val db: NewsDb) {
 
         val classified = raw
             .filter { it.first.date in from..to }
-            .filter { pair -> searchAllSources || selectedSources.any { sourceMatches(pair.first.source, it) } }
+            .filter { pair ->
+                searchAllSources || selectedSources.any { selected ->
+                    sourceMatchesStrict(pair.first.source, selected)
+                }
+            }
             .groupBy { it.first.link }
             .map { (_, matches) ->
                 val base = matches.first().first
@@ -92,15 +105,55 @@ class NewsRepository(private val db: NewsDb) {
         )
     }
 
-    private fun sourceMatches(actualSource: String, selected: MediaSource): Boolean {
-        val actual = normalize(actualSource)
-        return (listOf(selected.name) + selected.aliases).any { alias ->
-            val normalizedAlias = normalize(alias)
-            normalizedAlias.isNotBlank() && (actual.contains(normalizedAlias) || normalizedAlias.contains(actual))
+    /**
+     * Source matching is intentionally conservative.
+     *
+     * The old implementation accepted substring matches. That made an alias such as
+     * "Folha" match "folhavitoria.com.br" when Folha de S.Paulo was selected.
+     * Here a short/single-word alias must match exactly. Multi-word names may also
+     * match the compact publisher/domain key, which still allows values such as
+     * "folhavitoria.com.br" to match the selected source "Folha Vitória".
+     */
+    private fun sourceMatchesStrict(actualSource: String, selected: MediaSource): Boolean {
+        val actualNormalized = normalize(actualSource)
+        val actualKey = compact(actualSource)
+        val hostKey = publisherHostKey(actualSource)
+
+        return (listOf(selected.name) + selected.aliases).any { candidate ->
+            val candidateNormalized = normalize(candidate)
+            val candidateKey = compact(candidate)
+            if (candidateNormalized.isBlank() || candidateKey.isBlank()) {
+                false
+            } else if (
+                actualNormalized == candidateNormalized ||
+                actualKey == candidateKey ||
+                hostKey == candidateKey
+            ) {
+                true
+            } else {
+                val meaningfulTokens = candidateNormalized
+                    .split(' ')
+                    .filter { it.length >= 2 && it !in setOf("de", "do", "da", "dos", "das") }
+
+                meaningfulTokens.size >= 2 &&
+                    candidateKey.length >= 6 &&
+                    (actualKey.startsWith(candidateKey) || hostKey.startsWith(candidateKey))
+            }
         }
     }
 
-    private fun normalize(value: String): String = Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
+    private fun publisherHostKey(value: String): String {
+        val cleaned = value.trim().lowercase()
+        val firstPart = if ('.' in cleaned) cleaned.substringBefore('.') else cleaned
+        return compact(firstPart)
+    }
+
+    private fun compact(value: String): String = normalize(value).replace(" ", "")
+
+    private fun normalize(value: String): String = Normalizer.normalize(
+        value.lowercase(),
+        Normalizer.Form.NFD
+    )
         .replace(Regex("\\p{Mn}+"), "")
         .replace(Regex("[^a-z0-9]+"), " ")
         .trim()
@@ -112,7 +165,7 @@ class NewsRepository(private val db: NewsDb) {
             connectTimeout = 8000
             readTimeout = 10000
             requestMethod = "GET"
-            setRequestProperty("User-Agent", "Mozilla/5.0 MonitorNoticiasAndroid/2.2")
+            setRequestProperty("User-Agent", "Mozilla/5.0 MonitorNoticiasAndroid/2.4")
         }
         try {
             if (con.responseCode !in 200..299) error("HTTP ${con.responseCode}")
@@ -126,24 +179,40 @@ class NewsRepository(private val db: NewsDb) {
                 var date = 0L
                 var desc = ""
                 var inItem = false
+
                 while (event != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
                     when (event) {
                         org.xmlpull.v1.XmlPullParser.START_TAG -> when (parser.name) {
-                            "item" -> { inItem = true; title = ""; link = ""; source = "Google Notícias"; date = 0; desc = "" }
+                            "item" -> {
+                                inItem = true
+                                title = ""
+                                link = ""
+                                source = "Google Notícias"
+                                date = 0
+                                desc = ""
+                            }
                             "title" -> if (inItem) title = parser.nextText()
                             "link" -> if (inItem) link = parser.nextText()
                             "pubDate" -> if (inItem) date = parseDate(parser.nextText())
-                            "description" -> if (inItem) desc = parser.nextText().replace(Regex("<[^>]*>"), "").trim()
+                            "description" -> if (inItem) {
+                                desc = parser.nextText().replace(Regex("<[^>]*>"), "").trim()
+                            }
                             "source" -> if (inItem) source = parser.nextText()
                         }
-                        org.xmlpull.v1.XmlPullParser.END_TAG -> if (parser.name == "item" && inItem) {
-                            if (title.isNotBlank() && link.isNotBlank()) {
-                                result += News(
-                                    title = title.trim(), source = source.trim(), date = date,
-                                    link = link.trim(), snippet = desc.take(500)
-                                )
+
+                        org.xmlpull.v1.XmlPullParser.END_TAG -> {
+                            if (parser.name == "item" && inItem) {
+                                if (title.isNotBlank() && link.isNotBlank()) {
+                                    result += News(
+                                        title = title.trim(),
+                                        source = source.trim(),
+                                        date = date,
+                                        link = link.trim(),
+                                        snippet = desc.take(500)
+                                    )
+                                }
+                                inItem = false
                             }
-                            inItem = false
                         }
                     }
                     event = parser.next()

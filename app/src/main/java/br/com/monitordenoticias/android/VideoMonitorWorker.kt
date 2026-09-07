@@ -18,16 +18,21 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
             var changed = false
             val editor = prefs.edit()
 
-            if (!prefs.getBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, false)) {
-                selectedIds = selectedIds + VideoSourceCatalog.youtubeOfficialIds
+            if (existing == null) {
                 editor.putBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, true)
-                changed = true
-            }
-
-            if (!prefs.getBoolean(VideoViewModel.KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, false)) {
-                selectedIds = selectedIds + VideoSourceCatalog.globoplayTelejournalIds
                 editor.putBoolean(VideoViewModel.KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, true)
                 changed = true
+            } else {
+                if (!prefs.getBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, false)) {
+                    selectedIds = selectedIds + VideoSourceCatalog.youtubeOfficialIds
+                    editor.putBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, true)
+                    changed = true
+                }
+                if (!prefs.getBoolean(VideoViewModel.KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, false)) {
+                    selectedIds = selectedIds + V284_STARTER_IDS.filter { VideoSourceCatalog.byId.containsKey(it) }
+                    editor.putBoolean(VideoViewModel.KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, true)
+                    changed = true
+                }
             }
 
             if (changed || existing == null) {
@@ -41,7 +46,9 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
                 return Result.success()
             }
 
-            val result = VideoRepository(applicationContext, db).search(sources)
+            val repository = VideoRepository(applicationContext, db)
+            repository.revalidateStored()
+            val result = repository.search(sources)
             db.removeInvalidListingEntries()
             VideoAutoRunLog.markCompleted(applicationContext, result)
 
@@ -57,5 +64,14 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
         } finally {
             db.close()
         }
+    }
+
+    companion object {
+        private val V284_STARTER_IDS = setOf(
+            "globoplay-bom-dia-brasil", "globoplay-hora-1", "globoplay-jornal-hoje", "globoplay-jornal-nacional", "globoplay-jornal-da-globo",
+            "globoplay-bom-dia-sp", "globoplay-sp1", "globoplay-sp2", "globoplay-bom-dia-rio", "globoplay-rj1", "globoplay-rj2",
+            "globoplay-bom-dia-es", "globoplay-gazeta-meio-dia-es", "globoplay-bom-dia-minas", "globoplay-mg1", "globoplay-df1",
+            "globoplay-bom-dia-rio-grande", "globoplay-tj1-tapajos", "globoplay-tj2-tapajos"
+        )
     }
 }

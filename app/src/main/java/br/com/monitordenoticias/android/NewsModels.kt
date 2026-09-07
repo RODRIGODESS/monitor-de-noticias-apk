@@ -18,7 +18,27 @@ data class Demand(
     val id: Long = 0,
     val vehicle: String,
     val subject: String,
-    val active: Boolean = true
+    val active: Boolean = true,
+    val lastCheckedAt: Long = 0,
+    val lastFoundCount: Int = 0,
+    val lastNewCount: Int = 0,
+    val lastError: String = ""
+)
+
+data class DemandSearchResult(
+    val demand: Demand,
+    val items: List<News>,
+    val foundCount: Int,
+    val newCount: Int,
+    val error: String? = null
+)
+
+data class DemandSweepResult(
+    val checkedCount: Int,
+    val foundCount: Int,
+    val newCount: Int,
+    val errors: Int,
+    val items: List<News>
 )
 
 data class SearchResult(
@@ -36,6 +56,8 @@ data class AppState(
     val terms: List<String> = emptyList(),
     val selectedTab: Int = 0,
     val busy: Boolean = false,
+    val demandSearchBusy: Boolean = false,
+    val demandBusyId: Long? = null,
     val status: String = "Pronto",
     val intervalMinutes: Int = 30,
     val lastUpdatedAt: Long? = null,

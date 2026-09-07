@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import org.jsoup.parser.Parser
 import java.net.URI
+import java.net.URLEncoder
 import java.text.Normalizer
 import java.time.Instant
 
@@ -13,40 +14,95 @@ class VideoRepository(
     private val context: Context,
     private val db: VideoDb
 ) {
+    private data class QuerySpec(
+        val query: String,
+        val term: String = "",
+        val demand: Demand? = null
+    )
+
     suspend fun search(sources: List<VideoSource>): VideoSearchResult = withContext(Dispatchers.IO) {
         val newsDb = NewsDb(context)
         try {
-            val terms = newsDb.listTerms()
+            // Mantém o mesmo princípio da busca de notícias: os Termos cadastrados
+            // são as consultas que dirigem o monitoramento, e não apenas etiquetas
+            // aplicadas depois de varrer vídeos aleatórios.
+            val terms = newsDb.listTerms().ifEmpty { DEFAULT_TERMS }
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinctBy(::normalize)
             val demands = newsDb.listDemands().filter { it.active }
             val capturedAt = System.currentTimeMillis()
-            val collected = mutableListOf<VideoItem>()
+            val collected = linkedMapOf<String, VideoItem>()
             var errors = 0
 
             sources.forEach { source ->
-                val siteItems = runCatching { fetchWebsite(source, capturedAt) }.getOrElse { emptyList() }
-                val raw = if (siteItems.isNotEmpty()) {
-                    siteItems
-                } else if (source.youtubeHandle.isNotBlank()) {
-                    runCatching { fetchYoutube(source, capturedAt) }.getOrElse { emptyList() }
-                } else {
-                    emptyList()
-                }
-                if (raw.isEmpty()) errors++
+                val specs = buildList {
+                    terms.forEach { term -> add(QuerySpec(query = term, term = term)) }
+                    demands
+                        .filter { demand -> sourceMatchesDemand(source, demand.vehicle) }
+                        .forEach { demand -> add(QuerySpec(query = demand.subject, demand = demand)) }
+                }.distinctBy { spec -> "${normalize(spec.query)}|${spec.term}|${spec.demand?.id ?: 0L}" }
 
-                raw.forEach { item ->
-                    val body = "${item.title} ${item.summary}"
-                    val matchedTerm = terms.firstOrNull { phraseMatches(body, it) }.orEmpty()
-                    val demand = demands.firstOrNull { d ->
-                        sourceMatchesDemand(source, d.vehicle) && phraseMatches(body, d.subject)
+                var fallbackLoaded = false
+                var fallbackItems: List<VideoItem> = emptyList()
+
+                fun loadFallback(): List<VideoItem> {
+                    if (fallbackLoaded) return fallbackItems
+                    fallbackLoaded = true
+                    val site = runCatching { fetchWebsite(source, capturedAt) }
+                        .onFailure { errors++ }
+                        .getOrDefault(emptyList())
+                    val youtube = if (source.youtubeHandle.isNotBlank()) {
+                        runCatching { fetchYoutube(source, capturedAt) }
+                            .onFailure { errors++ }
+                            .getOrDefault(emptyList())
+                    } else emptyList()
+                    fallbackItems = (site + youtube).distinctBy { it.link }
+                    return fallbackItems
+                }
+
+                specs.forEach { spec ->
+                    val searched = if (source.searchUrlTemplate.isNotBlank()) {
+                        runCatching { fetchSearchWebsite(source, spec.query, capturedAt) }
+                            .onFailure { errors++ }
+                            .getOrDefault(emptyList())
+                    } else emptyList()
+
+                    val candidates = searched
+                        .filter { item -> phraseMatches("${item.title} ${item.summary}", spec.query) }
+                        .ifEmpty {
+                            loadFallback().filter { item ->
+                                phraseMatches("${item.title} ${item.summary}", spec.query)
+                            }
+                        }
+
+                    candidates.forEach { item ->
+                        val body = "${item.title} ${item.summary}"
+                        val previous = collected[item.link]
+                        val matchedTerm = when {
+                            spec.term.isNotBlank() -> spec.term
+                            previous?.matchedTerm?.isNotBlank() == true -> previous.matchedTerm
+                            else -> terms.firstOrNull { phraseMatches(body, it) }.orEmpty()
+                        }
+                        val demand = spec.demand
+                            ?: demands.firstOrNull { d -> sourceMatchesDemand(source, d.vehicle) && phraseMatches(body, d.subject) }
+                        val matchedDemand = demand?.let { "${it.vehicle} • ${it.subject}" }
+                            ?: previous?.matchedDemand.orEmpty()
+
+                        collected[item.link] = item.copy(
+                            matchedTerm = matchedTerm.ifBlank { previous?.matchedTerm.orEmpty() },
+                            matchedDemand = matchedDemand,
+                            capturedAt = capturedAt
+                        )
                     }
-                    collected += item.copy(
-                        matchedTerm = matchedTerm,
-                        matchedDemand = demand?.let { "${it.vehicle} • ${it.subject}" }.orEmpty()
-                    )
                 }
             }
 
-            val items = collected
+            // Só entram no histórico audiovisual itens encontrados pelas consultas
+            // de Termos/Demandas. Isso evita preencher a aba com vídeos genéricos
+            // que não fazem parte do escopo monitorado.
+            val items = collected.values
+                .filter { it.relevant }
                 .distinctBy { it.link }
                 .sortedByDescending { it.publishedAt }
             val inserted = db.insert(items)
@@ -54,7 +110,7 @@ class VideoRepository(
                 items = items,
                 foundCount = items.size,
                 newCount = inserted.size,
-                relevantCount = items.count { it.relevant },
+                relevantCount = items.size,
                 newRelevantCount = inserted.count { it.relevant },
                 errors = errors
             )
@@ -63,9 +119,18 @@ class VideoRepository(
         }
     }
 
-    private fun fetchWebsite(source: VideoSource, capturedAt: Long): List<VideoItem> {
-        val doc = Jsoup.connect(source.landingUrl)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8")
+    private fun fetchSearchWebsite(source: VideoSource, query: String, capturedAt: Long): List<VideoItem> {
+        val encoded = URLEncoder.encode(query.trim(), "UTF-8")
+        val url = source.searchUrlTemplate.replace("{query}", encoded)
+        return fetchPageLinks(source, url, capturedAt, "Busca por: ${query.trim()}")
+    }
+
+    private fun fetchWebsite(source: VideoSource, capturedAt: Long): List<VideoItem> =
+        fetchPageLinks(source, source.landingUrl, capturedAt, source.group)
+
+    private fun fetchPageLinks(source: VideoSource, pageUrl: String, capturedAt: Long, summary: String): List<VideoItem> {
+        val doc = Jsoup.connect(pageUrl)
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.1")
             .referrer("https://www.google.com/")
             .timeout(14_000)
             .followRedirects(true)
@@ -76,7 +141,7 @@ class VideoRepository(
 
         doc.select("a[href]").forEach { anchor ->
             val absolute = anchor.absUrl("href").trim()
-            if (absolute.isBlank() || absolute == source.landingUrl) return@forEach
+            if (absolute.isBlank() || absolute == source.landingUrl || absolute == pageUrl) return@forEach
             val uri = runCatching { URI(absolute) }.getOrNull() ?: return@forEach
             val host = uri.host.orEmpty().removePrefix("www.")
             if (host.isBlank() || !(host == sourceHost || host.endsWith(".$sourceHost") || sourceHost.endsWith(".$host"))) return@forEach
@@ -100,18 +165,18 @@ class VideoRepository(
                     sourceName = source.name,
                     publishedAt = capturedAt,
                     link = absolute,
-                    summary = source.group,
+                    summary = summary,
                     capturedAt = capturedAt
                 )
             )
         }
-        return out.values.take(40)
+        return out.values.take(50)
     }
 
     private fun fetchYoutube(source: VideoSource, capturedAt: Long): List<VideoItem> {
         val handle = source.youtubeHandle.removePrefix("@")
         val channelPage = Jsoup.connect("https://www.youtube.com/@$handle/videos")
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/2.8.1")
             .timeout(14_000)
             .get()
             .html()
@@ -120,7 +185,7 @@ class VideoRepository(
             ?: return emptyList()
 
         val feed = Jsoup.connect("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
-            .userAgent("Mozilla/5.0 MonitorNoticias/2.8")
+            .userAgent("Mozilla/5.0 MonitorNoticias/2.8.1")
             .timeout(14_000)
             .parser(Parser.xmlParser())
             .get()
@@ -141,7 +206,7 @@ class VideoRepository(
                 summary = "Canal oficial • ${source.group}",
                 capturedAt = capturedAt
             )
-        }.take(30)
+        }.take(40)
     }
 
     private fun sourceMatchesDemand(source: VideoSource, vehicle: String): Boolean {
@@ -188,5 +253,9 @@ class VideoRepository(
 
     companion object {
         private val STOP_WORDS = setOf("de", "do", "da", "dos", "das", "e", "em", "no", "na", "nos", "nas", "a", "o", "as", "os")
+        private val DEFAULT_TERMS = listOf(
+            "Marinha do Brasil", "Capitania dos Portos", "Distrito Naval", "NAM Atlântico",
+            "Cisne Branco", "Fragata Marinha do Brasil", "Navio-Patrulha Marinha", "Programa Nuclear da Marinha"
+        )
     }
 }

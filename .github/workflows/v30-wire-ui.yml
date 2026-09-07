@@ -1,0 +1,61 @@
+name: Wire v3 realtime UI
+
+on:
+  push:
+    branches: ["feature/v3.0-realtime-monitoring"]
+
+permissions:
+  contents: write
+
+jobs:
+  wire-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/v3.0-realtime-monitoring
+          fetch-depth: 0
+      - name: Wire v3 screens into current activity
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt')
+          text = p.read_text()
+          replacements = [
+              ('var showMore by remember { mutableStateOf(false) }', 'var showMore by remember { mutableStateOf(false) }\n    var sourceTab by remember { mutableIntStateOf(0) }'),
+              ('V28Section.HOME -> V28Home(news, newsVm) { section = V28Section.VIDEOS }', 'V28Section.HOME -> V30Home(news, newsVm, videos) { section = V28Section.VIDEOS }'),
+              ('V28Section.VIDEOS -> V29Videos(videos, videoVm)', 'V28Section.VIDEOS -> V30Videos(videos, videoVm) { sourceTab = 1; section = V28Section.SOURCES }'),
+              ('V28Section.SOURCES -> V28Sources(news, newsVm)', 'V28Section.SOURCES -> V30SourcesHub(news, newsVm, videos, videoVm, sourceTab) { sourceTab = it }'),
+              ('V28Section.SOURCES -> "Escolha os veículos de notícias"', 'V28Section.SOURCES -> "Notícias e fontes de vídeo"'),
+          ]
+          changed = False
+          for old, new in replacements:
+              if new in text:
+                  continue
+              if old not in text:
+                  raise SystemExit(f'Expected snippet not found: {old}')
+              text = text.replace(old, new, 1)
+              changed = True
+
+          marker = 'if (status.isNotBlank() && status != "Pronto") V28StatusStrip(status)'
+          addition = marker + '\n            if (news.searchProgress.active && section != V28Section.HOME && section != V28Section.VIDEOS) V30CompactProgress(news.searchProgress)'
+          if addition not in text:
+              if marker not in text:
+                  raise SystemExit('Status marker not found')
+              text = text.replace(marker, addition, 1)
+              changed = True
+
+          if changed:
+              p.write_text(text)
+              print('v3 UI wired')
+          else:
+              print('already wired')
+          PY
+      - name: Commit UI wiring
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt
+          git commit -m "feat: wire v3 realtime monitoring screens"
+          git push origin HEAD:feature/v3.0-realtime-monitoring

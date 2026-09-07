@@ -8,7 +8,8 @@ object VideoSourceCatalog {
             group = "Globo / Globoplay",
             landingUrl = "https://globoplay.globo.com/categorias/jornalismo/",
             linkHints = listOf("/v/"),
-            aliases = listOf("Globo", "Globoplay", "GloboNews", "Globo News")
+            aliases = listOf("Globo", "Globoplay", "GloboNews", "Globo News"),
+            searchUrlTemplate = "https://globoplay.globo.com/busca/?q={query}"
         ),
         VideoSource(
             id = "video-r7-record",
@@ -17,7 +18,8 @@ object VideoSourceCatalog {
             landingUrl = "https://noticias.r7.com/videos/",
             linkHints = listOf("/videos/"),
             aliases = listOf("R7", "Record", "Record TV", "Record News"),
-            youtubeHandle = "@recordnews"
+            youtubeHandle = "@recordnews",
+            searchUrlTemplate = "https://noticias.r7.com/busca?q={query}"
         ),
         VideoSource(
             id = "video-cnn-brasil",
@@ -26,7 +28,8 @@ object VideoSourceCatalog {
             landingUrl = "https://www.cnnbrasil.com.br/ao-vivo/",
             linkHints = listOf("/ao-vivo/", "/videos/"),
             aliases = listOf("CNN", "CNN Brasil"),
-            youtubeHandle = "@CNNBrasil"
+            youtubeHandle = "@CNNBrasil",
+            searchUrlTemplate = "https://www.cnnbrasil.com.br/?s={query}"
         ),
         VideoSource(
             id = "video-sbt-news",
@@ -35,7 +38,8 @@ object VideoSourceCatalog {
             landingUrl = "https://sbtnews.sbt.com.br/videos",
             linkHints = listOf("/videos/"),
             aliases = listOf("SBT", "SBT News"),
-            youtubeHandle = "@sbtnews"
+            youtubeHandle = "@sbtnews",
+            searchUrlTemplate = "https://sbtnews.sbt.com.br/busca?q={query}"
         ),
         VideoSource(
             id = "video-band",
@@ -44,7 +48,8 @@ object VideoSourceCatalog {
             landingUrl = "https://www.band.com.br/videos",
             linkHints = listOf("/videos/"),
             aliases = listOf("Band", "Band Jornalismo", "BandNews", "Band News"),
-            youtubeHandle = "@bandjornalismo"
+            youtubeHandle = "@bandjornalismo",
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
         )
     )
 
@@ -57,7 +62,8 @@ object VideoSourceCatalog {
             state = "DF",
             landingUrl = "https://www.band.com.br/band-brasilia/videos",
             linkHints = listOf("/band-brasilia/videos/"),
-            aliases = listOf("Band Brasília", "Band DF")
+            aliases = listOf("Band Brasília", "Band DF"),
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
         ),
         VideoSource(
             id = "video-band-minas",
@@ -67,7 +73,8 @@ object VideoSourceCatalog {
             state = "MG",
             landingUrl = "https://www.band.com.br/band-minas",
             linkHints = listOf("/band-minas/videos/", "/videos/"),
-            aliases = listOf("Band Minas", "Band Minas Gerais")
+            aliases = listOf("Band Minas", "Band Minas Gerais"),
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
         ),
         VideoSource(
             id = "video-band-rio",
@@ -77,7 +84,8 @@ object VideoSourceCatalog {
             state = "RJ",
             landingUrl = "https://www.band.com.br/rio-de-janeiro/videos",
             linkHints = listOf("/rio-de-janeiro/videos/"),
-            aliases = listOf("Band Rio", "Band Rio de Janeiro")
+            aliases = listOf("Band Rio", "Band Rio de Janeiro"),
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
         ),
         VideoSource(
             id = "video-band-parana",
@@ -87,7 +95,8 @@ object VideoSourceCatalog {
             state = "PR",
             landingUrl = "https://www.band.com.br/band-parana/videos",
             linkHints = listOf("/band-parana/videos/"),
-            aliases = listOf("Band Paraná", "Band PR")
+            aliases = listOf("Band Paraná", "Band PR"),
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
         ),
         VideoSource(
             id = "video-band-bahia",
@@ -97,7 +106,8 @@ object VideoSourceCatalog {
             state = "BA",
             landingUrl = "https://www.band.com.br/band-bahia",
             linkHints = listOf("/band-bahia/videos/", "/videos/"),
-            aliases = listOf("Band Bahia", "Band BA")
+            aliases = listOf("Band Bahia", "Band BA"),
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
         )
     )
 

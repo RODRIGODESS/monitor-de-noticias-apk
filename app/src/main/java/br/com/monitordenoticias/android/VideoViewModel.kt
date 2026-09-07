@@ -13,10 +13,24 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = VideoRepository(app, db)
     private val prefs = app.getSharedPreferences(BackgroundMonitor.PREFS, 0)
 
-    private val savedIds = prefs.getStringSet(KEY_SELECTED_SOURCES, null)
-        ?.filter { VideoSourceCatalog.byId.containsKey(it) }
-        ?.toSet()
-        ?: VideoSourceCatalog.defaultIds
+    private val savedIds = loadSelectedSourcesForV283()
+
+    private fun loadSelectedSourcesForV283(): Set<String> {
+        val existing = prefs.getStringSet(KEY_SELECTED_SOURCES, null)
+            ?.filter { VideoSourceCatalog.byId.containsKey(it) }
+            ?.toSet()
+
+        if (!prefs.getBoolean(KEY_YOUTUBE_283_MIGRATED, false)) {
+            val merged = (existing ?: VideoSourceCatalog.defaultIds) + VideoSourceCatalog.youtubeOfficialIds
+            prefs.edit()
+                .putStringSet(KEY_SELECTED_SOURCES, merged)
+                .putBoolean(KEY_YOUTUBE_283_MIGRATED, true)
+                .apply()
+            return merged
+        }
+
+        return existing ?: VideoSourceCatalog.defaultIds
+    }
 
     private fun scopedItems(): List<VideoItem> = db.listRecent().filter { it.relevant }
 
@@ -47,7 +61,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(status = "⚠ Selecione pelo menos uma fonte de vídeo")
             return
         }
-        _state.value = _state.value.copy(busy = true, status = "Buscando links diretos de vídeos pelos Termos e Demandas...")
+        _state.value = _state.value.copy(busy = true, status = "Buscando vídeos nos portais e canais oficiais do YouTube...")
         viewModelScope.launch {
             val result = repo.search(selected)
             db.removeInvalidListingEntries()
@@ -105,5 +119,6 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         const val KEY_SELECTED_SOURCES = "video_selected_source_ids"
         const val KEY_LAST_MANUAL = "video_last_manual_at"
+        const val KEY_YOUTUBE_283_MIGRATED = "video_v283_youtube_sources_added"
     }
 }

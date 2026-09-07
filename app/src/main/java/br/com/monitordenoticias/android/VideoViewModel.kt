@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 class VideoViewModel(app: Application) : AndroidViewModel(app) {
-    private val db = VideoDb(app)
+    private val db = VideoDb(app).apply { removeInvalidListingEntries() }
     private val repo = VideoRepository(app, db)
     private val prefs = app.getSharedPreferences(BackgroundMonitor.PREFS, 0)
 
@@ -35,6 +35,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
+            db.removeInvalidListingEntries()
             _state.value = _state.value.copy(items = scopedItems())
         }
     }
@@ -46,16 +47,17 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(status = "⚠ Selecione pelo menos uma fonte de vídeo")
             return
         }
-        _state.value = _state.value.copy(busy = true, status = "Buscando vídeos a partir dos Termos e Demandas...")
+        _state.value = _state.value.copy(busy = true, status = "Buscando links diretos de vídeos pelos Termos e Demandas...")
         viewModelScope.launch {
             val result = repo.search(selected)
+            db.removeInvalidListingEntries()
             val now = System.currentTimeMillis()
             prefs.edit().putLong(KEY_LAST_MANUAL, now).apply()
             val status = when {
-                result.errors > 0 && result.foundCount == 0 -> "⚠ Busca concluída sem resultados • ${result.errors} consulta(s) falharam"
-                result.newCount > 0 -> "✓ ${result.newCount} novo(s) vídeo(s) encontrado(s) pelos Termos/Demandas"
-                result.foundCount > 0 -> "✓ Busca concluída • ${result.foundCount} vídeo(s) no escopo monitorado"
-                else -> "✓ Busca concluída • nenhum vídeo encontrado para os Termos/Demandas"
+                result.errors > 0 && result.foundCount == 0 -> "⚠ Busca concluída sem vídeos diretos • ${result.errors} consulta(s) falharam"
+                result.newCount > 0 -> "✓ ${result.newCount} novo(s) vídeo(s) com link direto"
+                result.foundCount > 0 -> "✓ Busca concluída • ${result.foundCount} vídeo(s) com link direto"
+                else -> "✓ Busca concluída • nenhum vídeo direto para os Termos/Demandas"
             }
             _state.value = _state.value.copy(
                 items = scopedItems(),

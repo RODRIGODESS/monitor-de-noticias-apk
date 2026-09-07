@@ -92,37 +92,45 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v2.8.4 release asset
+      - name: Prepare v2.9.0 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.8.4.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.9.0.apk
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.8.4
+          tag_name: v2.9.0
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v2.8.4
+          name: Monitor de Notícias Android v2.9.0
           body: |
-            Versão 2.8.4 do Monitor de Notícias Android.
+            Versão 2.9.0 do Monitor de Notícias Android.
 
-            Monitor de Vídeos — varredura de telejornais Globo/Globoplay:
-            - mantém a busca geral do Globoplay, mas adiciona fontes específicas por telejornal;
-            - telejornais nacionais iniciais: Bom Dia Brasil, Hora 1, Jornal Hoje, Jornal Nacional e Jornal da Globo;
-            - telejornais regionais iniciais: Bom Dia SP, SP1, SP2, Bom Dia Rio, RJ1, RJ2, Bom Dia ES, Gazeta Meio Dia/ESTV1, Bom Dia Minas, MG1, DF1, Bom Dia Rio Grande, TJ1 e TJ2 da TV Tapajós;
-            - páginas de trechos dos telejornais regionais são varridas e cruzadas com os Termos/Demandas cadastrados;
-            - cada telejornal aparece como fonte independente para ativar/desativar;
-            - os novos telejornais são habilitados automaticamente uma única vez na atualização para a 2.8.4;
-            - resultados continuam exigindo link direto de vídeo e passam pela deduplicação existente;
-            - busca manual e automática aproximadamente a cada 1 hora.
+            Qualidade dos Termos:
+            - siglas e termos curtos passam a exigir palavra inteira;
+            - corrige falsos positivos como FAB dentro da palavra "fábrica";
+            - notícias e vídeos passam por validação local antes de receber um Termo;
+            - o histórico de vídeos é revalidado e associações antigas incorretas são removidas automaticamente.
 
-            YouTube e demais portais:
+            Monitor de Vídeos:
+            - adiciona ação Limpar com confirmação, preservando Termos, Demandas e fontes;
+            - adiciona pesquisa por período com Hoje, 24 horas, 7 dias e 30 dias, além de data/hora personalizada;
+            - período fica salvo no aparelho e combina resultados capturados com o histórico público disponibilizado pelas plataformas;
+            - seleção de fontes redesenhada no padrão das Notícias: Nacionais / Estados, Região, UF, pesquisa, Selecionar e Limpar visíveis;
+            - mantém links diretos, deduplicação, Demandas e busca automática aproximadamente a cada 1 hora.
+
+            Globo / Globoplay:
+            - amplia o catálogo para Bom Dia e principais 1ª/2ª edições regionais de todas as UFs, incluindo afiliadas relevantes;
+            - a varredura de telejornais abre edições recentes e expande a seção de Trechos para localizar matérias individuais;
+            - novas fontes regionais ficam disponíveis para seleção por Região/UF e não são ativadas em massa automaticamente, evitando excesso de consultas em segundo plano.
+
+            YouTube e demais fontes:
             - mantém CNN Brasil, Jovem Pan News, GloboNews, Record News, Jornal da Record, Band Jornalismo/BandNews e SBT News no YouTube;
-            - mantém R7/Record, CNN, SBT, Band e demais fontes de vídeo já cadastradas.
+            - mantém R7/Record, CNN, SBT, Band e fontes regionais já cadastradas.
 
             Atualização:
-            - versionCode 284 / versionName 2.8.4;
+            - versionCode 290 / versionName 2.9.0;
             - mesmo applicationId e mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v2.8.3 preservando dados e configurações.
-          files: monitor-de-noticias-v2.8.4.apk
+            - instalação direta sobre v2.8.4 preservando dados e configurações.
+          files: monitor-de-noticias-v2.9.0.apk
           make_latest: true

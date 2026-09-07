@@ -16,8 +16,8 @@ android {
         applicationId = "br.com.monitordenoticias.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 250
-        versionName = "2.5.0"
+        versionCode = 260
+        versionName = "2.6.0"
     }
 
     signingConfigs {
@@ -33,9 +33,6 @@ android {
 
     buildTypes {
         debug {
-            // The one-time migration APK must stay debuggable so the ADB helper
-            // can restore v2.4 data with run-as. In CI it is signed with the same
-            // permanent key as the release APK.
             if (hasPermanentSigning) {
                 signingConfig = signingConfigs.getByName("permanent")
             }

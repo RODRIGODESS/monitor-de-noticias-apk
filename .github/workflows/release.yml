@@ -42,19 +42,19 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_B64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
-            echo "ERROR: configure ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD in repository Actions secrets."
+            echo "ERROR: permanent Android signing secrets are missing."
             exit 1
           fi
           mkdir -p signing
           printf '%s' "$KEYSTORE_B64" | base64 --decode > signing/monitor-noticias-release.jks
           test -s signing/monitor-noticias-release.jks
 
-      - name: Build permanently signed migration and release APKs
+      - name: Build signed release APK
         if: github.event_name != 'pull_request'
         env:
           ANDROID_SIGNING_STORE_FILE: ${{ github.workspace }}/signing/monitor-noticias-release.jks
           ANDROID_SIGNING_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-        run: ./gradle-8.11.1/bin/gradle --no-daemon :app:assembleDebug :app:assembleRelease
+        run: ./gradle-8.11.1/bin/gradle --no-daemon :app:assembleRelease
 
       - name: Verify permanent signing certificate
         if: github.event_name != 'pull_request'
@@ -63,18 +63,12 @@ jobs:
         run: |
           set -euo pipefail
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
-          test -n "$APKSIGNER"
-          MIGRATION="app/build/outputs/apk/debug/app-debug.apk"
           FINAL="app/build/outputs/apk/release/app-release.apk"
           KEYSTORE="signing/monitor-noticias-release.jks"
           EXPECTED_CERT="07164d3faf3ee09f241a547d403767c454b226faac26c4b058bc5011d773b1b0"
 
-          "$APKSIGNER" verify --verbose "$MIGRATION"
           "$APKSIGNER" verify --verbose "$FINAL"
-
-          migration_output=$("$APKSIGNER" verify --verbose --print-certs "$MIGRATION" 2>&1)
           final_output=$("$APKSIGNER" verify --verbose --print-certs "$FINAL" 2>&1)
-          printf '%s\n' "$migration_output"
           printf '%s\n' "$final_output"
 
           extract_cert() {
@@ -87,60 +81,47 @@ jobs:
             printf '%s\n' "$line" | sed -E 's/.*[Dd]igest:[[:space:]]*//' | tr -d ':[:space:]\r' | tr 'A-F' 'a-f'
           }
 
-          MIGRATION_CERT=$(extract_cert "$migration_output")
           FINAL_CERT=$(extract_cert "$final_output")
           KEYSTORE_CERT=$(keytool -list -v -keystore "$KEYSTORE" -alias monitor-noticias -storepass "$ANDROID_SIGNING_PASSWORD" 2>/dev/null | awk -F': ' '/SHA256:/{gsub(":","",$2); gsub(/[[:space:]]/,"",$2); print tolower($2); exit}')
 
-          echo "Migration certificate: $MIGRATION_CERT"
-          echo "Release certificate:   $FINAL_CERT"
-          echo "Keystore certificate:  $KEYSTORE_CERT"
-
-          test -n "$MIGRATION_CERT"
+          echo "Release certificate:  $FINAL_CERT"
+          echo "Keystore certificate: $KEYSTORE_CERT"
           test -n "$FINAL_CERT"
           test -n "$KEYSTORE_CERT"
           test "$KEYSTORE_CERT" = "$EXPECTED_CERT"
-          test "$MIGRATION_CERT" = "$EXPECTED_CERT"
           test "$FINAL_CERT" = "$EXPECTED_CERT"
-          test "$MIGRATION_CERT" = "$FINAL_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v2.5.0 release assets
+      - name: Prepare v2.6.0 release asset
         if: github.event_name != 'pull_request'
-        run: |
-          cp app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v2.5.0-migration.apk
-          cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.5.0.apk
-          cp tools/migrate_v24_data.py migrate_v24_data.py
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.6.0.apk
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.5.0
+          tag_name: v2.6.0
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v2.5.0
+          name: Monitor de Notícias Android v2.6.0
           body: |
-            Versão 2.5.0 do Monitor de Notícias Android.
+            Versão 2.6.0 do Monitor de Notícias Android.
 
-            Demandas:
-            - pesquisa independente de cada demanda;
-            - monitoramento automático aproximadamente a cada 1 hora via WorkManager;
-            - botão para pesquisar todas as demandas manualmente;
-            - botão de pesquisa individual em cada demanda;
-            - registro persistente da última execução, resultados, matérias novas e erros.
+            Segundo plano:
+            - WorkManager continua como agendador principal;
+            - heartbeat horário com AlarmManager setAndAllowWhileIdle para recuperar execuções atrasadas durante repouso;
+            - reagendamento após reinício do aparelho e após atualização do aplicativo;
+            - tarefas aguardam conexão de rede antes de executar.
 
-            Preservação dos dados da v2.4:
-            - a v2.4 foi assinada por uma chave de debug efêmera que não existe mais;
-            - NÃO desinstale a v2.4 antes de criar o backup;
-            - use migrate_v24_data.py com ADB para fazer a transição única;
-            - o APK `-migration` é debuggable e assinado com a nova chave permanente;
-            - o APK final usa a mesma chave permanente;
-            - depois desta migração, futuras versões poderão atualizar normalmente sem apagar os dados.
+            Relatório em Configurações:
+            - horário da última tentativa automática de notícias;
+            - horário da última conclusão;
+            - resultados, matérias novas e falhas;
+            - relatório separado das demandas automáticas;
+            - próximo heartbeat previsto;
+            - atalho para os ajustes de bateria do aplicativo.
 
-            Banco:
-            - migração SQLite 2 → 3 sem apagar notícias, termos ou demandas;
-            - fontes, período, intervalo e demais SharedPreferences são preservados pelo backup/restauração.
-          files: |
-            monitor-de-noticias-v2.5.0-migration.apk
-            monitor-de-noticias-v2.5.0.apk
-            migrate_v24_data.py
+            Atualização:
+            - mesma assinatura permanente da v2.5.0;
+            - pode ser instalada diretamente por cima da v2.5.0 mantendo dados e configurações.
+          files: monitor-de-noticias-v2.6.0.apk
           make_latest: true

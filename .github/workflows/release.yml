@@ -34,35 +34,35 @@ jobs:
       - name: Build installable APK
         run: ./gradle-8.11.1/bin/gradle --no-daemon :app:assembleDebug
 
+      - name: Print debug signing fingerprint
+        run: |
+          echo "SIGNING_FINGERPRINT_BEGIN"
+          keytool -list -v -keystore "$HOME/.android/debug.keystore" -alias androiddebugkey -storepass android | grep -E "SHA1:|SHA256:|SHA-256:"
+          echo "SIGNING_FINGERPRINT_END"
+
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v2.4.0.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v2.5.0.apk
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.4.0
+          tag_name: v2.5.0
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v2.4.0
+          name: Monitor de Notícias Android v2.5.0
           body: |
-            Versão 2.4.0 do Monitor de Notícias Android.
+            Versão 2.5.0 do Monitor de Notícias Android.
 
-            Correções principais:
-            - filtro de fontes agora é estrito e descarta veículos não selecionados;
-            - removida a correspondência genérica que fazia "Folha" aceitar Folha Vitória;
-            - tela Notícias não mistura resultados atuais com notícias antigas do banco;
-            - reabertura do app respeita o escopo de fontes selecionado;
-            - mensagens de uma aba não permanecem indevidamente em outra.
+            Demandas:
+            - pesquisa independente de cada demanda;
+            - monitoramento automático a cada 1 hora via WorkManager;
+            - botão para pesquisar todas as demandas manualmente;
+            - botão de pesquisa individual em cada demanda;
+            - registro persistente da última execução, resultados, matérias novas e erros.
 
-            Interface:
-            - nova Activity mobile-first para a v2.4;
-            - cabeçalho respeita a barra de status do Android;
-            - navegação superior mais baixa e compacta;
-            - Fontes com cartões menores e mais veículos visíveis;
-            - controles de seleção e filtros compactados;
-            - Período com campos sem altura forçada, evitando corte de data/hora;
-            - botão Pesquisar período sempre visível;
-            - cards de notícias menores, com títulos limitados a duas linhas;
-            - limpeza de entidades HTML como &nbsp; nos resumos.
-          files: monitor-de-noticias-v2.4.0.apk
+            Dados:
+            - mesma identidade de pacote;
+            - migração do banco sem apagar notícias, termos ou demandas existentes;
+            - preferências de fontes, período e intervalo continuam preservadas.
+          files: monitor-de-noticias-v2.5.0.apk
           make_latest: true

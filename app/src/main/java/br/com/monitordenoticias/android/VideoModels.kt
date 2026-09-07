@@ -44,7 +44,12 @@ data class VideoState(
     val busy: Boolean = false,
     val status: String = "Pronto",
     val filter: VideoFilter = VideoFilter.ALL,
-    val lastManualAt: Long = 0L
+    val lastManualAt: Long = 0L,
+    val periodStartDate: String = "",
+    val periodStartTime: String = "00:00",
+    val periodEndDate: String = "",
+    val periodEndTime: String = "23:59",
+    val periodActive: Boolean = false
 )
 
 enum class VideoFilter { ALL, RELEVANT, DEMANDS }

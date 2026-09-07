@@ -41,7 +41,24 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
                     put("captured_at", item.capturedAt)
                 }
                 val id = writableDatabase.insertWithOnConflict("videos", null, values, SQLiteDatabase.CONFLICT_IGNORE)
-                if (id != -1L) inserted += item.copy(id = id)
+                if (id != -1L) {
+                    inserted += item.copy(id = id)
+                } else {
+                    // Vídeos já capturados na v2.8 podem passar a corresponder a um
+                    // Termo/Demanda na v2.8.1. Atualizamos a classificação sem
+                    // contabilizar novamente como conteúdo novo.
+                    val update = ContentValues().apply {
+                        put("title", item.title)
+                        put("source_id", item.sourceId)
+                        put("source_name", item.sourceName)
+                        put("published_at", item.publishedAt)
+                        put("summary", item.summary)
+                        if (item.matchedTerm.isNotBlank()) put("matched_term", item.matchedTerm)
+                        if (item.matchedDemand.isNotBlank()) put("matched_demand", item.matchedDemand)
+                        put("captured_at", item.capturedAt)
+                    }
+                    writableDatabase.update("videos", update, "link=?", arrayOf(item.link))
+                }
             }
             writableDatabase.setTransactionSuccessful()
         } finally {

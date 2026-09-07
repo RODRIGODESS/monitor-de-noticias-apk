@@ -18,9 +18,11 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         ?.toSet()
         ?: VideoSourceCatalog.defaultIds
 
+    private fun scopedItems(): List<VideoItem> = db.listRecent().filter { it.relevant }
+
     private val _state = MutableStateFlow(
         VideoState(
-            items = db.listRecent(),
+            items = scopedItems(),
             selectedSourceIds = savedIds,
             lastManualAt = prefs.getLong(KEY_LAST_MANUAL, 0L)
         )
@@ -33,7 +35,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
-            _state.value = _state.value.copy(items = db.listRecent())
+            _state.value = _state.value.copy(items = scopedItems())
         }
     }
 
@@ -44,19 +46,19 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(status = "⚠ Selecione pelo menos uma fonte de vídeo")
             return
         }
-        _state.value = _state.value.copy(busy = true, status = "Buscando vídeos nas fontes selecionadas...")
+        _state.value = _state.value.copy(busy = true, status = "Buscando vídeos a partir dos Termos e Demandas...")
         viewModelScope.launch {
             val result = repo.search(selected)
             val now = System.currentTimeMillis()
             prefs.edit().putLong(KEY_LAST_MANUAL, now).apply()
             val status = when {
-                result.errors == selected.size -> "⚠ Não foi possível consultar as fontes de vídeo"
-                result.newCount > 0 && result.newRelevantCount > 0 -> "✓ ${result.newCount} novo(s) vídeo(s) • ${result.newRelevantCount} relevante(s)"
-                result.newCount > 0 -> "✓ ${result.newCount} novo(s) vídeo(s) detectado(s)"
-                else -> "✓ Busca concluída • nenhum vídeo novo"
+                result.errors > 0 && result.foundCount == 0 -> "⚠ Busca concluída sem resultados • ${result.errors} consulta(s) falharam"
+                result.newCount > 0 -> "✓ ${result.newCount} novo(s) vídeo(s) encontrado(s) pelos Termos/Demandas"
+                result.foundCount > 0 -> "✓ Busca concluída • ${result.foundCount} vídeo(s) no escopo monitorado"
+                else -> "✓ Busca concluída • nenhum vídeo encontrado para os Termos/Demandas"
             }
             _state.value = _state.value.copy(
-                items = db.listRecent(),
+                items = scopedItems(),
                 busy = false,
                 status = status,
                 lastManualAt = now

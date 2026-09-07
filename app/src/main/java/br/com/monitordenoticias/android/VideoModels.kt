@@ -25,7 +25,8 @@ data class VideoSource(
     val landingUrl: String,
     val linkHints: List<String> = emptyList(),
     val aliases: List<String> = emptyList(),
-    val youtubeHandle: String = ""
+    val youtubeHandle: String = "",
+    val searchUrlTemplate: String = ""
 )
 
 data class VideoSearchResult(

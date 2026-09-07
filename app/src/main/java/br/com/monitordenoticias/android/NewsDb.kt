@@ -40,7 +40,26 @@ class NewsDb(context: Context) : SQLiteOpenHelper(context, "news.db", null, 3) {
                     put("matched_term", n.matchedTerm); put("matched_demand", n.matchedDemand); put("captured_at", n.capturedAt)
                 }
                 val id = writableDatabase.insertWithOnConflict("news", null, values, SQLiteDatabase.CONFLICT_IGNORE)
-                if (id != -1L) inserted += n.copy(id = id)
+                if (id != -1L) {
+                    inserted += n.copy(id = id)
+                } else {
+                    // A matéria pode já ter sido capturada pela busca geral antes de ser
+                    // encontrada por uma Demanda. Nesse caso ela não é "nova", mas a
+                    // classificação precisa ser atualizada para que o resultado continue
+                    // acessível dentro do cartão da Demanda.
+                    val update = ContentValues().apply {
+                        put("title", n.title)
+                        put("source", n.source)
+                        put("date", n.date)
+                        put("snippet", n.snippet)
+                        if (n.important) put("important", 1)
+                        if (n.demand) put("demand", 1)
+                        if (n.matchedTerm.isNotBlank()) put("matched_term", n.matchedTerm)
+                        if (n.matchedDemand.isNotBlank()) put("matched_demand", n.matchedDemand)
+                        put("captured_at", n.capturedAt)
+                    }
+                    writableDatabase.update("news", update, "link=?", arrayOf(n.link))
+                }
             }
             writableDatabase.setTransactionSuccessful()
         } finally { writableDatabase.endTransaction() }

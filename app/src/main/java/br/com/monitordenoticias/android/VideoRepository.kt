@@ -59,6 +59,9 @@ class VideoRepository(
             var errors = 0
             var completed = 0
 
+            // Globoplay e YouTube fazem UMA coleta por fonte/canal. Termos e Demandas
+            // são cruzados localmente depois. As demais fontes mantêm busca por termo
+            // porque alguns portais ainda não oferecem uma listagem recente confiável.
             val plan = sources.associateWith { source ->
                 if (isSourceScanMode(source)) {
                     listOf(QuerySpec(query = ""))
@@ -90,23 +93,11 @@ class VideoRepository(
             onUpdate?.invoke(VideoSearchUpdate(progress("Preparando", "")))
 
             plan.forEach { (source, specs) ->
-                var fallbackLoaded = false
-                var fallbackItems: List<VideoItem> = emptyList()
                 val resolvedCache = mutableMapOf<String, VideoItem?>()
-
-                fun loadFallback(): List<VideoItem> {
-                    if (fallbackLoaded) return fallbackItems
-                    fallbackLoaded = true
-                    val site = runCatching { fetchWebsite(source, capturedAt) }
-                        .onFailure { errors++ }
-                        .getOrDefault(emptyList())
-                    val youtube = if (source.youtubeHandle.isNotBlank()) {
-                        runCatching { fetchYoutube(source, capturedAt) }
-                            .onFailure { errors++ }
-                            .getOrDefault(emptyList())
-                    } else emptyList()
-                    fallbackItems = (site + youtube).distinctBy { canonicalKey(it.link) }
-                    return fallbackItems
+                val sourceScanCandidates = if (isSourceScanMode(source)) {
+                    collectRecentBySource(source, capturedAt) { errors++ }
+                } else {
+                    emptyList()
                 }
 
                 fun resolve(item: VideoItem): VideoItem? {
@@ -123,66 +114,76 @@ class VideoRepository(
                 }
 
                 specs.forEach { spec ->
-                    val progressQuery = spec.query.ifBlank { "Termos/Demandas" }
+                    val scanMode = isSourceScanMode(source)
+                    val progressQuery = if (scanMode) "Vídeos recentes • cruzamento local" else spec.query
                     onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery)))
-                    val searched = if (source.searchUrlTemplate.isNotBlank()) {
-                        runCatching { fetchSearchWebsite(source, spec.query, capturedAt) }
-                            .onFailure { errors++ }
-                            .getOrDefault(emptyList())
-                    } else emptyList()
 
-                    val deepGloboplay = isGloboplaySource(source)
-                    val fallback = if (deepGloboplay || searched.isEmpty()) loadFallback() else emptyList()
-                    val rawCandidates = if (deepGloboplay) {
-                        // No Globoplay a palavra pode existir apenas como tag/keyword do vídeo.
-                        // Por isso não descartamos o card da busca antes de abrir /v/<id>.
-                        (searched + fallback).distinctBy { canonicalKey(it.link) }
+                    val rawCandidates = if (scanMode) {
+                        sourceScanCandidates
                     } else {
-                        searched
-                            .filter { item -> phraseMatches("${item.title} ${item.summary}", spec.query) }
-                            .ifEmpty {
-                                fallback.filter { item -> phraseMatches("${item.title} ${item.summary}", spec.query) }
+                        collectCandidatesForQuery(source, spec.query, capturedAt) { errors++ }
+                    }
+
+                    val prioritized = if (isGloboplaySource(source)) {
+                        prioritizeGloboplayCandidates(rawCandidates, source, terms, demands)
+                    } else {
+                        rawCandidates
+                    }
+
+                    prioritized.asSequence()
+                        .take(resolveLimitFor(source))
+                        .forEach { raw ->
+                            val item = resolve(raw) ?: return@forEach
+                            val body = "${item.title} ${item.summary}"
+                            if (!inPeriod(item, from, to)) return@forEach
+                            if (!isDirectResult(item)) return@forEach
+
+                            val actualMatchedTerms = terms.filter { phraseMatches(body, it) }
+                            val matchedDemands = demands.filter { demand ->
+                                sourceMatchesDemand(source, demand.vehicle) && phraseMatches(body, demand.subject)
                             }
-                    }
 
-                    val resolveLimit = if (deepGloboplay) MAX_GLOBOPLAY_RESOLVED_PER_QUERY else MAX_RESOLVED_PER_QUERY
-                    rawCandidates.asSequence().take(resolveLimit).forEach { raw ->
-                        val item = resolve(raw) ?: return@forEach
-                        val body = "${item.title} ${item.summary}"
-                        if (!phraseMatches(body, spec.query)) return@forEach
-                        if (!inPeriod(item, from, to)) return@forEach
-                        if (!isDirectResult(item)) return@forEach
+                            // No modo tradicional, ainda respeitamos a consulta que trouxe
+                            // o candidato; no modo de varredura a relevância é inteiramente local.
+                            if (!scanMode && !phraseMatches(body, spec.query)) return@forEach
 
-                        val key = canonicalKey(item.link)
-                        val previous = collected[key]
-                        val actualMatchedTerms = terms.filter { phraseMatches(body, it) }
-                        val matchedTerm = when {
-                            actualMatchedTerms.isNotEmpty() -> actualMatchedTerms.joinToString(", ")
-                            spec.term.isNotBlank() && phraseMatches(body, spec.term) -> spec.term
-                            else -> previous?.matchedTerm.orEmpty()
+                            val key = canonicalKey(item.link)
+                            val previous = collected[key]
+                            val matchedTerm = when {
+                                actualMatchedTerms.isNotEmpty() -> actualMatchedTerms.joinToString(", ")
+                                spec.term.isNotBlank() && phraseMatches(body, spec.term) -> spec.term
+                                else -> previous?.matchedTerm.orEmpty()
+                            }
+                            val matchedDemand = when {
+                                matchedDemands.isNotEmpty() -> matchedDemands
+                                    .joinToString(" | ") { "${it.vehicle} • ${it.subject}" }
+                                spec.demand != null && phraseMatches(body, spec.demand.subject) ->
+                                    "${spec.demand.vehicle} • ${spec.demand.subject}"
+                                else -> previous?.matchedDemand.orEmpty()
+                            }
+
+                            val candidate = item.copy(
+                                link = canonicalizeUrl(item.link),
+                                matchedTerm = matchedTerm,
+                                matchedDemand = matchedDemand,
+                                capturedAt = capturedAt
+                            )
+                            if (!candidate.relevant) return@forEach
+
+                            val merged = if (previous == null) candidate else mergeVideo(previous, candidate)
+                            collected[key] = merged
+                            val inserted = db.insert(listOf(merged))
+                            if (inserted.isNotEmpty()) newKeys += key
+
+                            // Resultado entra na UI imediatamente; cronômetro e progresso
+                            // continuam avançando enquanto as demais fontes são coletadas.
+                            onUpdate?.invoke(
+                                VideoSearchUpdate(
+                                    progress(source.name, progressQuery),
+                                    listOf(merged)
+                                )
+                            )
                         }
-                        val demand = spec.demand?.takeIf { phraseMatches(body, it.subject) }
-                            ?: demands.firstOrNull { d -> sourceMatchesDemand(source, d.vehicle) && phraseMatches(body, d.subject) }
-                        val matchedDemand = demand?.let { "${it.vehicle} • ${it.subject}" }
-                            ?: previous?.matchedDemand.orEmpty()
-
-                        val candidate = item.copy(
-                            link = canonicalizeUrl(item.link),
-                            matchedTerm = matchedTerm,
-                            matchedDemand = matchedDemand,
-                            capturedAt = capturedAt
-                        )
-                        if (!candidate.relevant) return@forEach
-
-                        val merged = if (previous == null) candidate else mergeVideo(previous, candidate)
-                        collected[key] = merged
-                        val inserted = db.insert(listOf(merged))
-                        if (inserted.isNotEmpty()) newKeys += key
-
-                        // Emissão imediata: o card entra na aba Vídeos enquanto as
-                        // demais fontes/termos continuam sendo consultados.
-                        onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery), listOf(merged)))
-                    }
 
                     completed++
                     onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery)))
@@ -218,14 +219,126 @@ class VideoRepository(
         }
     }
 
+    private fun collectRecentBySource(
+        source: VideoSource,
+        capturedAt: Long,
+        onError: () -> Unit
+    ): List<VideoItem> {
+        if (source.youtubeHandle.isNotBlank()) {
+            val feed = runCatching { fetchYoutube(source, capturedAt) }
+                .onFailure { onError() }
+                .getOrDefault(emptyList())
+            if (feed.isNotEmpty()) return feed.distinctBy { canonicalKey(it.link) }
+
+            // Fallback somente se o feed oficial não puder ser obtido.
+            return runCatching { fetchWebsite(source, capturedAt) }
+                .onFailure { onError() }
+                .getOrDefault(emptyList())
+                .distinctBy { canonicalKey(it.link) }
+        }
+
+        if (isGloboplaySource(source)) {
+            val primary = when {
+                source.searchPrefix.isNotBlank() && source.searchUrlTemplate.isNotBlank() ->
+                    runCatching { fetchSearchWebsite(source, "", capturedAt) }
+                        .onFailure { onError() }
+                        .getOrDefault(emptyList())
+
+                !isDirectGloboplayVideoUrl(source.landingUrl) ->
+                    runCatching { fetchWebsite(source, capturedAt) }
+                        .onFailure { onError() }
+                        .getOrDefault(emptyList())
+
+                source.searchUrlTemplate.isNotBlank() ->
+                    runCatching { fetchSearchWebsite(source, "", capturedAt) }
+                        .onFailure { onError() }
+                        .getOrDefault(emptyList())
+
+                else -> emptyList()
+            }
+
+            if (primary.isNotEmpty()) return primary.distinctBy { canonicalKey(it.link) }
+
+            // Landings antigas que apontam diretamente para um /v/<id> não são usadas
+            // como varredura: evitamos revisitar um vídeo histórico a cada execução.
+            if (!isDirectGloboplayVideoUrl(source.landingUrl)) {
+                return runCatching { fetchWebsite(source, capturedAt) }
+                    .onFailure { onError() }
+                    .getOrDefault(emptyList())
+                    .distinctBy { canonicalKey(it.link) }
+            }
+            return emptyList()
+        }
+
+        return runCatching { fetchWebsite(source, capturedAt) }
+            .onFailure { onError() }
+            .getOrDefault(emptyList())
+            .distinctBy { canonicalKey(it.link) }
+    }
+
+    private fun collectCandidatesForQuery(
+        source: VideoSource,
+        query: String,
+        capturedAt: Long,
+        onError: () -> Unit
+    ): List<VideoItem> {
+        val searched = if (source.searchUrlTemplate.isNotBlank()) {
+            runCatching { fetchSearchWebsite(source, query, capturedAt) }
+                .onFailure { onError() }
+                .getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
+
+        val filtered = searched.filter { item -> phraseMatches("${item.title} ${item.summary}", query) }
+        if (filtered.isNotEmpty()) return filtered.distinctBy { canonicalKey(it.link) }
+
+        val fallback = runCatching { fetchWebsite(source, capturedAt) }
+            .onFailure { onError() }
+            .getOrDefault(emptyList())
+        return fallback
+            .filter { item -> phraseMatches("${item.title} ${item.summary}", query) }
+            .distinctBy { canonicalKey(it.link) }
+    }
+
+    private fun prioritizeGloboplayCandidates(
+        candidates: List<VideoItem>,
+        source: VideoSource,
+        terms: List<String>,
+        demands: List<Demand>
+    ): List<VideoItem> {
+        if (candidates.size <= 1) return candidates
+        return candidates.withIndex()
+            .sortedWith(
+                compareByDescending<IndexedValue<VideoItem>> { indexed ->
+                    val body = "${indexed.value.title} ${indexed.value.summary}"
+                    terms.any { phraseMatches(body, it) } ||
+                        demands.any { d -> sourceMatchesDemand(source, d.vehicle) && phraseMatches(body, d.subject) }
+                }.thenBy { it.index }
+            )
+            .map { it.value }
+    }
+
+    private fun resolveLimitFor(source: VideoSource): Int = when {
+        source.youtubeHandle.isNotBlank() -> MAX_YOUTUBE_ITEMS_PER_SCAN
+        source.id == "video-globoplay-jornalismo" -> MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN
+        source.id in VideoSourceCatalog.globoplayRegionalSweepIds -> MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN
+        isGloboplaySource(source) -> MAX_GLOBOPLAY_ITEMS_PER_SCAN
+        else -> MAX_RESOLVED_PER_QUERY
+    }
+
     private fun mergeVideo(previous: VideoItem, incoming: VideoItem): VideoItem {
         val terms = (previous.matchedTerm.split(',') + incoming.matchedTerm.split(','))
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
+        val demands = (previous.matchedDemand.split('|') + incoming.matchedDemand.split('|'))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
         return incoming.copy(
             matchedTerm = terms.joinToString(", "),
-            matchedDemand = incoming.matchedDemand.ifBlank { previous.matchedDemand },
+            matchedDemand = demands.joinToString(" | "),
             capturedAt = maxOf(previous.capturedAt, incoming.capturedAt)
         )
     }
@@ -242,9 +355,14 @@ class VideoRepository(
     private fun fetchWebsite(source: VideoSource, capturedAt: Long): List<VideoItem> =
         fetchPageLinks(source, source.landingUrl, capturedAt, source.group)
 
-    private fun fetchPageLinks(source: VideoSource, pageUrl: String, capturedAt: Long, fallbackSummary: String): List<VideoItem> {
+    private fun fetchPageLinks(
+        source: VideoSource,
+        pageUrl: String,
+        capturedAt: Long,
+        fallbackSummary: String
+    ): List<VideoItem> {
         val doc = Jsoup.connect(pageUrl)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.1")
             .referrer("https://www.google.com/")
             .timeout(14_000)
             .followRedirects(true)
@@ -266,21 +384,20 @@ class VideoRepository(
                 anchor.attr("title"),
                 anchor.selectFirst("img[alt]")?.attr("alt").orEmpty(),
                 anchor.text()
-            ).map { cleanText(it) }.firstOrNull { usefulTitle(it) }.orEmpty()
-
-            if (!usefulTitle(title)) return@forEach
+            ).map(::cleanText).firstOrNull(::usefulTitle).orEmpty()
 
             val parentText = cleanText(anchor.parent()?.text().orEmpty())
             val summary = when {
                 parentText.isBlank() || normalize(parentText) == normalize(title) -> fallbackSummary
                 parentText.length > 480 -> fallbackSummary
                 else -> parentText.removePrefix(title).trim().ifBlank { fallbackSummary }
-            }.take(360)
+            }.take(420)
 
+            val candidateTitle = title.ifBlank { "Vídeo recente • ${source.name}" }
             out.putIfAbsent(
                 canonicalKey(absolute),
                 VideoItem(
-                    title = title.take(220),
+                    title = candidateTitle.take(220),
                     sourceId = source.id,
                     sourceName = source.name,
                     publishedAt = capturedAt,
@@ -290,14 +407,39 @@ class VideoRepository(
                 )
             )
         }
-        return out.values.take(if (isGloboplaySource(source)) 80 else 40)
+
+        if (isGloboplaySource(source)) {
+            // O Globoplay frequentemente injeta os cards via JSON/JavaScript. Nesses
+            // casos o /v/<id> pode não existir como <a href> no HTML parseado. Extraímos
+            // também os links presentes nos scripts, inclusive no formato escapado \/v\/. 
+            val html = doc.html().replace("\\/", "/")
+            GLOBOPLAY_VIDEO_LINK_REGEX.findAll(html).take(MAX_GLOBOPLAY_LINKS_DISCOVERED).forEach { match ->
+                val id = match.groupValues[1]
+                if (id.isBlank()) return@forEach
+                val direct = "https://globoplay.globo.com/v/$id"
+                out.putIfAbsent(
+                    canonicalKey(direct),
+                    VideoItem(
+                        title = "Vídeo recente • ${source.name}",
+                        sourceId = source.id,
+                        sourceName = source.name,
+                        publishedAt = capturedAt,
+                        link = direct,
+                        summary = fallbackSummary,
+                        capturedAt = capturedAt
+                    )
+                )
+            }
+        }
+
+        return out.values.take(if (isGloboplaySource(source)) MAX_GLOBOPLAY_LINKS_DISCOVERED else 40)
     }
 
     private fun resolveDirectVideoPage(source: VideoSource, candidate: VideoItem, capturedAt: Long): VideoItem? {
         if (!isSpecificVideoUrl(source, candidate.link)) return null
 
         val doc = Jsoup.connect(candidate.link)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.1")
             .referrer(source.landingUrl)
             .timeout(14_000)
             .followRedirects(true)
@@ -309,6 +451,7 @@ class VideoRepository(
         val title = sequenceOf(
             doc.selectFirst("meta[property=og:title]")?.attr("content").orEmpty(),
             doc.selectFirst("meta[name=twitter:title]")?.attr("content").orEmpty(),
+            doc.selectFirst("meta[itemprop=name]")?.attr("content").orEmpty(),
             doc.selectFirst("h1")?.text().orEmpty(),
             candidate.title,
             doc.title()
@@ -317,22 +460,27 @@ class VideoRepository(
 
         val description = sequenceOf(
             doc.selectFirst("meta[property=og:description]")?.attr("content").orEmpty(),
+            doc.selectFirst("meta[name=twitter:description]")?.attr("content").orEmpty(),
             doc.selectFirst("meta[name=description]")?.attr("content").orEmpty(),
+            doc.selectFirst("meta[itemprop=description]")?.attr("content").orEmpty(),
             candidate.summary
         ).map(::cleanText).firstOrNull { it.isNotBlank() && !isGenericSummary(it) }.orEmpty()
 
         val metadataTerms = extractMetadataTerms(doc)
-        val metadataSuffix = if (metadataTerms.isEmpty()) "" else "Tags: ${metadataTerms.take(18).joinToString(", ")}"
-        val enrichedSummary = listOf(description, metadataSuffix)
-            .filter { it.isNotBlank() }
-            .distinct()
+        val structuredText = extractStructuredText(doc)
+        val enrichedSummary = buildList {
+            if (description.isNotBlank()) add(description)
+            if (metadataTerms.isNotEmpty()) add("Metadados: ${metadataTerms.take(24).joinToString(", ")}")
+            structuredText.take(6).forEach { value ->
+                if (value.isNotBlank() && normalize(value) != normalize(description)) add(value)
+            }
+        }.distinctBy(::normalize)
             .joinToString(" • ")
-            .take(900)
+            .take(MAX_ENRICHED_SUMMARY_LENGTH)
 
         val publishedAt = parsePublishedAt(doc) ?: candidate.publishedAt.takeIf { it > 0 } ?: capturedAt
-        val directPattern = isSpecificVideoUrl(source, canonical)
         val hasVideoSignal = pageHasVideoSignal(doc)
-        if (!directPattern && !hasVideoSignal) return null
+        if (!isSpecificVideoUrl(source, canonical) && !hasVideoSignal) return null
 
         return candidate.copy(
             title = title.take(220),
@@ -343,30 +491,37 @@ class VideoRepository(
     }
 
     /**
-     * Globoplay frequentemente expõe o assunto apenas como tag/keyword da página,
-     * não no título do card de busca. A v3.0 incorpora essas informações ao texto
-     * classificável antes de comparar com Termos/Demandas.
+     * O assunto de um trecho do Globoplay pode aparecer apenas em keywords/tags ou
+     * dentro do JSON estruturado. Esses valores passam a integrar o texto localmente
+     * comparado com TODOS os Termos e Demandas.
      */
     private fun extractMetadataTerms(doc: Document): List<String> {
         val values = linkedSetOf<String>()
 
-        doc.select("meta[name=keywords], meta[property=article:tag], meta[property=video:tag], meta[name=news_keywords]")
-            .forEach { meta -> splitMetadata(meta.attr("content")).forEach(values::add) }
-
-        doc.select("a[href*=/tag/], a[href*=/tags/], [data-tag], [data-tags]").take(40).forEach { element ->
-            splitMetadata(element.attr("data-tag")).forEach(values::add)
-            splitMetadata(element.attr("data-tags")).forEach(values::add)
-            val text = cleanText(element.text())
-            if (text.length in 2..80) values += text
+        doc.select(
+            "meta[name=keywords], meta[itemprop=keywords], meta[property=article:tag], " +
+                "meta[property=video:tag], meta[name=news_keywords]"
+        ).forEach { meta ->
+            splitMetadata(meta.attr("content")).forEach(values::add)
         }
 
-        doc.select("script[type=application/ld+json], script").take(80).forEach { script ->
+        doc.select("a[href*=/tag/], a[href*=/tags/], [data-tag], [data-tags], [data-keywords]")
+            .take(60)
+            .forEach { element ->
+                splitMetadata(element.attr("data-tag")).forEach(values::add)
+                splitMetadata(element.attr("data-tags")).forEach(values::add)
+                splitMetadata(element.attr("data-keywords")).forEach(values::add)
+                val text = cleanText(element.text())
+                if (text.length in 2..100) values += text
+            }
+
+        doc.select("script[type=application/ld+json], script").take(100).forEach { script ->
             val text = script.data().ifBlank { script.html() }
-            JSON_METADATA_REGEX.findAll(text).take(20).forEach { match ->
+            JSON_METADATA_REGEX.findAll(text).take(30).forEach { match ->
                 val raw = match.groupValues.drop(1).firstOrNull { it.isNotBlank() }.orEmpty()
                 QUOTED_VALUE_REGEX.findAll(raw).forEach { q ->
-                    val item = cleanText(q.groupValues[1])
-                    if (item.length in 2..80) values += item
+                    val item = cleanJsonText(q.groupValues[1])
+                    if (item.length in 2..100) values += item
                 }
                 splitMetadata(raw.replace("\\\"", "\"")).forEach(values::add)
             }
@@ -374,9 +529,21 @@ class VideoRepository(
 
         return values
             .map(::cleanText)
-            .filter { it.length in 2..80 && normalize(it) !in GENERIC_METADATA }
+            .filter { it.length in 2..100 && normalize(it) !in GENERIC_METADATA }
             .distinctBy(::normalize)
-            .take(40)
+            .take(60)
+    }
+
+    private fun extractStructuredText(doc: Document): List<String> {
+        val values = linkedSetOf<String>()
+        doc.select("script[type=application/ld+json], script").take(100).forEach { script ->
+            val text = script.data().ifBlank { script.html() }
+            JSON_TEXT_REGEX.findAll(text).take(30).forEach { match ->
+                val value = cleanJsonText(match.groupValues[1])
+                if (value.length in 8..700 && !isGenericSummary(value)) values += value
+            }
+        }
+        return values.distinctBy(::normalize).take(12)
     }
 
     private fun splitMetadata(value: String): List<String> = value
@@ -385,8 +552,18 @@ class VideoRepository(
         .replace("{", " ")
         .replace("}", " ")
         .split(',', ';', '|')
-        .map { cleanText(it.trim(' ', '\"', '\'')) }
-        .filter { it.length in 2..80 }
+        .map { cleanJsonText(it.trim(' ', '\"', '\'')) }
+        .filter { it.length in 2..100 }
+
+    private fun cleanJsonText(value: String): String = cleanText(
+        value
+            .replace("\\n", " ")
+            .replace("\\r", " ")
+            .replace("\\t", " ")
+            .replace("\\/", "/")
+            .replace("\\\"", "\"")
+            .replace("\\u0026", "&", ignoreCase = true)
+    )
 
     private fun resolveCanonicalUrl(doc: Document, fallback: String): String {
         val candidates = listOf(
@@ -407,23 +584,41 @@ class VideoRepository(
     }
 
     private fun pageHasVideoSignal(doc: Document): Boolean {
-        if (doc.selectFirst("video, meta[property=og:video], meta[property=og:video:url], iframe[src*=youtube], iframe[src*=player]") != null) return true
-        return doc.select("script").take(40).any { script ->
+        if (doc.selectFirst(
+                "video, meta[property=og:video], meta[property=og:video:url], " +
+                    "iframe[src*=youtube], iframe[src*=player]"
+            ) != null
+        ) return true
+
+        return doc.select("script").take(60).any { script ->
             val text = script.data().ifBlank { script.html() }
             text.contains("VideoObject", ignoreCase = true) ||
                 text.contains("contentUrl", ignoreCase = true) ||
-                text.contains("embedUrl", ignoreCase = true)
+                text.contains("embedUrl", ignoreCase = true) ||
+                text.contains("videoId", ignoreCase = true)
         }
     }
 
     private fun parsePublishedAt(doc: Document): Long? {
-        val values = listOf(
+        val values = mutableListOf<String>()
+        values += listOf(
             doc.selectFirst("meta[property=article:published_time]")?.attr("content").orEmpty(),
+            doc.selectFirst("meta[property=og:published_time]")?.attr("content").orEmpty(),
             doc.selectFirst("meta[name=date]")?.attr("content").orEmpty(),
+            doc.selectFirst("meta[itemprop=datePublished]")?.attr("content").orEmpty(),
             doc.selectFirst("time[datetime]")?.attr("datetime").orEmpty()
         ).filter { it.isNotBlank() }
-        values.forEach { value ->
-            runCatching { Instant.parse(value).toEpochMilli() }.getOrNull()?.let { return it }
+
+        doc.select("script[type=application/ld+json], script").take(80).forEach { script ->
+            val text = script.data().ifBlank { script.html() }
+            JSON_DATE_REGEX.findAll(text).take(6).forEach { match ->
+                val date = match.groupValues[1]
+                if (date.isNotBlank()) values += date
+            }
+        }
+
+        values.distinct().forEach { value ->
+            runCatching { Instant.parse(value.trim()).toEpochMilli() }.getOrNull()?.let { return it }
         }
         return null
     }
@@ -431,16 +626,18 @@ class VideoRepository(
     private fun fetchYoutube(source: VideoSource, capturedAt: Long): List<VideoItem> {
         val handle = source.youtubeHandle.removePrefix("@")
         val channelPage = Jsoup.connect("https://www.youtube.com/@$handle/videos")
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.1")
             .timeout(14_000)
             .get()
             .html()
-        val channelId = Regex("\\\"channelId\\\":\\\"(UC[0-9A-Za-z_-]{20,})\\\"")
-            .find(channelPage)?.groupValues?.getOrNull(1)
+
+        val channelId = YOUTUBE_CHANNEL_ID_REGEXES.asSequence()
+            .mapNotNull { regex -> regex.find(channelPage)?.groupValues?.getOrNull(1) }
+            .firstOrNull { it.startsWith("UC") }
             ?: return emptyList()
 
         val feed = Jsoup.connect("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
-            .userAgent("Mozilla/5.0 MonitorNoticias/3.0")
+            .userAgent("Mozilla/5.0 MonitorNoticias/3.0.1")
             .timeout(14_000)
             .parser(Parser.xmlParser())
             .get()
@@ -448,20 +645,33 @@ class VideoRepository(
         return feed.select("entry").mapNotNull { entry ->
             val title = cleanText(entry.selectFirst("title")?.text().orEmpty())
             val link = canonicalizeUrl(entry.selectFirst("link[href]")?.attr("href").orEmpty())
-            if (!usefulTitle(title) || link.isBlank()) return@mapNotNull null
+            if (!usefulTitle(title) || !isYoutubeVideoUrl(link)) return@mapNotNull null
+
             val published = runCatching {
                 Instant.parse(entry.selectFirst("published")?.text().orEmpty()).toEpochMilli()
             }.getOrDefault(capturedAt)
+
+            val description = sequenceOf(
+                entry.getElementsByTag("media:description").firstOrNull()?.text().orEmpty(),
+                entry.selectFirst("description")?.text().orEmpty()
+            ).map(::cleanText).firstOrNull { it.isNotBlank() }.orEmpty()
+
+            val summary = listOf(description, "Canal oficial • ${source.group}")
+                .filter { it.isNotBlank() }
+                .distinct()
+                .joinToString(" • ")
+                .take(1000)
+
             VideoItem(
                 title = title.take(220),
                 sourceId = source.id,
                 sourceName = source.name,
                 publishedAt = published,
                 link = link,
-                summary = "Canal oficial • ${source.group}",
+                summary = summary,
                 capturedAt = capturedAt
             )
-        }.take(40)
+        }.take(MAX_YOUTUBE_ITEMS_PER_SCAN)
     }
 
     private fun isSpecificVideoUrl(source: VideoSource, url: String): Boolean {
@@ -475,7 +685,7 @@ class VideoRepository(
         if (normalizedPath.contains("/busca") || normalizedPath.contains("/search")) return false
 
         return when {
-            isGloboplaySource(source) -> Regex("/v/[0-9]+/?$", RegexOption.IGNORE_CASE).containsMatchIn(path)
+            isGloboplaySource(source) -> GLOBOPLAY_DIRECT_PATH_REGEX.containsMatchIn(path)
             source.id == "video-r7-record" -> hasSpecificSuffix(path, "/videos/") || hasSpecificSuffix(path, "/video/")
             source.id == "video-sbt-news" -> hasSpecificSuffix(path, "/videos/")
             source.id == "video-cnn-brasil" -> hasSpecificSuffix(path, "/videos/") || hasSpecificSuffix(path, "/video/")
@@ -488,6 +698,12 @@ class VideoRepository(
         source.landingUrl.contains("globoplay.globo.com", ignoreCase = true) ||
             source.searchUrlTemplate.contains("globoplay.globo.com", ignoreCase = true) ||
             source.id.startsWith("globoplay-") || source.id.startsWith("video-globoplay")
+
+    private fun isDirectGloboplayVideoUrl(url: String): Boolean {
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val host = uri.host.orEmpty().lowercase()
+        return host.endsWith("globoplay.globo.com") && GLOBOPLAY_DIRECT_PATH_REGEX.containsMatchIn(uri.path.orEmpty())
+    }
 
     private fun isSourceScanMode(source: VideoSource): Boolean =
         isGloboplaySource(source) || source.youtubeHandle.isNotBlank()
@@ -542,7 +758,12 @@ class VideoRepository(
                 val query = uri.rawQuery.orEmpty()
                 val videoId = when {
                     host == "youtu.be" -> uri.path.orEmpty().trim('/').substringBefore('/')
-                    else -> query.split('&').firstOrNull { it.startsWith("v=") }?.substringAfter("v=").orEmpty()
+                    uri.path.equals("/watch", ignoreCase = true) ->
+                        query.split('&').firstOrNull { it.startsWith("v=") }?.substringAfter("v=").orEmpty()
+                    else -> {
+                        val parts = uri.path.orEmpty().trim('/').split('/').filter { it.isNotBlank() }
+                        if (parts.size >= 2 && parts.first().lowercase() in setOf("shorts", "live")) parts[1] else ""
+                    }
                 }
                 if (videoId.isNotBlank()) "https://www.youtube.com/watch?v=$videoId" else value.trim()
             } else {
@@ -625,12 +846,36 @@ class VideoRepository(
 
     companion object {
         private const val MAX_RESOLVED_PER_QUERY = 8
-        private const val MAX_GLOBOPLAY_RESOLVED_PER_QUERY = 20
+        private const val MAX_GLOBOPLAY_ITEMS_PER_SCAN = 10
+        private const val MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN = 18
+        private const val MAX_GLOBOPLAY_LINKS_DISCOVERED = 80
+        private const val MAX_YOUTUBE_ITEMS_PER_SCAN = 40
+        private const val MAX_ENRICHED_SUMMARY_LENGTH = 1800
+
+        private val GLOBOPLAY_DIRECT_PATH_REGEX = Regex("/v/[0-9]+/?$", RegexOption.IGNORE_CASE)
+        private val GLOBOPLAY_VIDEO_LINK_REGEX = Regex(
+            "(?:https?://globoplay\\.globo\\.com)?/v/([0-9]{5,})/?",
+            RegexOption.IGNORE_CASE
+        )
         private val JSON_METADATA_REGEX = Regex(
-            "\\\"(?:keywords|tags|tag|subjects?)\\\"\\s*:\\s*(?:\\\"([^\\\"]+)\\\"|\\[([^]]+)])",
+            "\\\"(?:keywords|tags|tag|subjects?|topics?|categories?)\\\"\\s*:\\s*(?:\\\"([^\\\"]+)\\\"|\\[([^]]+)])",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
         )
-        private val QUOTED_VALUE_REGEX = Regex("\\\"([^\\\"]{2,80})\\\"")
+        private val JSON_TEXT_REGEX = Regex(
+            "\\\"(?:description|headline|alternativeHeadline|caption|articleBody)\\\"\\s*:\\s*\\\"([^\\\"]{2,700})\\\"",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        )
+        private val JSON_DATE_REGEX = Regex(
+            "\\\"(?:datePublished|uploadDate|dateCreated)\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",
+            RegexOption.IGNORE_CASE
+        )
+        private val QUOTED_VALUE_REGEX = Regex("\\\"([^\\\"]{2,100})\\\"")
+        private val YOUTUBE_CHANNEL_ID_REGEXES = listOf(
+            Regex("\\\"channelId\\\":\\\"(UC[0-9A-Za-z_-]{20,})\\\""),
+            Regex("\\\"externalId\\\":\\\"(UC[0-9A-Za-z_-]{20,})\\\""),
+            Regex("\\\"browseId\\\":\\\"(UC[0-9A-Za-z_-]{20,})\\\"")
+        )
+
         private val STOP_WORDS = setOf("de", "do", "da", "dos", "das", "e", "em", "no", "na", "nos", "nas", "a", "o", "as", "os")
         private val GENERIC_TITLES = setOf(
             "videos", "video", "todos os videos", "todos videos", "ultimos videos", "mais videos",

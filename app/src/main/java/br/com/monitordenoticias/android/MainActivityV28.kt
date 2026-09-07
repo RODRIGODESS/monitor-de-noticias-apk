@@ -94,6 +94,7 @@ private fun V28App(
     val videos by videoVm.state.collectAsState()
     var section by remember { mutableStateOf(V28Section.HOME) }
     var showMore by remember { mutableStateOf(false) }
+    var sourceTab by remember { mutableIntStateOf(0) }
 
     Scaffold(
         containerColor = V28Bg,
@@ -108,10 +109,11 @@ private fun V28App(
         ) {
             val status = if (section == V28Section.VIDEOS) videos.status else news.status
             if (status.isNotBlank() && status != "Pronto") V28StatusStrip(status)
+            if (news.searchProgress.active && section != V28Section.HOME && section != V28Section.VIDEOS) V30CompactProgress(news.searchProgress)
             when (section) {
-                V28Section.HOME -> V28Home(news, newsVm) { section = V28Section.VIDEOS }
-                V28Section.VIDEOS -> V29Videos(videos, videoVm)
-                V28Section.SOURCES -> V28Sources(news, newsVm)
+                V28Section.HOME -> V30Home(news, newsVm, videos) { section = V28Section.VIDEOS }
+                V28Section.VIDEOS -> V30Videos(videos, videoVm) { sourceTab = 1; section = V28Section.SOURCES }
+                V28Section.SOURCES -> V30SourcesHub(news, newsVm, videos, videoVm, sourceTab) { sourceTab = it }
                 V28Section.DEMANDS -> V28Demands(news, newsVm)
                 V28Section.PERIOD -> V28Period(news, newsVm)
                 V28Section.HISTORY -> V28History(news, newsVm)
@@ -148,7 +150,7 @@ private fun V28TopBar(section: V28Section) {
     val subtitle = when (section) {
         V28Section.HOME -> "Inteligência de mídia em tempo real"
         V28Section.VIDEOS -> "TV, portais, YouTube e conteúdo audiovisual"
-        V28Section.SOURCES -> "Escolha os veículos de notícias"
+        V28Section.SOURCES -> "Notícias e fontes de vídeo"
         V28Section.DEMANDS -> "Alertas por veículo e assunto"
         V28Section.PERIOD -> "Defina o intervalo da pesquisa"
         V28Section.HISTORY -> "Arquivo das matérias capturadas"

@@ -46,6 +46,7 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     init {
         refresh()
         schedule(savedInterval)
+        scheduleDemandMonitor()
     }
 
     fun refresh() {
@@ -84,13 +85,54 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
                 else -> "✓ ${result.newCount} nova(s) notícia(s) encontrada(s)"
             }
             _state.value = _state.value.copy(
-                // Important: show only results from THIS search scope. Do not reload every
-                // recent row from the DB, because it may contain older open-search results.
                 news = result.items,
                 history = db.listNews(),
                 busy = false,
                 status = status,
                 lastUpdatedAt = System.currentTimeMillis()
+            )
+        }
+    }
+
+    fun searchAllDemandsNow() {
+        if (_state.value.demandSearchBusy) return
+        _state.value = _state.value.copy(demandSearchBusy = true, demandBusyId = null, status = "Buscando todas as demandas...")
+        viewModelScope.launch {
+            val result = repo.searchAllDemands()
+            val status = when {
+                result.checkedCount == 0 -> "Nenhuma demanda ativa para pesquisar"
+                result.errors == result.checkedCount -> "⚠ As buscas de demandas falharam"
+                result.newCount > 0 -> "✓ ${result.checkedCount} demanda(s) verificadas • ${result.newCount} nova(s) matéria(s)"
+                else -> "✓ ${result.checkedCount} demanda(s) verificadas • nenhuma matéria nova"
+            }
+            _state.value = _state.value.copy(
+                demandSearchBusy = false,
+                demandBusyId = null,
+                demands = db.listDemands(),
+                history = db.listNews(),
+                status = status
+            )
+        }
+    }
+
+    fun searchDemandNow(id: Long) {
+        if (_state.value.demandSearchBusy || _state.value.demandBusyId != null) return
+        val demand = _state.value.demands.firstOrNull { it.id == id } ?: return
+        _state.value = _state.value.copy(demandBusyId = id, status = "Buscando ${demand.vehicle}...")
+        viewModelScope.launch {
+            val result = repo.searchDemand(demand)
+            val status = if (result.error != null) {
+                "⚠ Falha ao pesquisar ${demand.vehicle}"
+            } else if (result.newCount > 0) {
+                "✓ ${demand.vehicle}: ${result.newCount} nova(s) matéria(s)"
+            } else {
+                "✓ ${demand.vehicle}: busca concluída • ${result.foundCount} resultado(s)"
+            }
+            _state.value = _state.value.copy(
+                demandBusyId = null,
+                demands = db.listDemands(),
+                history = db.listNews(),
+                status = status
             )
         }
     }
@@ -119,14 +161,8 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(busy = true, status = "Pesquisando período...")
         viewModelScope.launch {
             val latest = _state.value
-            val result = repo.searchPeriod(
-                from,
-                to,
-                SourceCatalog.selected(latest.selectedSourceIds),
-                latest.searchAllSources
-            )
-            val status = if (result.errors > 0 && result.foundCount == 0)
-                "⚠ Não foi possível concluir a pesquisa externa."
+            val result = repo.searchPeriod(from, to, SourceCatalog.selected(latest.selectedSourceIds), latest.searchAllSources)
+            val status = if (result.errors > 0 && result.foundCount == 0) "⚠ Não foi possível concluir a pesquisa externa."
             else "Período: ${result.foundCount} matéria(s) no escopo selecionado"
             _state.value = _state.value.copy(
                 news = result.items,
@@ -163,92 +199,41 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSourceSelected(id: String, selected: Boolean) {
         if (!SourceCatalog.byId.containsKey(id)) return
-        val ids = _state.value.selectedSourceIds.toMutableSet().apply {
-            if (selected) add(id) else remove(id)
-        }.toSet()
+        val ids = _state.value.selectedSourceIds.toMutableSet().apply { if (selected) add(id) else remove(id) }.toSet()
         val searchAll = if (selected) false else _state.value.searchAllSources
-        prefs.edit()
-            .putStringSet("selected_source_ids", ids)
-            .putBoolean("search_all_sources", searchAll)
-            .apply()
-        _state.value = _state.value.copy(
-            selectedSourceIds = ids,
-            searchAllSources = searchAll,
-            status = "✓ ${ids.size} fonte(s) selecionada(s)"
-        )
+        prefs.edit().putStringSet("selected_source_ids", ids).putBoolean("search_all_sources", searchAll).apply()
+        _state.value = _state.value.copy(selectedSourceIds = ids, searchAllSources = searchAll, status = "✓ ${ids.size} fonte(s) selecionada(s)")
         refresh()
     }
 
     fun setVisibleSources(ids: Set<String>, selected: Boolean) {
         val valid = ids.filter { SourceCatalog.byId.containsKey(it) }.toSet()
-        val result = _state.value.selectedSourceIds.toMutableSet().apply {
-            if (selected) addAll(valid) else removeAll(valid)
-        }.toSet()
+        val result = _state.value.selectedSourceIds.toMutableSet().apply { if (selected) addAll(valid) else removeAll(valid) }.toSet()
         val searchAll = if (selected && valid.isNotEmpty()) false else _state.value.searchAllSources
-        prefs.edit()
-            .putStringSet("selected_source_ids", result)
-            .putBoolean("search_all_sources", searchAll)
-            .apply()
-        _state.value = _state.value.copy(
-            selectedSourceIds = result,
-            searchAllSources = searchAll,
-            status = if (selected) "✓ Fontes visíveis selecionadas" else "✓ Fontes visíveis desmarcadas"
-        )
+        prefs.edit().putStringSet("selected_source_ids", result).putBoolean("search_all_sources", searchAll).apply()
+        _state.value = _state.value.copy(selectedSourceIds = result, searchAllSources = searchAll, status = if (selected) "✓ Fontes visíveis selecionadas" else "✓ Fontes visíveis desmarcadas")
         refresh()
     }
 
     fun setSearchAllSources(enabled: Boolean) {
         prefs.edit().putBoolean("search_all_sources", enabled).apply()
-        _state.value = _state.value.copy(
-            searchAllSources = enabled,
-            status = if (enabled) "✓ Busca aberta ativada" else "Selecione as fontes desejadas"
-        )
+        _state.value = _state.value.copy(searchAllSources = enabled, status = if (enabled) "✓ Busca aberta ativada" else "Selecione as fontes desejadas")
         refresh()
     }
 
-    fun addTerm(value: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            db.addTerm(value)
-            refresh()
-        }
-    }
-
-    fun removeTerm(value: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            db.removeTerm(value)
-            refresh()
-        }
-    }
-
-    fun addDemand(vehicle: String, subject: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            db.addDemand(vehicle, subject)
-            refresh()
-        }
-    }
-
-    fun removeDemand(id: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
-            db.removeDemand(id)
-            refresh()
-        }
-    }
+    fun addTerm(value: String) { viewModelScope.launch(Dispatchers.IO) { db.addTerm(value); refresh() } }
+    fun removeTerm(value: String) { viewModelScope.launch(Dispatchers.IO) { db.removeTerm(value); refresh() } }
+    fun addDemand(vehicle: String, subject: String) { viewModelScope.launch(Dispatchers.IO) { db.addDemand(vehicle, subject); refresh() } }
+    fun removeDemand(id: Long) { viewModelScope.launch(Dispatchers.IO) { db.removeDemand(id); refresh() } }
 
     fun clearHistory() {
         viewModelScope.launch(Dispatchers.IO) {
-            db.clearHistory()
-            refresh()
-            publish { it.copy(status = "✓ Histórico limpo com sucesso") }
+            db.clearHistory(); refresh(); publish { it.copy(status = "✓ Histórico limpo com sucesso") }
         }
     }
 
-    fun setTab(tab: Int) {
-        _state.value = _state.value.copy(selectedTab = tab, status = "Pronto")
-    }
-
-    fun setDemandFilter(enabled: Boolean) {
-        _state.value = _state.value.copy(showOnlyDemands = enabled)
-    }
+    fun setTab(tab: Int) { _state.value = _state.value.copy(selectedTab = tab, status = "Pronto") }
+    fun setDemandFilter(enabled: Boolean) { _state.value = _state.value.copy(showOnlyDemands = enabled) }
 
     fun setInterval(minutes: Int) {
         val safe = minutes.coerceAtLeast(15)
@@ -260,76 +245,47 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     private fun scopedRecent(state: AppState): List<News> {
         val recent = db.listRecent()
         if (state.searchAllSources) return recent
-
         val selected = SourceCatalog.selected(state.selectedSourceIds)
         if (selected.isEmpty()) return emptyList()
-
-        return recent.filter { news ->
-            selected.any { source -> sourceMatchesStrict(news.source, source) }
-        }
+        return recent.filter { news -> selected.any { source -> sourceMatchesStrict(news.source, source) } }
     }
 
     private fun sourceMatchesStrict(actualSource: String, selected: MediaSource): Boolean {
         val actualNormalized = normalize(actualSource)
         val actualKey = compact(actualSource)
         val hostKey = publisherHostKey(actualSource)
-
         return (listOf(selected.name) + selected.aliases).any { candidate ->
             val candidateNormalized = normalize(candidate)
             val candidateKey = compact(candidate)
-            if (candidateNormalized.isBlank() || candidateKey.isBlank()) {
-                false
-            } else if (
-                actualNormalized == candidateNormalized ||
-                actualKey == candidateKey ||
-                hostKey == candidateKey
-            ) {
-                true
-            } else {
-                val meaningfulTokens = candidateNormalized
-                    .split(' ')
-                    .filter { it.length >= 2 && it !in setOf("de", "do", "da", "dos", "das") }
-                meaningfulTokens.size >= 2 &&
-                    candidateKey.length >= 6 &&
-                    (actualKey.startsWith(candidateKey) || hostKey.startsWith(candidateKey))
+            if (candidateNormalized.isBlank() || candidateKey.isBlank()) false
+            else if (actualNormalized == candidateNormalized || actualKey == candidateKey || hostKey == candidateKey) true
+            else {
+                val meaningfulTokens = candidateNormalized.split(' ').filter { it.length >= 2 && it !in setOf("de", "do", "da", "dos", "das") }
+                meaningfulTokens.size >= 2 && candidateKey.length >= 6 && (actualKey.startsWith(candidateKey) || hostKey.startsWith(candidateKey))
             }
         }
     }
 
     private fun publisherHostKey(value: String): String {
         val cleaned = value.trim().lowercase()
-        val firstPart = if ('.' in cleaned) cleaned.substringBefore('.') else cleaned
-        return compact(firstPart)
+        return compact(if ('.' in cleaned) cleaned.substringBefore('.') else cleaned)
     }
 
     private fun compact(value: String): String = normalize(value).replace(" ", "")
-
-    private fun normalize(value: String): String = Normalizer.normalize(
-        value.lowercase(),
-        Normalizer.Form.NFD
-    )
-        .replace(Regex("\\p{Mn}+"), "")
-        .replace(Regex("[^a-z0-9]+"), " ")
-        .trim()
+    private fun normalize(value: String): String = Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
+        .replace(Regex("\\p{Mn}+"), "").replace(Regex("[^a-z0-9]+"), " ").trim()
 
     private fun updatePeriod(block: (AppState) -> AppState) {
-        val updated = block(_state.value)
-        _state.value = updated
-        persistPeriod(updated)
+        val updated = block(_state.value); _state.value = updated; persistPeriod(updated)
     }
 
     private fun persistPeriod(state: AppState) {
-        prefs.edit()
-            .putString("period_start_date", state.periodStartDate)
-            .putString("period_start_time", state.periodStartTime)
-            .putString("period_end_date", state.periodEndDate)
-            .putString("period_end_time", state.periodEndTime)
-            .apply()
+        prefs.edit().putString("period_start_date", state.periodStartDate).putString("period_start_time", state.periodStartTime)
+            .putString("period_end_date", state.periodEndDate).putString("period_end_time", state.periodEndTime).apply()
     }
 
     private fun parseDateTime(date: String, time: String): Long? = runCatching {
-        SimpleDateFormat("dd/MM/yyyy HH:mm", locale).apply { isLenient = false }
-            .parse("$date $time")?.time
+        SimpleDateFormat("dd/MM/yyyy HH:mm", locale).apply { isLenient = false }.parse("$date $time")?.time
     }.getOrNull()
 
     private fun formatDate(ms: Long): String = SimpleDateFormat("dd/MM/yyyy", locale).format(Date(ms))
@@ -337,28 +293,20 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun sourceStatusPrefix(prefix: String): String {
         val state = _state.value
-        return if (state.searchAllSources) {
-            "$prefix • qualquer veículo"
-        } else {
-            "$prefix • ${state.selectedSourceIds.size} fonte(s)"
-        }
+        return if (state.searchAllSources) "$prefix • qualquer veículo" else "$prefix • ${state.selectedSourceIds.size} fonte(s)"
     }
 
     private fun schedule(minutes: Int) {
         val req = PeriodicWorkRequestBuilder<MonitorWorker>(minutes.toLong(), TimeUnit.MINUTES).build()
-        WorkManager.getInstance(getApplication()).enqueueUniquePeriodicWork(
-            "monitor_noticias",
-            ExistingPeriodicWorkPolicy.UPDATE,
-            req
-        )
+        WorkManager.getInstance(getApplication()).enqueueUniquePeriodicWork("monitor_noticias", ExistingPeriodicWorkPolicy.UPDATE, req)
     }
 
-    private fun publish(block: (AppState) -> AppState) {
-        _state.value = block(_state.value)
+    private fun scheduleDemandMonitor() {
+        val req = PeriodicWorkRequestBuilder<DemandMonitorWorker>(1, TimeUnit.HOURS).build()
+        WorkManager.getInstance(getApplication()).enqueueUniquePeriodicWork("monitor_demandas_1h", ExistingPeriodicWorkPolicy.UPDATE, req)
     }
 
-    override fun onCleared() {
-        db.close()
-        super.onCleared()
-    }
+    private fun publish(block: (AppState) -> AppState) { _state.value = block(_state.value) }
+
+    override fun onCleared() { db.close(); super.onCleared() }
 }

@@ -8,3 +8,6 @@
 .cxx
 app/build
 *.iml
+*.jks
+*.keystore
+/signing/

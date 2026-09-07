@@ -4,22 +4,54 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val signingStoreFile = System.getenv("ANDROID_SIGNING_STORE_FILE")
+val signingPassword = System.getenv("ANDROID_SIGNING_PASSWORD")
+val hasPermanentSigning = !signingStoreFile.isNullOrBlank() && !signingPassword.isNullOrBlank()
+
 android {
     namespace = "br.com.monitordenoticias.android"
     compileSdk = 35
+
     defaultConfig {
         applicationId = "br.com.monitordenoticias.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 240
-        versionName = "2.4.0"
+        versionCode = 250
+        versionName = "2.5.0"
     }
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+
+    signingConfigs {
+        if (hasPermanentSigning) {
+            create("permanent") {
+                storeFile = file(signingStoreFile!!)
+                storePassword = signingPassword
+                keyAlias = "monitor-noticias"
+                keyPassword = signingPassword
+            }
         }
     }
+
+    buildTypes {
+        debug {
+            // The one-time migration APK must stay debuggable so the ADB helper
+            // can restore v2.4 data with run-as. In CI it is signed with the same
+            // permanent key as the release APK.
+            if (hasPermanentSigning) {
+                signingConfig = signingConfigs.getByName("permanent")
+            }
+        }
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            if (hasPermanentSigning) {
+                signingConfig = signingConfigs.getByName("permanent")
+            }
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

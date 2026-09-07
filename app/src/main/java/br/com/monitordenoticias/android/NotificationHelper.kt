@@ -15,7 +15,7 @@ object NotificationHelper {
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, "Monitor de Notícias", NotificationManager.IMPORTANCE_HIGH)
         )
-        val intent = Intent(context, MainActivityV24::class.java).apply {
+        val intent = Intent(context, MainActivityV25::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val pending = PendingIntent.getActivity(

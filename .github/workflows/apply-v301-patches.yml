@@ -51,17 +51,12 @@ jobs:
               ('versionCode = 300', 'versionCode = 301'),
               ('versionName = "3.0.0"', 'versionName = "3.0.1"'),
           ])
-          patch('.github/workflows/release.yml', [
-              ('v3.0.0', 'v3.0.1'),
-              ('versionCode 300 / versionName 3.0.0', 'versionCode 301 / versionName 3.0.1'),
-              ('Monitor de Notícias Android v3.0.1 — buscas em tempo real.', 'Monitor de Notícias Android v3.0.1 — correção da varredura audiovisual e alertas.\n\nCorreções v3.0.1:\n- telejornais regionais Globo deixam de depender da busca geral do Globoplay e passam a ser descobertos pelos índices oficiais de vídeos do G1 do próprio programa;\n- o ID encontrado no G1 é convertido para o link direto correspondente no Globoplay;\n- Termos e Demandas são cruzados localmente depois da descoberta, reduzindo milhares de consultas redundantes;\n- a busca automática de vídeos passa para 08h, 12h, 15h, 19h e 21h no horário local do aparelho, mantendo a busca manual;\n- o indicador Demandas da tela Início mostra apenas demandas com ocorrência encontrada, não a quantidade cadastrada;\n- mantém resultados progressivos, cronômetro, pesquisa por período, YouTube e demais fontes.\n\nBase v3.0 preservada.'),
-          ])
           PY
       - name: Commit patches
         run: |
           if git diff --quiet; then exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app .github/workflows/release.yml
+          git add app
           git commit -m "fix: integrate v3.0.1 video scan and demand alerts"
           git push origin HEAD:fix/v3.0.1-video-scan-and-demand-alerts

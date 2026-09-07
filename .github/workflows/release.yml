@@ -35,29 +35,32 @@ jobs:
         run: ./gradle-8.11.1/bin/gradle --no-daemon :app:assembleDebug
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v2.1.0.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v2.2.0.apk
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.1.0
+          tag_name: v2.2.0
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v2.1.0
+          name: Monitor de Notícias Android v2.2.0
           body: |
-            Versão 2.1.0 do Monitor de Notícias Android.
+            Versão 2.2.0 do Monitor de Notícias Android.
 
-            Principais melhorias:
-            - detecção de notícias realmente novas;
-            - demandas por veículo e assunto;
-            - histórico separado das últimas 24 horas;
-            - persistência do intervalo de monitoramento;
-            - notificações aprimoradas;
-            - exportação CSV ampliada;
-            - interface com resumo e filtro de demandas;
-            - layout escuro renovado inspirado na identidade original;
-            - navegação com 7 abas e ícones;
-            - abas Termos e Fontes restauradas;
-            - novo ícone próprio do aplicativo.
-          files: monitor-de-noticias-v2.1.0.apk
+            Destaques:
+            - nova navegação superior com abas deslizáveis;
+            - área Fontes redesenhada com cartões grandes e seleção destacada;
+            - busca de fontes por veículo/grupo;
+            - filtros de fontes por região e estado;
+            - selecionar/desmarcar todas as fontes visíveis;
+            - modo Buscar em todos os veículos / Qualquer veículo;
+            - 13 veículos nacionais, incluindo Revista Oeste e O Antagonista;
+            - catálogo estadual com 4 veículos de referência por UF;
+            - seleção de fontes persistente e aplicada à busca automática;
+            - período com data e hora inicial/final persistentes;
+            - atalhos Hoje, 24 horas, 7 dias e 30 dias;
+            - validação de período inválido;
+            - persistência reforçada do intervalo do monitoramento automático;
+            - cabeçalhos, cards, ícones, espaçamento e tipografia renovados.
+          files: monitor-de-noticias-v2.2.0.apk
           make_latest: true

@@ -154,9 +154,9 @@ class VideoRepository(
                                 spec.term.isNotBlank() && phraseMatches(body, spec.term) -> spec.term
                                 else -> previous?.matchedTerm.orEmpty()
                             }
-                            val matchedDemand = when {
-                                matchedDemands.isNotEmpty() -> matchedDemands
-                                    .joinToString(" | ") { "${it.vehicle} • ${it.subject}" }
+                            val matchedDemand = matchedDemands.firstOrNull()?.let {
+                                "${it.vehicle} • ${it.subject}"
+                            } ?: when {
                                 spec.demand != null && phraseMatches(body, spec.demand.subject) ->
                                     "${spec.demand.vehicle} • ${spec.demand.subject}"
                                 else -> previous?.matchedDemand.orEmpty()
@@ -332,13 +332,9 @@ class VideoRepository(
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
-        val demands = (previous.matchedDemand.split('|') + incoming.matchedDemand.split('|'))
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
         return incoming.copy(
             matchedTerm = terms.joinToString(", "),
-            matchedDemand = demands.joinToString(" | "),
+            matchedDemand = incoming.matchedDemand.ifBlank { previous.matchedDemand },
             capturedAt = maxOf(previous.capturedAt, incoming.capturedAt)
         )
     }

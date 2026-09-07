@@ -12,30 +12,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect Globoplay examples
+      - name: Inspect Globoplay embedded metadata
         run: |
           set -u
           UA='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36'
-          for id in 14938901 14937913 14937180; do
-            url="https://globoplay.globo.com/v/$id/"
-            echo "=== $url ==="
-            code=$(curl -L --max-time 20 -A "$UA" -o "/tmp/$id.html" -sS -w '%{http_code}' "$url" || true)
-            echo "HTTP=$code bytes=$(wc -c < /tmp/$id.html 2>/dev/null || echo 0)"
-            grep -Eio '<meta[^>]+(keywords|article:tag|video:tag|og:title|og:description)[^>]*>' "/tmp/$id.html" | head -20 || true
-          done
-
-          for pair in \
-            'militares|14938901' \
-            'SE1|14938901' \
-            'SE TV 1ª Edição|14938901' \
-            'Bom Dia Tocantins|14937913' \
-            'Bom Dia Mirante|14937180'; do
-            q=${pair%%|*}; id=${pair##*|}
-            enc=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote_plus(sys.argv[1]))' "$q")
-            file="/tmp/search-$id-$(echo "$enc" | tr -cd 'A-Za-z0-9' | head -c 12).html"
-            echo "=== BUSCA: $q ==="
-            code=$(curl -L --max-time 20 -A "$UA" -o "$file" -sS -w '%{http_code}' "https://globoplay.globo.com/busca/?q=$enc" || true)
-            echo "HTTP=$code bytes=$(wc -c < "$file" 2>/dev/null || echo 0)"
-            if grep -q "/v/$id" "$file"; then echo "TARGET_$id=yes"; else echo "TARGET_$id=no"; fi
-            grep -Eio '/v/[0-9]+' "$file" | sort -u | head -12 || true
-          done
+          url='https://globoplay.globo.com/v/14938901/'
+          curl -L --max-time 20 -A "$UA" -o /tmp/page.html -sS "$url" || true
+          echo "bytes=$(wc -c < /tmp/page.html)"
+          grep -Eio '<meta[^>]+(og:title|og:description|keywords|article:tag|video:tag)[^>]*>' /tmp/page.html | head -20 || true
+          echo '--- identifiers ---'
+          grep -Eo '"(programId|program_id|program|editorialId|editorial_id|contentId|content_id|videoId|video_id|slug|title|headline)"[[:space:]]*:[[:space:]]*("[^"]{1,180}"|[0-9]+)' /tmp/page.html | head -80 || true
+          echo '--- api-like urls ---'
+          grep -Eo 'https?[^" ]+(api|graphql|playlist|videos|content)[^" ]*' /tmp/page.html | sed 's/\\u002F/\//g;s/\\\//\//g' | head -60 || true
+          echo '--- nearby video ids ---'
+          grep -Eio '/v/[0-9]+' /tmp/page.html | sort -u | head -80 || true

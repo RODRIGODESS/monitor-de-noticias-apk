@@ -1,5 +1,7 @@
 package br.com.monitordenoticias.android
 
+import java.net.URLEncoder
+
 object VideoSourceCatalog {
     private val portalNational = listOf(
         VideoSource(
@@ -51,366 +53,297 @@ object VideoSourceCatalog {
 
     /** Canais oficiais no YouTube monitorados como fontes independentes. */
     val youtubeOfficial = listOf(
-        VideoSource(
-            id = "youtube-cnn-brasil",
-            name = "YouTube • CNN Brasil",
-            group = "YouTube oficial • CNN Brasil",
-            landingUrl = "https://www.youtube.com/@CNNBrasil/videos",
-            linkHints = listOf("/watch"),
-            aliases = listOf("CNN", "CNN Brasil"),
-            youtubeHandle = "@CNNBrasil"
-        ),
-        VideoSource(
-            id = "youtube-jovem-pan-news",
-            name = "YouTube • Jovem Pan News",
-            group = "YouTube oficial • Jovem Pan News",
-            landingUrl = "https://www.youtube.com/@jovempannews/videos",
-            linkHints = listOf("/watch"),
-            aliases = listOf("Jovem Pan", "Jovem Pan News", "JP News"),
-            youtubeHandle = "@jovempannews"
-        ),
-        VideoSource(
-            id = "youtube-globonews",
-            name = "YouTube • GloboNews",
-            group = "YouTube oficial • GloboNews",
-            landingUrl = "https://www.youtube.com/@globonews/videos",
-            linkHints = listOf("/watch"),
-            aliases = listOf("GloboNews", "Globo News", "Globo"),
-            youtubeHandle = "@globonews"
-        ),
-        VideoSource(
-            id = "youtube-record-news",
-            name = "YouTube • Record News",
-            group = "YouTube oficial • Record News",
-            landingUrl = "https://www.youtube.com/@recordnews/videos",
-            linkHints = listOf("/watch"),
-            aliases = listOf("Record News", "RecordNews"),
-            youtubeHandle = "@recordnews"
-        ),
-        VideoSource(
-            id = "youtube-jornal-da-record",
-            name = "YouTube • Jornal da Record",
-            group = "YouTube oficial • Jornal da Record",
-            landingUrl = "https://www.youtube.com/@JornaldaRecord/videos",
-            linkHints = listOf("/watch"),
-            aliases = listOf("Jornal da Record", "JR", "Record TV"),
-            youtubeHandle = "@JornaldaRecord"
-        ),
-        VideoSource(
-            id = "youtube-band-jornalismo",
-            name = "YouTube • Band Jornalismo",
-            group = "YouTube oficial • Band / BandNews",
-            landingUrl = "https://www.youtube.com/@bandjornalismo/videos",
-            linkHints = listOf("/watch"),
-            aliases = listOf("Band", "Band Jornalismo", "BandNews", "Band News", "BandNews TV"),
-            youtubeHandle = "@bandjornalismo"
-        ),
-        VideoSource(
-            id = "youtube-sbt-news",
-            name = "YouTube • SBT News",
-            group = "YouTube oficial • SBT News",
-            landingUrl = "https://www.youtube.com/@sbtnews/videos",
-            linkHints = listOf("/watch"),
-            aliases = listOf("SBT", "SBT News", "SBT Jornalismo"),
-            youtubeHandle = "@sbtnews"
-        )
+        youtube("youtube-cnn-brasil", "CNN Brasil", "@CNNBrasil", listOf("CNN", "CNN Brasil")),
+        youtube("youtube-jovem-pan-news", "Jovem Pan News", "@jovempannews", listOf("Jovem Pan", "Jovem Pan News", "JP News")),
+        youtube("youtube-globonews", "GloboNews", "@globonews", listOf("GloboNews", "Globo News", "Globo")),
+        youtube("youtube-record-news", "Record News", "@recordnews", listOf("Record News", "RecordNews")),
+        youtube("youtube-jornal-da-record", "Jornal da Record", "@JornaldaRecord", listOf("Jornal da Record", "JR", "Record TV")),
+        youtube("youtube-band-jornalismo", "Band Jornalismo", "@bandjornalismo", listOf("Band", "Band Jornalismo", "BandNews", "Band News", "BandNews TV")),
+        youtube("youtube-sbt-news", "SBT News", "@sbtnews", listOf("SBT", "SBT News", "SBT Jornalismo"))
     )
 
-    /** Telejornais nacionais da Globo/Globoplay. */
+    /** Telejornais nacionais Globo/Globoplay. */
     val globoplayTelejournalsNational = listOf(
-        globoplayTelejournal(
-            id = "globoplay-bom-dia-brasil",
-            name = "Globoplay • Bom Dia Brasil",
-            program = "Bom Dia Brasil",
-            landingUrl = "https://globoplay.globo.com/busca/?q=Bom%20Dia%20Brasil"
-        ),
-        globoplayTelejournal(
-            id = "globoplay-hora-1",
-            name = "Globoplay • Hora 1",
-            program = "Hora 1",
-            landingUrl = "https://globoplay.globo.com/busca/?q=Hora%201"
-        ),
-        globoplayTelejournal(
-            id = "globoplay-jornal-hoje",
-            name = "Globoplay • Jornal Hoje",
-            program = "Jornal Hoje",
-            landingUrl = "https://globoplay.globo.com/busca/?q=Jornal%20Hoje"
-        ),
-        globoplayTelejournal(
-            id = "globoplay-jornal-nacional",
-            name = "Globoplay • Jornal Nacional",
-            program = "Jornal Nacional",
-            landingUrl = "https://globoplay.globo.com/busca/?q=Jornal%20Nacional"
-        ),
-        globoplayTelejournal(
-            id = "globoplay-jornal-da-globo",
-            name = "Globoplay • Jornal da Globo",
-            program = "Jornal da Globo",
-            landingUrl = "https://globoplay.globo.com/busca/?q=Jornal%20da%20Globo"
-        )
+        nationalGlobo("globoplay-bom-dia-brasil", "Bom Dia Brasil"),
+        nationalGlobo("globoplay-hora-1", "Hora 1"),
+        nationalGlobo("globoplay-jornal-hoje", "Jornal Hoje"),
+        nationalGlobo("globoplay-jornal-nacional", "Jornal Nacional"),
+        nationalGlobo("globoplay-jornal-da-globo", "Jornal da Globo")
     )
 
     /**
-     * Telejornais regionais já individualizados. A busca da v2.8.5 usa também o
-     * nome do programa junto ao Termo/Demanda para não depender apenas da página
-     * inicial do telejornal.
+     * Catálogo individualizado dos principais telejornais locais das afiliadas
+     * Globo. Cada item carrega Região e UF para que a seleção de fontes de vídeo
+     * funcione do mesmo modo que a seleção de fontes de notícias.
+     *
+     * Quando uma página fixa de programa/trecho não é estável, a landingUrl usa
+     * a busca do próprio Globoplay pelo nome do programa; nas buscas por Termos,
+     * searchPrefix força "nome do telejornal + termo".
      */
-    private val globoplayRegionalSpecific = listOf(
-        globoplayTelejournal(
-            id = "globoplay-bom-dia-sp",
-            name = "Globoplay • Bom Dia SP",
-            program = "Bom Dia SP",
-            landingUrl = "https://globoplay.globo.com/v/5701776/",
-            region = "Sudeste",
-            state = "SP",
-            extraAliases = listOf("Bom Dia São Paulo", "BDSP")
-        ),
-        globoplayTelejournal(
-            id = "globoplay-sp1",
-            name = "Globoplay • SP1",
-            program = "SP1",
-            landingUrl = "https://globoplay.globo.com/v/12096579/",
-            region = "Sudeste",
-            state = "SP",
-            extraAliases = listOf("SPTV 1ª Edição", "SP Primeira Edição")
-        ),
-        globoplayTelejournal(
-            id = "globoplay-sp2",
-            name = "Globoplay • SP2",
-            program = "SP2",
-            landingUrl = "https://globoplay.globo.com/v/5854721/",
-            region = "Sudeste",
-            state = "SP",
-            extraAliases = listOf("SPTV 2ª Edição", "SP Segunda Edição")
-        ),
-        globoplayTelejournal(
-            id = "globoplay-bom-dia-rio",
-            name = "Globoplay • Bom Dia Rio",
-            program = "Bom Dia Rio",
-            landingUrl = "https://globoplay.globo.com/v/8383434/",
-            region = "Sudeste",
-            state = "RJ"
-        ),
-        globoplayTelejournal(
-            id = "globoplay-rj1",
-            name = "Globoplay • RJ1",
-            program = "RJ1",
-            landingUrl = "https://globoplay.globo.com/v/5976232/",
-            region = "Sudeste",
-            state = "RJ",
-            extraAliases = listOf("RJTV 1ª Edição", "RJ Primeira Edição")
-        ),
-        globoplayTelejournal(
-            id = "globoplay-rj2",
-            name = "Globoplay • RJ2",
-            program = "RJ2",
-            landingUrl = "https://globoplay.globo.com/v/12954402/",
-            region = "Sudeste",
-            state = "RJ",
-            extraAliases = listOf("RJTV 2ª Edição", "RJ Segunda Edição")
-        ),
-        globoplayTelejournal(
-            id = "globoplay-bom-dia-es",
-            name = "Globoplay • Bom Dia ES",
-            program = "Bom Dia ES",
-            landingUrl = "https://globoplay.globo.com/v/11645540/",
-            region = "Sudeste",
-            state = "ES"
-        ),
-        globoplayTelejournal(
-            id = "globoplay-gazeta-meio-dia-es",
-            name = "Globoplay • Gazeta Meio Dia / ESTV1",
-            program = "Gazeta Meio Dia",
-            landingUrl = "https://globoplay.globo.com/v/5423638/",
-            region = "Sudeste",
-            state = "ES",
-            extraAliases = listOf("ESTV 1ª Edição", "ESTV1", "ES1")
-        ),
-        globoplayTelejournal(
-            id = "globoplay-bom-dia-minas",
-            name = "Globoplay • Bom Dia Minas",
-            program = "Bom Dia Minas",
-            landingUrl = "https://globoplay.globo.com/v/5535965/",
-            region = "Sudeste",
-            state = "MG"
-        ),
-        globoplayTelejournal(
-            id = "globoplay-mg1",
-            name = "Globoplay • MG1",
-            program = "MG1",
-            landingUrl = "https://globoplay.globo.com/v/12552834/",
-            region = "Sudeste",
-            state = "MG",
-            extraAliases = listOf("MGTV 1ª Edição", "MG Primeira Edição")
-        ),
-        globoplayTelejournal(
-            id = "globoplay-df1",
-            name = "Globoplay • DF1",
-            program = "DF1",
-            landingUrl = "https://globoplay.globo.com/v/14711882/",
-            region = "Centro-Oeste",
-            state = "DF",
-            extraAliases = listOf("DF 1", "DFTV 1ª Edição")
-        ),
-        globoplayTelejournal(
-            id = "globoplay-bom-dia-rio-grande",
-            name = "Globoplay • Bom Dia Rio Grande",
-            program = "Bom Dia Rio Grande",
-            landingUrl = "https://globoplay.globo.com/v/12316554/",
-            region = "Sul",
-            state = "RS"
-        ),
-        globoplayTelejournal(
-            id = "globoplay-tj1-tapajos",
-            name = "Globoplay • TJ1 / Jornal Tapajós 1ª",
-            program = "Jornal Tapajós 1ª Edição",
-            landingUrl = "https://globoplay.globo.com/v/6897326/",
-            region = "Norte",
-            state = "PA",
-            extraAliases = listOf("TJ1", "Jornal Tapajós 1", "TV Tapajós")
-        ),
-        globoplayTelejournal(
-            id = "globoplay-tj2-tapajos",
-            name = "Globoplay • TJ2 / Jornal Tapajós 2ª",
-            program = "Jornal Tapajós 2ª Edição",
-            landingUrl = "https://globoplay.globo.com/v/13630892/",
-            region = "Norte",
-            state = "PA",
-            extraAliases = listOf("TJ2", "Jornal Tapajós 2", "TV Tapajós")
-        )
+    val globoplayRegionalSpecific = listOf(
+        // NORTE — AC
+        regionalGlobo("globoplay-bom-dia-acre", "Bom Dia Acre", "AC", "Norte", aliases = listOf("BDAC", "Rede Amazônica Acre")),
+        regionalGlobo("globoplay-jac1", "Jornal do Acre 1ª Edição", "AC", "Norte", aliases = listOf("JAC1", "Jornal do Acre 1")),
+        regionalGlobo("globoplay-jac2", "Jornal do Acre 2ª Edição", "AC", "Norte", aliases = listOf("JAC2", "Jornal do Acre 2")),
+
+        // AP
+        regionalGlobo("globoplay-bom-dia-amapa", "Bom Dia Amapá", "AP", "Norte"),
+        regionalGlobo("globoplay-jap1", "Jornal do Amapá 1ª Edição", "AP", "Norte", aliases = listOf("JAP1", "Jornal do Amapá 1")),
+        regionalGlobo("globoplay-jap2", "Jornal do Amapá 2ª Edição", "AP", "Norte", aliases = listOf("JAP2", "Jornal do Amapá 2")),
+
+        // AM
+        regionalGlobo("globoplay-bom-dia-amazonia-am", "Bom Dia Amazônia", "AM", "Norte", aliases = listOf("Bom Dia Amazonas", "Rede Amazônica Amazonas")),
+        regionalGlobo("globoplay-jam1", "Jornal do Amazonas 1ª Edição", "AM", "Norte", aliases = listOf("JAM1", "JAM 1ª Edição")),
+        regionalGlobo("globoplay-jam2", "Jornal do Amazonas 2ª Edição", "AM", "Norte", aliases = listOf("JAM2", "JAM 2ª Edição")),
+
+        // PA — Belém / TV Liberal
+        regionalGlobo("globoplay-bom-dia-para", "Bom Dia Pará", "PA", "Norte", aliases = listOf("TV Liberal")),
+        regionalGlobo("globoplay-jl1", "Jornal Liberal 1ª Edição", "PA", "Norte", aliases = listOf("JL1", "Jornal Liberal 1", "TV Liberal")),
+        regionalGlobo("globoplay-jl2", "Jornal Liberal 2ª Edição", "PA", "Norte", aliases = listOf("JL2", "Jornal Liberal 2", "TV Liberal")),
+        // PA — Santarém / TV Tapajós
+        regionalGlobo("globoplay-bom-dia-santarem", "Bom Dia Santarém", "PA", "Norte", aliases = listOf("TV Tapajós")),
+        regionalGlobo("globoplay-tj1-tapajos", "Jornal Tapajós 1ª Edição", "PA", "Norte", aliases = listOf("TJ1", "Jornal Tapajós 1", "TV Tapajós"), landingOverride = "https://globoplay.globo.com/v/6897326/"),
+        regionalGlobo("globoplay-tj2-tapajos", "Jornal Tapajós 2ª Edição", "PA", "Norte", aliases = listOf("TJ2", "Jornal Tapajós 2", "TV Tapajós"), landingOverride = "https://globoplay.globo.com/v/13630892/"),
+
+        // RO
+        regionalGlobo("globoplay-bom-dia-amazonia-ro", "Bom Dia Amazônia", "RO", "Norte", aliases = listOf("Bom Dia Rondônia", "Rede Amazônica Rondônia")),
+        regionalGlobo("globoplay-jro1", "Jornal de Rondônia 1ª Edição", "RO", "Norte", aliases = listOf("JRO1", "Jornal de Rondônia 1")),
+        regionalGlobo("globoplay-jro2", "Jornal de Rondônia 2ª Edição", "RO", "Norte", aliases = listOf("JRO2", "Jornal de Rondônia 2")),
+
+        // RR
+        regionalGlobo("globoplay-bom-dia-amazonia-rr", "Bom Dia Amazônia", "RR", "Norte", aliases = listOf("Bom Dia Roraima", "Rede Amazônica Roraima")),
+        regionalGlobo("globoplay-jrr1", "Jornal de Roraima 1ª Edição", "RR", "Norte", aliases = listOf("JRR1", "Jornal de Roraima 1")),
+        regionalGlobo("globoplay-jrr2", "Jornal de Roraima 2ª Edição", "RR", "Norte", aliases = listOf("JRR2", "Jornal de Roraima 2")),
+
+        // TO
+        regionalGlobo("globoplay-bom-dia-tocantins", "Bom Dia Tocantins", "TO", "Norte", aliases = listOf("TV Anhanguera Tocantins")),
+        regionalGlobo("globoplay-ja1-to", "Jornal Anhanguera 1ª Edição Tocantins", "TO", "Norte", aliases = listOf("JA1 Tocantins", "JA 1ª Edição Tocantins")),
+        regionalGlobo("globoplay-ja2-to", "Jornal Anhanguera 2ª Edição Tocantins", "TO", "Norte", aliases = listOf("JA2 Tocantins", "JA 2ª Edição Tocantins")),
+
+        // NORDESTE — AL
+        regionalGlobo("globoplay-bom-dia-alagoas", "Bom Dia Alagoas", "AL", "Nordeste", aliases = listOf("TV Gazeta AL")),
+        regionalGlobo("globoplay-al1", "AL1", "AL", "Nordeste", aliases = listOf("AL 1ª Edição", "ALTV 1ª Edição")),
+        regionalGlobo("globoplay-al2", "AL2", "AL", "Nordeste", aliases = listOf("AL 2ª Edição", "ALTV 2ª Edição")),
+
+        // BA
+        regionalGlobo("globoplay-jornal-da-manha-ba", "Jornal da Manhã", "BA", "Nordeste", aliases = listOf("TV Bahia", "Jornal da Manhã Bahia", "Bom Dia Bahia")),
+        regionalGlobo("globoplay-bahia-meio-dia", "Bahia Meio Dia", "BA", "Nordeste", aliases = listOf("BMD", "TV Bahia 1ª Edição")),
+        regionalGlobo("globoplay-batv", "BATV", "BA", "Nordeste", aliases = listOf("Bahia TV", "TV Bahia 2ª Edição")),
+
+        // CE
+        regionalGlobo("globoplay-bom-dia-ceara", "Bom Dia Ceará", "CE", "Nordeste", aliases = listOf("TV Verdes Mares")),
+        regionalGlobo("globoplay-cetv1", "CETV 1ª Edição", "CE", "Nordeste", aliases = listOf("CETV1", "CE1")),
+        regionalGlobo("globoplay-cetv2", "CETV 2ª Edição", "CE", "Nordeste", aliases = listOf("CETV2", "CE2")),
+
+        // MA
+        regionalGlobo("globoplay-bom-dia-mirante", "Bom Dia Mirante", "MA", "Nordeste", aliases = listOf("TV Mirante")),
+        regionalGlobo("globoplay-jmtv1", "JMTV 1ª Edição", "MA", "Nordeste", aliases = listOf("JMTV1", "Jornal Mirante 1ª Edição")),
+        regionalGlobo("globoplay-jmtv2", "JMTV 2ª Edição", "MA", "Nordeste", aliases = listOf("JMTV2", "Jornal Mirante 2ª Edição")),
+
+        // PB
+        regionalGlobo("globoplay-bom-dia-paraiba", "Bom Dia Paraíba", "PB", "Nordeste", aliases = listOf("TV Cabo Branco")),
+        regionalGlobo("globoplay-jpb1", "JPB1", "PB", "Nordeste", aliases = listOf("JPB 1ª Edição", "Jornal da Paraíba 1ª Edição")),
+        regionalGlobo("globoplay-jpb2", "JPB2", "PB", "Nordeste", aliases = listOf("JPB 2ª Edição", "Jornal da Paraíba 2ª Edição")),
+
+        // PE
+        regionalGlobo("globoplay-bom-dia-pe", "Bom Dia Pernambuco", "PE", "Nordeste", aliases = listOf("Bom Dia PE", "Globo Pernambuco")),
+        regionalGlobo("globoplay-ne1", "NE1", "PE", "Nordeste", aliases = listOf("NETV 1ª Edição", "NE 1ª Edição")),
+        regionalGlobo("globoplay-ne2", "NE2", "PE", "Nordeste", aliases = listOf("NETV 2ª Edição", "NE 2ª Edição")),
+
+        // PI
+        regionalGlobo("globoplay-bom-dia-piaui", "Bom Dia Piauí", "PI", "Nordeste", aliases = listOf("TV Clube")),
+        regionalGlobo("globoplay-pi1", "PI1", "PI", "Nordeste", aliases = listOf("PITV 1ª Edição", "PI 1ª Edição")),
+        regionalGlobo("globoplay-pi2", "PI2", "PI", "Nordeste", aliases = listOf("PITV 2ª Edição", "PI 2ª Edição")),
+
+        // RN
+        regionalGlobo("globoplay-bom-dia-rn", "Bom Dia RN", "RN", "Nordeste", aliases = listOf("Inter TV Cabugi")),
+        regionalGlobo("globoplay-rn1", "RN1", "RN", "Nordeste", aliases = listOf("RNTV 1ª Edição", "RN 1ª Edição")),
+        regionalGlobo("globoplay-rn2", "RN2", "RN", "Nordeste", aliases = listOf("RNTV 2ª Edição", "RN 2ª Edição")),
+
+        // SE
+        regionalGlobo("globoplay-bom-dia-sergipe", "Bom Dia Sergipe", "SE", "Nordeste", aliases = listOf("TV Sergipe")),
+        regionalGlobo("globoplay-se1", "SE1", "SE", "Nordeste", aliases = listOf("SETV 1ª Edição", "SE 1ª Edição")),
+        regionalGlobo("globoplay-se2", "SE2", "SE", "Nordeste", aliases = listOf("SETV 2ª Edição", "SE 2ª Edição")),
+
+        // CENTRO-OESTE — DF
+        regionalGlobo("globoplay-bom-dia-df", "Bom Dia DF", "DF", "Centro-Oeste", aliases = listOf("Globo Brasília")),
+        regionalGlobo("globoplay-df1", "DF1", "DF", "Centro-Oeste", aliases = listOf("DFTV 1ª Edição", "DF 1"), landingOverride = "https://globoplay.globo.com/v/14711882/"),
+        regionalGlobo("globoplay-df2", "DF2", "DF", "Centro-Oeste", aliases = listOf("DFTV 2ª Edição", "DF 2")),
+
+        // GO
+        regionalGlobo("globoplay-bom-dia-goias", "Bom Dia Goiás", "GO", "Centro-Oeste", aliases = listOf("TV Anhanguera")),
+        regionalGlobo("globoplay-ja1-go", "Jornal Anhanguera 1ª Edição", "GO", "Centro-Oeste", aliases = listOf("JA1 Goiás", "JA 1ª Edição")),
+        regionalGlobo("globoplay-ja2-go", "Jornal Anhanguera 2ª Edição", "GO", "Centro-Oeste", aliases = listOf("JA2 Goiás", "JA 2ª Edição")),
+
+        // MT
+        regionalGlobo("globoplay-bom-dia-mt", "Bom Dia Mato Grosso", "MT", "Centro-Oeste", aliases = listOf("TV Centro América")),
+        regionalGlobo("globoplay-mt1", "MT1", "MT", "Centro-Oeste", aliases = listOf("MTTV 1ª Edição", "MT 1ª Edição")),
+        regionalGlobo("globoplay-mt2", "MT2", "MT", "Centro-Oeste", aliases = listOf("MTTV 2ª Edição", "MT 2ª Edição")),
+
+        // MS
+        regionalGlobo("globoplay-bom-dia-ms", "Bom Dia MS", "MS", "Centro-Oeste", aliases = listOf("TV Morena")),
+        regionalGlobo("globoplay-mstv1", "MSTV 1ª Edição", "MS", "Centro-Oeste", aliases = listOf("MS1", "MSTV1")),
+        regionalGlobo("globoplay-mstv2", "MSTV 2ª Edição", "MS", "Centro-Oeste", aliases = listOf("MS2", "MSTV2")),
+
+        // SUDESTE — ES
+        regionalGlobo("globoplay-bom-dia-es", "Bom Dia ES", "ES", "Sudeste", aliases = listOf("TV Gazeta ES"), landingOverride = "https://globoplay.globo.com/v/11645540/"),
+        regionalGlobo("globoplay-gazeta-meio-dia-es", "Gazeta Meio Dia", "ES", "Sudeste", aliases = listOf("ESTV 1ª Edição", "ESTV1", "ES1"), landingOverride = "https://globoplay.globo.com/v/5423638/"),
+        regionalGlobo("globoplay-estv2", "ESTV 2ª Edição", "ES", "Sudeste", aliases = listOf("ESTV2", "ES2")),
+
+        // MG
+        regionalGlobo("globoplay-bom-dia-minas", "Bom Dia Minas", "MG", "Sudeste", aliases = listOf("Globo Minas"), landingOverride = "https://globoplay.globo.com/v/5535965/"),
+        regionalGlobo("globoplay-mg1", "MG1", "MG", "Sudeste", aliases = listOf("MGTV 1ª Edição", "MG Primeira Edição"), landingOverride = "https://globoplay.globo.com/v/12552834/"),
+        regionalGlobo("globoplay-mg2", "MG2", "MG", "Sudeste", aliases = listOf("MGTV 2ª Edição", "MG Segunda Edição")),
+
+        // RJ
+        regionalGlobo("globoplay-bom-dia-rio", "Bom Dia Rio", "RJ", "Sudeste", landingOverride = "https://globoplay.globo.com/v/8383434/"),
+        regionalGlobo("globoplay-rj1", "RJ1", "RJ", "Sudeste", aliases = listOf("RJTV 1ª Edição", "RJ Primeira Edição"), landingOverride = "https://globoplay.globo.com/v/5976232/"),
+        regionalGlobo("globoplay-rj2", "RJ2", "RJ", "Sudeste", aliases = listOf("RJTV 2ª Edição", "RJ Segunda Edição"), landingOverride = "https://globoplay.globo.com/v/12954402/"),
+
+        // SP — capital
+        regionalGlobo("globoplay-bom-dia-sp", "Bom Dia SP", "SP", "Sudeste", aliases = listOf("Bom Dia São Paulo", "BDSP"), landingOverride = "https://globoplay.globo.com/v/5701776/"),
+        regionalGlobo("globoplay-sp1", "SP1", "SP", "Sudeste", aliases = listOf("SPTV 1ª Edição", "SP Primeira Edição"), landingOverride = "https://globoplay.globo.com/v/12096579/"),
+        regionalGlobo("globoplay-sp2", "SP2", "SP", "Sudeste", aliases = listOf("SPTV 2ª Edição", "SP Segunda Edição"), landingOverride = "https://globoplay.globo.com/v/5854721/"),
+        // SP — afiliadas principais
+        regionalGlobo("globoplay-bom-dia-cidade-eptv", "Bom Dia Cidade • EPTV", "SP", "Sudeste", aliases = listOf("EPTV Campinas", "EPTV Ribeirão", "EPTV Central")),
+        regionalGlobo("globoplay-eptv1", "EPTV1", "SP", "Sudeste", aliases = listOf("EPTV 1ª Edição")),
+        regionalGlobo("globoplay-eptv2", "EPTV2", "SP", "Sudeste", aliases = listOf("EPTV 2ª Edição")),
+        regionalGlobo("globoplay-bom-dia-cidade-tem", "Bom Dia Cidade • TV TEM", "SP", "Sudeste", aliases = listOf("TV TEM")),
+        regionalGlobo("globoplay-tem-noticias-1", "TEM Notícias 1ª Edição", "SP", "Sudeste", aliases = listOf("TV TEM 1ª Edição")),
+        regionalGlobo("globoplay-tem-noticias-2", "TEM Notícias 2ª Edição", "SP", "Sudeste", aliases = listOf("TV TEM 2ª Edição")),
+        regionalGlobo("globoplay-bom-dia-regiao-tribuna", "Bom Dia Região • TV Tribuna", "SP", "Sudeste", aliases = listOf("TV Tribuna Santos")),
+        regionalGlobo("globoplay-jornal-tribuna-1", "Jornal Tribuna 1ª Edição", "SP", "Sudeste", aliases = listOf("JT1", "TV Tribuna")),
+        regionalGlobo("globoplay-jornal-tribuna-2", "Jornal Tribuna 2ª Edição", "SP", "Sudeste", aliases = listOf("JT2", "TV Tribuna")),
+        regionalGlobo("globoplay-bom-dia-fronteira", "Bom Dia Fronteira", "SP", "Sudeste", aliases = listOf("TV Fronteira")),
+        regionalGlobo("globoplay-fronteira-noticias-1", "Fronteira Notícias 1ª Edição", "SP", "Sudeste", aliases = listOf("TV Fronteira 1ª Edição")),
+        regionalGlobo("globoplay-fronteira-noticias-2", "Fronteira Notícias 2ª Edição", "SP", "Sudeste", aliases = listOf("TV Fronteira 2ª Edição")),
+        regionalGlobo("globoplay-bom-dia-vanguarda", "Bom Dia Vanguarda", "SP", "Sudeste", aliases = listOf("TV Vanguarda")),
+        regionalGlobo("globoplay-link-vanguarda", "Link Vanguarda", "SP", "Sudeste", aliases = listOf("TV Vanguarda 1ª Edição")),
+        regionalGlobo("globoplay-jornal-vanguarda", "Jornal Vanguarda", "SP", "Sudeste", aliases = listOf("TV Vanguarda 2ª Edição")),
+
+        // SUL — PR
+        regionalGlobo("globoplay-bom-dia-parana", "Bom Dia Paraná", "PR", "Sul", aliases = listOf("RPC")),
+        regionalGlobo("globoplay-meio-dia-parana", "Meio Dia Paraná", "PR", "Sul", aliases = listOf("RPC 1ª Edição")),
+        regionalGlobo("globoplay-boa-noite-parana", "Boa Noite Paraná", "PR", "Sul", aliases = listOf("RPC 2ª Edição")),
+
+        // SC
+        regionalGlobo("globoplay-bom-dia-sc", "Bom Dia Santa Catarina", "SC", "Sul", aliases = listOf("Bom Dia SC", "NSC TV")),
+        regionalGlobo("globoplay-jornal-do-almoco-sc", "Jornal do Almoço • SC", "SC", "Sul", aliases = listOf("NSC TV 1ª Edição", "Jornal do Almoço")),
+        regionalGlobo("globoplay-nsc-noticias", "NSC Notícias", "SC", "Sul", aliases = listOf("NSC TV 2ª Edição")),
+
+        // RS
+        regionalGlobo("globoplay-bom-dia-rio-grande", "Bom Dia Rio Grande", "RS", "Sul", aliases = listOf("RBS TV"), landingOverride = "https://globoplay.globo.com/v/12316554/"),
+        regionalGlobo("globoplay-jornal-do-almoco-rs", "Jornal do Almoço • RS", "RS", "Sul", aliases = listOf("RBS TV 1ª Edição", "Jornal do Almoço")),
+        regionalGlobo("globoplay-rbs-noticias", "RBS Notícias", "RS", "Sul", aliases = listOf("RBS TV 2ª Edição"))
     )
 
     /**
-     * Varreduras amplas para não depender de uma lista fixa de afiliadas. Elas
-     * pesquisam no Globoplay o Termo/Demanda combinado com as três famílias que
-     * concentram os telejornais locais: todos os "Bom Dia", todas as 1ª Edições
-     * e todas as 2ª Edições. Assim entram também afiliadas/edições que mudam de
-     * nome ou que ainda não têm um item individual no catálogo.
+     * Cobertura ampla preservada como rede de segurança. Essas três fontes podem
+     * capturar programas/afiliadas que mudem de nome e ainda não estejam no catálogo.
      */
     val globoplayRegionalSweeps = listOf(
-        globoplayTelejournal(
-            id = "globoplay-regionais-bom-dia",
-            name = "Globoplay • Regionais — todos os Bom Dia",
-            program = "Bom Dia",
-            landingUrl = "https://globoplay.globo.com/busca/?q=Bom%20Dia",
-            region = "Todas as regiões",
-            state = "BR",
-            extraAliases = REGIONAL_GLOBO_ALIASES
-        ),
-        globoplayTelejournal(
-            id = "globoplay-regionais-primeira-edicao",
-            name = "Globoplay • Regionais — todas as 1ª Edições",
-            program = "1ª Edição",
-            landingUrl = "https://globoplay.globo.com/busca/?q=1%C2%AA%20Edi%C3%A7%C3%A3o",
-            region = "Todas as regiões",
-            state = "BR",
-            extraAliases = REGIONAL_GLOBO_ALIASES + listOf("Primeira Edição", "1a Edição")
-        ),
-        globoplayTelejournal(
-            id = "globoplay-regionais-segunda-edicao",
-            name = "Globoplay • Regionais — todas as 2ª Edições",
-            program = "2ª Edição",
-            landingUrl = "https://globoplay.globo.com/busca/?q=2%C2%AA%20Edi%C3%A7%C3%A3o",
-            region = "Todas as regiões",
-            state = "BR",
-            extraAliases = REGIONAL_GLOBO_ALIASES + listOf("Segunda Edição", "2a Edição")
-        )
+        globoplaySweep("globoplay-regionais-bom-dia", "Globoplay • Cobertura ampla — Bom Dia", "Bom Dia", listOf("Bom Dia regional")),
+        globoplaySweep("globoplay-regionais-primeira-edicao", "Globoplay • Cobertura ampla — 1ª Edições", "1ª Edição", listOf("Primeira Edição", "1a Edição")),
+        globoplaySweep("globoplay-regionais-segunda-edicao", "Globoplay • Cobertura ampla — 2ª Edições", "2ª Edição", listOf("Segunda Edição", "2a Edição"))
     )
 
     val globoplayTelejournalsRegional: List<VideoSource> = globoplayRegionalSpecific + globoplayRegionalSweeps
-
     val national: List<VideoSource> = portalNational + youtubeOfficial + globoplayTelejournalsNational
 
     private val bandRegional = listOf(
         VideoSource(
-            id = "video-band-brasilia",
-            name = "Band Brasília",
-            group = "Band Regional",
-            region = "Centro-Oeste",
-            state = "DF",
-            landingUrl = "https://www.band.com.br/band-brasilia/videos",
-            linkHints = listOf("/band-brasilia/videos/"),
-            aliases = listOf("Band Brasília", "Band DF"),
+            id = "video-band-brasilia", name = "Band Brasília", group = "Band Regional", region = "Centro-Oeste", state = "DF",
+            landingUrl = "https://www.band.com.br/band-brasilia/videos", linkHints = listOf("/band-brasilia/videos/"), aliases = listOf("Band Brasília", "Band DF"),
             searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
         ),
         VideoSource(
-            id = "video-band-minas",
-            name = "Band Minas",
-            group = "Band Regional",
-            region = "Sudeste",
-            state = "MG",
-            landingUrl = "https://www.band.com.br/band-minas",
-            linkHints = listOf("/band-minas/videos/", "/videos/"),
-            aliases = listOf("Band Minas", "Band Minas Gerais"),
+            id = "video-band-minas", name = "Band Minas", group = "Band Regional", region = "Sudeste", state = "MG",
+            landingUrl = "https://www.band.com.br/band-minas", linkHints = listOf("/band-minas/videos/", "/videos/"), aliases = listOf("Band Minas", "Band Minas Gerais"),
             searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
         ),
         VideoSource(
-            id = "video-band-rio",
-            name = "Band Rio",
-            group = "Band Regional",
-            region = "Sudeste",
-            state = "RJ",
-            landingUrl = "https://www.band.com.br/rio-de-janeiro/videos",
-            linkHints = listOf("/rio-de-janeiro/videos/"),
-            aliases = listOf("Band Rio", "Band Rio de Janeiro"),
+            id = "video-band-rio", name = "Band Rio", group = "Band Regional", region = "Sudeste", state = "RJ",
+            landingUrl = "https://www.band.com.br/rio-de-janeiro/videos", linkHints = listOf("/rio-de-janeiro/videos/"), aliases = listOf("Band Rio", "Band Rio de Janeiro"),
             searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
         ),
         VideoSource(
-            id = "video-band-parana",
-            name = "Band Paraná",
-            group = "Band Regional",
-            region = "Sul",
-            state = "PR",
-            landingUrl = "https://www.band.com.br/band-parana/videos",
-            linkHints = listOf("/band-parana/videos/"),
-            aliases = listOf("Band Paraná", "Band PR"),
+            id = "video-band-parana", name = "Band Paraná", group = "Band Regional", region = "Sul", state = "PR",
+            landingUrl = "https://www.band.com.br/band-parana/videos", linkHints = listOf("/band-parana/videos/"), aliases = listOf("Band Paraná", "Band PR"),
             searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
         ),
         VideoSource(
-            id = "video-band-bahia",
-            name = "Band Bahia",
-            group = "Band Regional",
-            region = "Nordeste",
-            state = "BA",
-            landingUrl = "https://www.band.com.br/band-bahia",
-            linkHints = listOf("/band-bahia/videos/", "/videos/"),
-            aliases = listOf("Band Bahia", "Band BA"),
+            id = "video-band-bahia", name = "Band Bahia", group = "Band Regional", region = "Nordeste", state = "BA",
+            landingUrl = "https://www.band.com.br/band-bahia", linkHints = listOf("/band-bahia/videos/", "/videos/"), aliases = listOf("Band Bahia", "Band BA"),
             searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
         )
     )
 
     val regional: List<VideoSource> = bandRegional + globoplayTelejournalsRegional
-
     val all: List<VideoSource> = national + regional
     val byId: Map<String, VideoSource> = all.associateBy { it.id }
     val youtubeOfficialIds: Set<String> = youtubeOfficial.map { it.id }.toSet()
-    val globoplayTelejournalIds: Set<String> =
-        (globoplayTelejournalsNational + globoplayTelejournalsRegional).map { it.id }.toSet()
+    val globoplayTelejournalIds: Set<String> = (globoplayTelejournalsNational + globoplayRegionalSpecific).map { it.id }.toSet()
     val globoplayRegionalSweepIds: Set<String> = globoplayRegionalSweeps.map { it.id }.toSet()
     val defaultIds: Set<String> = national.map { it.id }.toSet()
 
     fun selected(ids: Set<String>): List<VideoSource> = ids.mapNotNull(byId::get)
 
-    private fun globoplayTelejournal(
-        id: String,
-        name: String,
-        program: String,
-        landingUrl: String,
-        region: String = "Nacional",
-        state: String = "",
-        extraAliases: List<String> = emptyList()
-    ): VideoSource = VideoSource(
+    private fun youtube(id: String, label: String, handle: String, aliases: List<String>): VideoSource = VideoSource(
         id = id,
-        name = name,
-        group = if (state.isBlank()) "Globo / Globoplay • Telejornal nacional" else "Globo / Globoplay • Telejornal regional",
-        region = region,
-        state = state,
-        landingUrl = landingUrl,
+        name = "YouTube • $label",
+        group = "YouTube oficial • $label",
+        landingUrl = "https://www.youtube.com/$handle/videos",
+        linkHints = listOf("/watch"),
+        aliases = aliases,
+        youtubeHandle = handle
+    )
+
+    private fun nationalGlobo(id: String, program: String): VideoSource = VideoSource(
+        id = id,
+        name = "Globoplay • $program",
+        group = "Globo / Globoplay • Telejornal nacional",
+        landingUrl = globoplaySearch(program),
         linkHints = listOf("/v/"),
-        aliases = (listOf("Globo", "Globoplay", program) + extraAliases).distinct(),
+        aliases = listOf("Globo", "Globoplay", program),
         searchUrlTemplate = "https://globoplay.globo.com/busca/?q={query}",
         searchPrefix = program
     )
+
+    private fun regionalGlobo(
+        id: String,
+        program: String,
+        state: String,
+        region: String,
+        aliases: List<String> = emptyList(),
+        landingOverride: String = ""
+    ): VideoSource = VideoSource(
+        id = id,
+        name = "Globoplay • $program",
+        group = "Globo / Globoplay • Telejornal regional",
+        region = region,
+        state = state,
+        landingUrl = landingOverride.ifBlank { globoplaySearch(program) },
+        linkHints = listOf("/v/"),
+        aliases = (listOf("Globo", "Globoplay", program) + aliases).distinct(),
+        searchUrlTemplate = "https://globoplay.globo.com/busca/?q={query}",
+        searchPrefix = program
+    )
+
+    private fun globoplaySweep(id: String, name: String, program: String, aliases: List<String>): VideoSource = VideoSource(
+        id = id,
+        name = name,
+        group = "Globo / Globoplay • Cobertura regional ampla",
+        region = "Todas",
+        state = "BR",
+        landingUrl = globoplaySearch(program),
+        linkHints = listOf("/v/"),
+        aliases = (REGIONAL_GLOBO_ALIASES + aliases).distinct(),
+        searchUrlTemplate = "https://globoplay.globo.com/busca/?q={query}",
+        searchPrefix = program
+    )
+
+    private fun globoplaySearch(program: String): String =
+        "https://globoplay.globo.com/busca/?q=${URLEncoder.encode(program, "UTF-8")}"
 
     private val REGIONAL_GLOBO_ALIASES get() = listOf(
         "TV Globo", "Globo SP", "Globo Rio", "Globo Minas", "Globo Brasília", "Globo Pernambuco",

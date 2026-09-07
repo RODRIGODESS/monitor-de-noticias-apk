@@ -92,43 +92,46 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v2.8.5 release asset
+      - name: Prepare v2.9.0 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.8.5.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.9.0.apk
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.8.5
+          tag_name: v2.9.0
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v2.8.5
+          name: Monitor de Notícias Android v2.9.0
           body: |
-            Versão 2.8.5 do Monitor de Notícias Android.
+            Versão 2.9.0 do Monitor de Notícias Android.
 
-            Monitor de Vídeos — precisão e controle:
-            - termos passam a casar por palavra inteira, evitando falso positivo como "FAB" dentro de "fábrica";
-            - resultados antigos com esse tipo de associação incorreta são corrigidos/limpos automaticamente;
-            - nova opção "Limpar" na tela de vídeos, com confirmação antes de apagar o histórico;
-            - nova pesquisa de vídeos por período com presets Hoje, 24 horas, 7 dias e 30 dias, além de data/hora manual;
-            - a pesquisa por período cruza os vídeos com os mesmos Termos e Demandas do monitor.
+            Monitor de Vídeos — qualidade e organização:
+            - mantém a correção de termos por palavra inteira, evitando falso positivo como "FAB" dentro de "fábrica";
+            - mantém limpeza do histórico de vídeos com confirmação;
+            - mantém pesquisa por período com Hoje, 24 horas, 7 dias, 30 dias e data/hora manual;
+            - mantém links diretos e deduplicação dos vídeos.
 
-            Globoplay — telejornais regionais:
-            - mantém os telejornais nacionais e regionais já cadastrados;
-            - cada telejornal específico passa a pesquisar "nome do programa + Termo/Demanda" no Globoplay;
-            - adiciona varreduras amplas para todos os "Bom Dia" regionais;
-            - adiciona varreduras amplas para todas as 1ª Edições regionais;
-            - adiciona varreduras amplas para todas as 2ª Edições regionais;
-            - as novas varreduras regionais são habilitadas automaticamente uma única vez na atualização.
+            Fontes de vídeo:
+            - nova seleção no padrão das fontes de notícias: Nacionais ou Estados;
+            - filtro de fontes regionais por Região e por UF;
+            - pesquisa por nome de canal, telejornal ou grupo;
+            - ações Selecionar e Limpar aplicadas somente às fontes visíveis;
+            - canais nacionais, portais, YouTube oficial e telejornais Globo/Globoplay ficam separados por fonte.
 
-            Fontes existentes:
-            - mantém Globoplay geral, R7/Record, CNN, SBT, Band, fontes regionais e canais oficiais do YouTube;
-            - resultados continuam exigindo link direto de vídeo e passam pela deduplicação existente;
-            - busca automática de vídeos permanece aproximadamente a cada 1 hora.
+            Globo/Globoplay regional:
+            - catálogo individualizado de telejornais locais em todas as UFs;
+            - inclui famílias Bom Dia, 1ª Edição e 2ª Edição/telejornais equivalentes por estado e afiliada;
+            - preserva as três varreduras amplas da v2.8.5 como rede de segurança;
+            - novas fontes regionais do catálogo não são ativadas em massa automaticamente: o usuário escolhe Região/UF, preservando bateria, rede e confiabilidade do segundo plano.
+
+            Segundo plano:
+            - busca automática de vídeos permanece aproximadamente a cada 1 hora;
+            - seleção de fontes é persistida e respeitada tanto na busca manual quanto automática.
 
             Atualização:
-            - versionCode 285 / versionName 2.8.5;
+            - versionCode 290 / versionName 2.9.0;
             - mesmo applicationId e mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v2.8.4 preservando dados e configurações.
-          files: monitor-de-noticias-v2.8.5.apk
+            - instalação direta sobre v2.8.5 preservando dados e configurações.
+          files: monitor-de-noticias-v2.9.0.apk
           make_latest: true

@@ -15,20 +15,27 @@ jobs:
       - name: Inspect Globoplay examples
         run: |
           set -u
+          UA='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36'
           for id in 14938901 14937913 14937180; do
             url="https://globoplay.globo.com/v/$id/"
             echo "=== $url ==="
-            code=$(curl -L --max-time 20 -A 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36' -o "/tmp/$id.html" -sS -w '%{http_code}' "$url" || true)
+            code=$(curl -L --max-time 20 -A "$UA" -o "/tmp/$id.html" -sS -w '%{http_code}' "$url" || true)
             echo "HTTP=$code bytes=$(wc -c < /tmp/$id.html 2>/dev/null || echo 0)"
             grep -Eio '<meta[^>]+(keywords|article:tag|video:tag|og:title|og:description)[^>]*>' "/tmp/$id.html" | head -20 || true
-            grep -Eio 'militares|militar|/v/[0-9]+' "/tmp/$id.html" | head -30 || true
           done
 
-          echo '=== BUSCA GERAL: militares ==='
-          curl -L --max-time 20 -A 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36' \
-            -o /tmp/search.html -sS 'https://globoplay.globo.com/busca/?q=militares' || true
-          echo "bytes=$(wc -c < /tmp/search.html 2>/dev/null || echo 0)"
-          for id in 14938901 14937913 14937180; do
-            if grep -q "/v/$id" /tmp/search.html; then echo "FOUND_$id=yes"; else echo "FOUND_$id=no"; fi
+          for pair in \
+            'militares|14938901' \
+            'SE1|14938901' \
+            'SE TV 1ª Edição|14938901' \
+            'Bom Dia Tocantins|14937913' \
+            'Bom Dia Mirante|14937180'; do
+            q=${pair%%|*}; id=${pair##*|}
+            enc=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote_plus(sys.argv[1]))' "$q")
+            file="/tmp/search-$id-$(echo "$enc" | tr -cd 'A-Za-z0-9' | head -c 12).html"
+            echo "=== BUSCA: $q ==="
+            code=$(curl -L --max-time 20 -A "$UA" -o "$file" -sS -w '%{http_code}' "https://globoplay.globo.com/busca/?q=$enc" || true)
+            echo "HTTP=$code bytes=$(wc -c < "$file" 2>/dev/null || echo 0)"
+            if grep -q "/v/$id" "$file"; then echo "TARGET_$id=yes"; else echo "TARGET_$id=no"; fi
+            grep -Eio '/v/[0-9]+' "$file" | sort -u | head -12 || true
           done
-          grep -Eio '/v/[0-9]+' /tmp/search.html | sort -u | head -40 || true

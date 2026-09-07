@@ -52,10 +52,10 @@ class NewsRepository(private val db: NewsDb) {
 
     private fun performDemandSearch(demand: Demand): DemandSearchResult {
         val checkedAt = System.currentTimeMillis()
-        val query = buildString {
-            append('"').append(demand.subject.trim()).append('"')
-            if (demand.vehicle.isNotBlank()) append(" \"").append(demand.vehicle.trim()).append('"')
-        }
+        // Search broadly by subject first, then enforce vehicle + subject locally.
+        // This avoids losing results when Google News does not treat the publisher
+        // name as searchable article text.
+        val query = demand.subject.trim()
         val fetched = fetchGoogleNews(query)
         if (fetched == null) {
             db.updateDemandStatus(demand.id, checkedAt, 0, 0, "Falha na consulta")

@@ -34,11 +34,31 @@ jobs:
       - name: Build installable APK
         run: ./gradle-8.11.1/bin/gradle --no-daemon :app:assembleDebug
 
-      - name: Print debug signing fingerprint
+      - name: Verify update compatibility with v2.4.0
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "SIGNING_FINGERPRINT_BEGIN"
-          keytool -list -v -keystore "$HOME/.android/debug.keystore" -alias androiddebugkey -storepass android | grep -E "SHA1:|SHA256:|SHA-256:"
-          echo "SIGNING_FINGERPRINT_END"
+          mkdir -p previous
+          gh release download v2.4.0 --repo "$GITHUB_REPOSITORY" --pattern "monitor-de-noticias-v2.4.0.apk" --dir previous
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
+          test -n "$APKSIGNER"
+          CURRENT="app/build/outputs/apk/debug/app-debug.apk"
+          PREVIOUS="previous/monitor-de-noticias-v2.4.0.apk"
+          echo "=== v2.4.0 certificate ==="
+          "$APKSIGNER" verify --print-certs "$PREVIOUS"
+          echo "=== v2.5.0 certificate ==="
+          "$APKSIGNER" verify --print-certs "$CURRENT"
+          OLD_CERT=$("$APKSIGNER" verify --print-certs "$PREVIOUS" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          NEW_CERT=$("$APKSIGNER" verify --print-certs "$CURRENT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)
+          echo "OLD_CERT=$OLD_CERT"
+          echo "NEW_CERT=$NEW_CERT"
+          test -n "$OLD_CERT"
+          test -n "$NEW_CERT"
+          if [ "$OLD_CERT" != "$NEW_CERT" ]; then
+            echo "ERROR: APK signing certificates differ. Publishing would require uninstalling the installed app and could lose local data."
+            exit 1
+          fi
+          echo "UPDATE_COMPATIBLE=true"
 
       - name: Rename APK
         run: cp app/build/outputs/apk/debug/app-debug.apk monitor-de-noticias-v2.5.0.apk
@@ -60,9 +80,10 @@ jobs:
             - botão de pesquisa individual em cada demanda;
             - registro persistente da última execução, resultados, matérias novas e erros.
 
-            Dados:
-            - mesma identidade de pacote;
-            - migração do banco sem apagar notícias, termos ou demandas existentes;
+            Dados e atualização:
+            - mesma identidade de pacote da v2.4.0;
+            - assinatura digital comparada automaticamente com o APK v2.4.0 antes da publicação;
+            - migração do banco 2 → 3 sem apagar notícias, termos ou demandas existentes;
             - preferências de fontes, período e intervalo continuam preservadas.
           files: monitor-de-noticias-v2.5.0.apk
           make_latest: true

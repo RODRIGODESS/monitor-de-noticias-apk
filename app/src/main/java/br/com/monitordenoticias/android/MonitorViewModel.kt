@@ -72,11 +72,17 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        _state.value = current.copy(busy = true, status = sourceStatusPrefix("Buscando notícias"))
+        val started = System.currentTimeMillis()
+        _state.value = current.copy(
+            busy = true,
+            status = sourceStatusPrefix("Buscando notícias em tempo real"),
+            searchProgress = LiveSearchProgress(active = true, kind = "Notícias", startedAt = started)
+        )
         viewModelScope.launch {
             val latest = _state.value
             val sources = SourceCatalog.selected(latest.selectedSourceIds)
-            val result = repo.search(sources, latest.searchAllSources)
+            val result = repo.searchProgressive(sources, latest.searchAllSources) { update -> publishNewsUpdate(update) }
+            val finished = System.currentTimeMillis()
             val status = when {
                 result.errors > 0 && result.foundCount == 0 -> "⚠ Não foi possível consultar as fontes. Verifique sua conexão."
                 result.errors > 0 -> "Busca parcial: ${result.newCount} nova(s) • ${result.errors} consulta(s) falharam"
@@ -89,28 +95,107 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
                 history = db.listNews(),
                 busy = false,
                 status = status,
-                lastUpdatedAt = System.currentTimeMillis()
+                lastUpdatedAt = finished,
+                searchProgress = _state.value.searchProgress.copy(active = false, finishedAt = finished)
             )
         }
     }
 
+    private fun publishNewsUpdate(update: NewsSearchUpdate) {
+        val current = _state.value
+        val merged = if (update.items.isEmpty()) current.news else {
+            val map = linkedMapOf<String, News>()
+            current.news.forEach { map[it.link] = it }
+            update.items.forEach { map[it.link] = it }
+            map.values.sortedByDescending { it.date }
+        }
+        val p = update.progress
+        val status = if (p.active) {
+            val pos = if (p.total > 0) "${p.completed}/${p.total}" else "…"
+            "Buscando • $pos • ${p.currentSource}"
+        } else current.status
+        _state.value = current.copy(
+            news = merged,
+            history = if (update.items.isEmpty()) current.history else mergeHistory(current.history, update.items),
+            busy = p.active,
+            status = status,
+            searchProgress = p,
+            lastUpdatedAt = System.currentTimeMillis()
+        )
+    }
+
+    private fun mergeHistory(current: List<News>, incoming: List<News>): List<News> {
+        val map = linkedMapOf<String, News>()
+        current.forEach { map[it.link] = it }
+        incoming.forEach { map[it.link] = it }
+        return map.values.sortedByDescending { it.date }.take(500)
+    }
+
     fun searchAllDemandsNow() {
         if (_state.value.demandSearchBusy) return
-        _state.value = _state.value.copy(demandSearchBusy = true, demandBusyId = null, status = "Buscando todas as demandas...")
+        val active = _state.value.demands.filter { it.active }
+        if (active.isEmpty()) {
+            _state.value = _state.value.copy(status = "Nenhuma demanda ativa para pesquisar")
+            return
+        }
+        val started = System.currentTimeMillis()
+        _state.value = _state.value.copy(
+            demandSearchBusy = true,
+            demandBusyId = null,
+            status = "Buscando demandas em tempo real...",
+            searchProgress = LiveSearchProgress(active = true, kind = "Demandas", startedAt = started, total = active.size)
+        )
         viewModelScope.launch {
-            val result = repo.searchAllDemands()
+            var found = 0
+            var fresh = 0
+            var errors = 0
+            active.forEachIndexed { index, demand ->
+                _state.value = _state.value.copy(
+                    searchProgress = _state.value.searchProgress.copy(
+                        currentSource = demand.vehicle,
+                        currentQuery = demand.subject,
+                        completed = index,
+                        found = found,
+                        newCount = fresh,
+                        errors = errors
+                    ),
+                    status = "Demandas • $index/${active.size} • ${demand.vehicle}"
+                )
+                val result = repo.searchDemand(demand)
+                found += result.foundCount
+                fresh += result.newCount
+                if (result.error != null) errors++
+                _state.value = _state.value.copy(
+                    demands = db.listDemands(),
+                    history = db.listNews(),
+                    searchProgress = _state.value.searchProgress.copy(
+                        completed = index + 1,
+                        found = found,
+                        newCount = fresh,
+                        errors = errors
+                    )
+                )
+            }
+            val finished = System.currentTimeMillis()
             val status = when {
-                result.checkedCount == 0 -> "Nenhuma demanda ativa para pesquisar"
-                result.errors == result.checkedCount -> "⚠ As buscas de demandas falharam"
-                result.newCount > 0 -> "✓ ${result.checkedCount} demanda(s) verificadas • ${result.newCount} nova(s) matéria(s)"
-                else -> "✓ ${result.checkedCount} demanda(s) verificadas • nenhuma matéria nova"
+                errors == active.size -> "⚠ As buscas de demandas falharam"
+                fresh > 0 -> "✓ ${active.size} demanda(s) verificadas • $fresh nova(s) matéria(s)"
+                else -> "✓ ${active.size} demanda(s) verificadas • nenhuma matéria nova"
             }
             _state.value = _state.value.copy(
                 demandSearchBusy = false,
                 demandBusyId = null,
                 demands = db.listDemands(),
                 history = db.listNews(),
-                status = status
+                status = status,
+                searchProgress = _state.value.searchProgress.copy(
+                    active = false,
+                    finishedAt = finished,
+                    completed = active.size,
+                    found = found,
+                    newCount = fresh,
+                    errors = errors
+                )
             )
         }
     }
@@ -118,9 +203,22 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     fun searchDemandNow(id: Long) {
         if (_state.value.demandSearchBusy || _state.value.demandBusyId != null) return
         val demand = _state.value.demands.firstOrNull { it.id == id } ?: return
-        _state.value = _state.value.copy(demandBusyId = id, status = "Buscando ${demand.vehicle}...")
+        val started = System.currentTimeMillis()
+        _state.value = _state.value.copy(
+            demandBusyId = id,
+            status = "Buscando ${demand.vehicle}...",
+            searchProgress = LiveSearchProgress(
+                active = true,
+                kind = "Demanda",
+                startedAt = started,
+                total = 1,
+                currentSource = demand.vehicle,
+                currentQuery = demand.subject
+            )
+        )
         viewModelScope.launch {
             val result = repo.searchDemand(demand)
+            val finished = System.currentTimeMillis()
             val status = if (result.error != null) {
                 "⚠ Falha ao pesquisar ${demand.vehicle}"
             } else if (result.newCount > 0) {
@@ -132,7 +230,15 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
                 demandBusyId = null,
                 demands = db.listDemands(),
                 history = db.listNews(),
-                status = status
+                status = status,
+                searchProgress = _state.value.searchProgress.copy(
+                    active = false,
+                    finishedAt = finished,
+                    completed = 1,
+                    found = result.foundCount,
+                    newCount = result.newCount,
+                    errors = if (result.error != null) 1 else 0
+                )
             )
         }
     }
@@ -158,10 +264,22 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun searchPeriod(from: Long, to: Long) {
-        _state.value = _state.value.copy(busy = true, status = "Pesquisando período...")
+        val started = System.currentTimeMillis()
+        _state.value = _state.value.copy(
+            news = emptyList(),
+            busy = true,
+            status = "Pesquisando período em tempo real...",
+            searchProgress = LiveSearchProgress(active = true, kind = "Notícias • Período", startedAt = started)
+        )
         viewModelScope.launch {
             val latest = _state.value
-            val result = repo.searchPeriod(from, to, SourceCatalog.selected(latest.selectedSourceIds), latest.searchAllSources)
+            val result = repo.searchPeriodProgressive(
+                from,
+                to,
+                SourceCatalog.selected(latest.selectedSourceIds),
+                latest.searchAllSources
+            ) { update -> publishNewsUpdate(update.copy(progress = update.progress.copy(kind = "Notícias • Período"))) }
+            val finished = System.currentTimeMillis()
             val status = if (result.errors > 0 && result.foundCount == 0) "⚠ Não foi possível concluir a pesquisa externa."
             else "Período: ${result.foundCount} matéria(s) no escopo selecionado"
             _state.value = _state.value.copy(
@@ -169,7 +287,8 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
                 history = db.listNews(),
                 busy = false,
                 status = status,
-                lastUpdatedAt = System.currentTimeMillis()
+                lastUpdatedAt = finished,
+                searchProgress = _state.value.searchProgress.copy(active = false, finishedAt = finished)
             )
         }
     }

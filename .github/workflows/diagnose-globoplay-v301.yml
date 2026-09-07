@@ -12,20 +12,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Test G1 program pages
+      - name: Test G1 state video indexes
         run: |
           set -u
           UA='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36'
           while IFS='|' read -r url target; do
             [ -z "$url" ] && continue
             echo "=== $url ==="
-            code=$(curl -L --max-time 20 -A "$UA" -o /tmp/g1prog.html -sS -w '%{http_code}' "$url" || true)
-            echo "HTTP=$code bytes=$(wc -c < /tmp/g1prog.html 2>/dev/null || echo 0)"
-            if grep -q "$target" /tmp/g1prog.html; then echo "TARGET_$target=yes"; else echo "TARGET_$target=no"; fi
-            grep -Eio 'https?[^" ]+video/[^" ]+[0-9]{7,9}\.ghtml' /tmp/g1prog.html | head -10 || true
-            grep -Eio '/v/[0-9]+' /tmp/g1prog.html | sort -u | tail -15 || true
+            code=$(curl -L --max-time 20 -A "$UA" -o /tmp/state.html -sS -w '%{http_code}' "$url" || true)
+            echo "HTTP=$code bytes=$(wc -c < /tmp/state.html 2>/dev/null || echo 0)"
+            if grep -q "$target" /tmp/state.html; then echo "TARGET_$target=yes"; else echo "TARGET_$target=no"; fi
+            grep -Eio 'https?[^" ]+/video/[^" ]+[0-9]{7,9}\.ghtml' /tmp/state.html | head -8 || true
           done <<'EOF'
-          https://g1.globo.com/to/tocantins/videos-bom-dia-tocantins/|14937913
-          https://g1.globo.com/ma/maranhao/videos-bom-dia-mirante/|14937180
-          https://g1.globo.com/se/sergipe/videos-setv-1-edicao/|14938901
+          https://g1.globo.com/to/tocantins/videos/|14937913
+          https://g1.globo.com/ma/maranhao/videos/|14937180
+          https://g1.globo.com/se/sergipe/videos/|14938901
           EOF

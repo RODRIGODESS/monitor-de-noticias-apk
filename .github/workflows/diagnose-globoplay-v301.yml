@@ -1,0 +1,25 @@
+name: Diagnose Globoplay v3.0.1
+
+on:
+  push:
+    branches: ["fix/v3.0.1-video-scan-and-demand-alerts"]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect Globoplay examples
+        run: |
+          set -u
+          for id in 14938901 14937913 14937180; do
+            url="https://globoplay.globo.com/v/$id/"
+            echo "=== $url ==="
+            code=$(curl -L --max-time 20 -A 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36' -o "/tmp/$id.html" -sS -w '%{http_code}' "$url" || true)
+            echo "HTTP=$code bytes=$(wc -c < /tmp/$id.html 2>/dev/null || echo 0)"
+            grep -Eio '<meta[^>]+(keywords|article:tag|video:tag|og:title|og:description)[^>]*>' "/tmp/$id.html" | head -20 || true
+            grep -Eio 'militares|militar|/v/[0-9]+' "/tmp/$id.html" | head -30 || true
+          done

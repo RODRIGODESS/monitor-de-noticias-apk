@@ -52,6 +52,7 @@ fun V30Home(
     val now = System.currentTimeMillis()
     val news24h = news.news.count { it.date >= now - 24L * 60L * 60L * 1000L }
     val videoDemands = videos.items.count { it.demand }
+    val demandHits = news.demands.count { it.lastFoundCount > 0 }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -95,7 +96,7 @@ fun V30Home(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 V30Metric("Notícias 24h", news24h.toString(), Icons.Outlined.Article, V30Accent, Modifier.weight(1f))
-                V30Metric("Demandas", news.demands.size.toString(), Icons.Outlined.NotificationsActive, V30Amber, Modifier.weight(1f))
+                V30Metric("Demandas encontradas", demandHits.toString(), Icons.Outlined.NotificationsActive, if (demandHits > 0) V30Amber else V30Text2, Modifier.weight(1f))
             }
         }
 

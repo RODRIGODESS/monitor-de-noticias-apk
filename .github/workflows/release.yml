@@ -92,44 +92,35 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v2.8.0 release asset
+      - name: Prepare v2.8.1 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.8.0.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v2.8.1.apk
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.8.0
+          tag_name: v2.8.1
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v2.8.0
+          name: Monitor de Notícias Android v2.8.1
           body: |
-            Versão 2.8.0 do Monitor de Notícias Android.
+            Versão 2.8.1 do Monitor de Notícias Android.
+
+            Demandas:
+            - demandas com resultados passam a exibir Ver resultado / Ver resultados no próprio cartão;
+            - a lista abre as matérias vinculadas àquela demanda e cada card abre o link original;
+            - quando a matéria já existia no histórico, uma nova busca de demanda atualiza a classificação sem contar a matéria novamente como nova.
 
             Monitor de Vídeos:
-            - nova aba Vídeos na navegação principal;
-            - monitoramento de Globoplay Jornalismo, R7/Record, CNN Brasil, SBT News e Band Jornalismo;
-            - fontes regionais iniciais: Band Brasília, Band Minas, Band Rio, Band Paraná e Band Bahia;
-            - seleção independente das fontes de vídeo;
-            - busca manual com botão Buscar vídeos;
-            - busca automática aproximadamente a cada 1 hora, inclusive em segundo plano;
-            - heartbeat de recuperação para execuções atrasadas;
-            - histórico próprio, evitando repetir vídeos já detectados;
-            - classificação por Termos e Demandas já cadastrados no aplicativo;
-            - filtros Todos, Relevantes e Demandas;
-            - toque no cartão abre o conteúdo na plataforma oficial.
-
-            Auditoria:
-            - Configurações passa a mostrar tentativa, conclusão, detectados, novos, relevantes e falhas do monitor de vídeos.
-
-            Layout:
-            - mantém a identidade profissional da v2.7;
-            - navegação principal: Início, Vídeos, Fontes, Demandas e Mais;
-            - Período, Histórico, Termos e Configurações ficam em Mais;
-            - mantém proteção das áreas seguras superior/inferior do Android.
+            - os Termos cadastrados agora dirigem efetivamente as consultas de vídeo, seguindo o mesmo princípio da busca de notícias;
+            - consultas usam as páginas de busca das plataformas quando disponíveis;
+            - fallback verifica páginas/canais oficiais e mantém somente vídeos compatíveis com o Termo ou Demanda;
+            - vídeos genéricos fora dos Termos/Demandas deixam de preencher o histórico audiovisual;
+            - mantém Globoplay, R7/Record, CNN Brasil, SBT News, Band e fontes regionais já cadastradas;
+            - mantém busca manual e automática aproximadamente a cada 1 hora.
 
             Atualização:
             - mesmo applicationId e mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v2.7 preservando os dados e configurações existentes.
-          files: monitor-de-noticias-v2.8.0.apk
+            - instalação direta sobre v2.8.0 preservando dados e configurações.
+          files: monitor-de-noticias-v2.8.1.apk
           make_latest: true

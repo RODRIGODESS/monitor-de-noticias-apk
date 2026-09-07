@@ -12,19 +12,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Test G1 state video indexes
+      - name: Test G1 program pagination
         run: |
           set -u
           UA='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36'
-          while IFS='|' read -r url target; do
-            [ -z "$url" ] && continue
+          base='https://g1.globo.com/ma/maranhao/videos-bom-dia-mirante/'
+          for suffix in '' '?page=2' '?pagina=2' 'index/page/2/'; do
+            url="${base}${suffix}"
             echo "=== $url ==="
-            code=$(curl -L --max-time 20 -A "$UA" -o /tmp/state.html -sS -w '%{http_code}' "$url" || true)
-            echo "HTTP=$code bytes=$(wc -c < /tmp/state.html 2>/dev/null || echo 0)"
-            if grep -q "$target" /tmp/state.html; then echo "TARGET_$target=yes"; else echo "TARGET_$target=no"; fi
-            grep -Eio 'https?[^" ]+/video/[^" ]+[0-9]{7,9}\.ghtml' /tmp/state.html | head -8 || true
-          done <<'EOF'
-          https://g1.globo.com/to/tocantins/videos/|14937913
-          https://g1.globo.com/ma/maranhao/videos/|14937180
-          https://g1.globo.com/se/sergipe/videos/|14938901
-          EOF
+            code=$(curl -L --max-time 20 -A "$UA" -o /tmp/p.html -sS -w '%{http_code}' "$url" || true)
+            echo "HTTP=$code bytes=$(wc -c < /tmp/p.html 2>/dev/null || echo 0)"
+            if grep -q '14937180' /tmp/p.html; then echo 'TARGET=yes'; else echo 'TARGET=no'; fi
+            grep -Eio '(href="[^"]*(page|pagina)[^"]*"|https?[^" ]+/edicao/2026/09/[^" ]+)' /tmp/p.html | head -20 || true
+          done

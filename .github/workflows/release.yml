@@ -86,42 +86,46 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v4.0.4 release asset
+      - name: Prepare v4.0.5 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.0.4.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.0.5.apk
 
-      - name: Point v4.0.4 tag to validated main commit
+      - name: Point v4.0.5 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v4.0.4 "$GITHUB_SHA"
-          git push --force origin refs/tags/v4.0.4
+          git tag -f v4.0.5 "$GITHUB_SHA"
+          git push --force origin refs/tags/v4.0.5
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.0.4
+          tag_name: v4.0.5
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v4.0.4
+          name: Monitor de Notícias Android v4.0.5
           body: |
-            Monitor de Notícias Android v4.0.4 — copiar link direto de notícias e vídeos.
+            Monitor de Notícias Android v4.0.5 — correção da interface ativa.
 
             Interface:
-            - cada matéria possui botão Copiar link;
-            - cada vídeo possui botão Copiar link;
-            - o link é enviado para a área de transferência do Android;
-            - o app confirma a ação com a mensagem “Link copiado”;
-            - os botões Abrir e WhatsApp permanecem disponíveis nas notícias;
-            - o botão Abrir vídeo permanece disponível nos vídeos.
+            - botão Copiar link agora está nos cards realmente exibidos de cada matéria;
+            - botão Copiar link agora está nos cards realmente exibidos de cada vídeo;
+            - Abrir e WhatsApp permanecem disponíveis;
+            - ao copiar, o Android recebe a URL real do item e o app mostra “Link copiado”.
+
+            Fontes de Notícias:
+            - nova guia visível “Mídia especializada” ao lado de Nacionais e Estados;
+            - a guia usa o catálogo especializado já existente;
+            - inclui Defesa em Foco, Defesa Aérea & Naval, DefesaNet, Tecnologia & Defesa, Zona Militar, Click Petróleo e Gás, Poder Naval, Agência Marinha de Notícias e Revista Sociedade Militar;
+            - seleção/limpeza funciona da mesma forma que nas demais fontes.
 
             Compatibilidade:
-            - versionCode 404 / versionName 4.0.4;
+            - versionCode 405 / versionName 4.0.5;
             - mesmo applicationId br.com.monitordenoticias.android;
             - mesma assinatura permanente validada pelo certificado SHA-256 esperado;
-            - atualização direta sobre v4.0.3 preservando banco, notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
-          files: monitor-de-noticias-v4.0.4.apk
+            - atualização direta sobre v4.0.4 preservando banco, notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
+          files: monitor-de-noticias-v4.0.5.apk
           overwrite_files: true
           make_latest: true

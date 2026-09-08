@@ -9,41 +9,51 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate global Jarvis term searches
+      - name: Probe 7 Setembro Jarvis variants
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json, urllib.request, urllib.error, concurrent.futures, unicodedata
+          import json, urllib.request, urllib.error, time
           endpoint='https://cloud-jarvis.globo.com/graphql'
           headers={'content-type':'application/json','x-platform-id':'web','x-device-id':'desktop','x-client-version':'2024.12-5','user-agent':'Mozilla/5.0'}
-          query_doc='''query Probe($q:String!,$page:Int) { search { videos(query:$q,page:$page) { page nextPage total hasNextPage resources { id headline description duration title { headline originProgramId } } } } }'''
-          terms=['7 de setembro','desfile 7 de setembro','desfiles 7 de setembro','militar','militares','Forças Armadas']
-          def norm(s):
-            return ''.join(c for c in unicodedata.normalize('NFD',s or '') if unicodedata.category(c)!='Mn').lower()
-          def run(pair):
-            q,page=pair
-            body={'operationName':'Probe','variables':{'q':q,'page':page},'query':query_doc}
-            req=urllib.request.Request(endpoint,data=json.dumps(body).encode(),headers=headers,method='POST')
-            try:
-              with urllib.request.urlopen(req,timeout=30) as r: raw=r.read().decode()
-            except urllib.error.HTTPError as e: raw=e.read().decode()
-            try:return q,page,json.loads(raw)
-            except:return q,page,{'raw':raw[:500]}
-          pairs=[(q,1) for q in terms]
-          with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
-            results=list(ex.map(run,pairs))
-          for q,page,d in results:
+          doc='''query Probe($q:String!,$page:Int) { search { videos(query:$q,page:$page) { page nextPage total hasNextPage resources { id headline description duration title { headline originProgramId } } } } }'''
+          queries=[
+            '7 setembro',
+            '7 de setembro',
+            'desfiles 7 setembro',
+            'comemorações 7 setembro',
+            'comemoracoes 7 setembro',
+            'independência 7 setembro',
+            'independencia 7 setembro',
+            'evento Esplanada Ministérios',
+            'milhares diferentes regiões',
+            'milhares de pessoas 7 setembro',
+          ]
+          for q in queries:
             print('===',q,'===')
-            if d.get('errors'):
-              print('ERRORS=',d['errors']); continue
-            c=d['data']['search']['videos']
-            print('TOTAL=',c.get('total'),'NEXT=',c.get('nextPage'),'COUNT=',len(c.get('resources') or []))
-            for v in c.get('resources') or []:
-              title=(v.get('title') or {}).get('headline','')
-              h=v.get('headline','')
-              desc=v.get('description','')
-              interesting=(title in ['Jornal Hoje','Jornal Nacional'] or v.get('id')=='14940098' or '7 de setembro' in norm(h+' '+desc))
-              if interesting:
-                print('MATCH=',json.dumps(v,ensure_ascii=False))
+            success=False
+            for attempt in range(1,4):
+              body={'operationName':'Probe','variables':{'q':q,'page':1},'query':doc}
+              req=urllib.request.Request(endpoint,data=json.dumps(body).encode(),headers=headers,method='POST')
+              try:
+                with urllib.request.urlopen(req,timeout=30) as r: raw=r.read().decode()
+              except urllib.error.HTTPError as e:
+                raw=e.read().decode()
+              except Exception as e:
+                print('ATTEMPT',attempt,'HTTP_EXCEPTION',repr(e)); time.sleep(1); continue
+              try:d=json.loads(raw)
+              except Exception:
+                print('ATTEMPT',attempt,'BAD_JSON',raw[:300]); time.sleep(1); continue
+              if d.get('errors'):
+                print('ATTEMPT',attempt,'ERRORS=',d['errors']); time.sleep(1); continue
+              c=d['data']['search']['videos']
+              resources=c.get('resources') or []
+              print('ATTEMPT',attempt,'TOTAL=',c.get('total'),'COUNT=',len(resources))
+              for v in resources:
+                if v.get('id')=='14940098' or (v.get('title') or {}).get('headline') in ['Jornal Hoje','Jornal Nacional']:
+                  print('MATCH=',json.dumps(v,ensure_ascii=False))
+              success=True
+              break
+            print('SUCCESS=',success)
           PY

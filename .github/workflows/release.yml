@@ -16,6 +16,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
+
+      - name: Apply guarded v3.0.12 source patch
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: python3 tools/patch_v3012_unstable_sources.py
+
+      - name: Verify v3.0.12 source patch
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: |
+          grep -q 'versionCode = 312' app/build.gradle.kts
+          grep -q 'versionName = "3.0.12"' app/build.gradle.kts
+          grep -q 'programas/jornal-da-band' app/src/main/java/br/com/monitordenoticias/android/VideoSourceCatalog.kt
+          grep -q 'videos/ao-vivo' app/src/main/java/br/com/monitordenoticias/android/VideoSourceCatalog.kt
+          grep -q 'sourceFailureStages.containsKey("Portal • busca fallback")' app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt
+          grep -q 'source.searchPrefix.isNotBlank()' app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt
+          git diff --check
+
+      - name: Commit v3.0.12 source patch
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle.kts \
+                  app/src/main/java/br/com/monitordenoticias/android/VideoSourceCatalog.kt \
+                  app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt
+          git commit -m 'fix: stabilize video source acquisition for v3.0.12'
+          git push origin HEAD:codex/v3.0.12-unstable-sources
 
       - name: Set up Java 17
         uses: actions/setup-java@v4

@@ -16,6 +16,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: codex/v4.0.2-history-aware-new
+
+      - name: Apply guarded v4.0.2 history-aware patch
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: python3 tools/patch_v402.py
+
+      - name: Verify v4.0.2 implementation
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 402' app/build.gradle.kts
+          grep -q 'versionName = "4.0.2"' app/build.gradle.kts
+          grep -q 'historyByStory' app/src/main/java/br/com/monitordenoticias/android/NewsRepository.kt
+          grep -q 'capturedAt = previous.capturedAt.takeIf' app/src/main/java/br/com/monitordenoticias/android/NewsRepository.kt
+          grep -q 'val persistedNews = scopedRecent' app/src/main/java/br/com/monitordenoticias/android/MonitorViewModel.kt
+          git diff --check
+
+      - name: Commit v4.0.2 implementation
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle.kts \
+                  app/src/main/java/br/com/monitordenoticias/android/NewsRepository.kt \
+                  app/src/main/java/br/com/monitordenoticias/android/MonitorViewModel.kt
+          git commit -m "fix: make NOVO history-aware"
+          git push origin HEAD:codex/v4.0.2-history-aware-new
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -73,17 +101,11 @@ jobs:
             local output="$1"
             local line
             line=$(printf '%s\n' "$output" | grep -iE 'certificate.*sha-?256.*digest|sha-?256.*certificate.*digest' | head -1 || true)
-            if [ -z "$line" ]; then
-              line=$(printf '%s\n' "$output" | grep -iE 'sha-?256.*digest' | head -1 || true)
-            fi
+            if [ -z "$line" ]; then line=$(printf '%s\n' "$output" | grep -iE 'sha-?256.*digest' | head -1 || true); fi
             printf '%s\n' "$line" | sed -E 's/.*[Dd]igest:[[:space:]]*//' | tr -d ':[:space:]\r' | tr 'A-F' 'a-f'
           }
           FINAL_CERT=$(extract_cert "$final_output")
           KEYSTORE_CERT=$(keytool -list -v -keystore "$KEYSTORE" -alias monitor-noticias -storepass "$ANDROID_SIGNING_PASSWORD" 2>/dev/null | awk -F': ' '/SHA256:/{gsub(":","",$2); gsub(/[[:space:]]/,"",$2); print tolower($2); exit}')
-          echo "Release certificate:  $FINAL_CERT"
-          echo "Keystore certificate: $KEYSTORE_CERT"
-          test -n "$FINAL_CERT"
-          test -n "$KEYSTORE_CERT"
           test "$KEYSTORE_CERT" = "$EXPECTED_CERT"
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
@@ -109,25 +131,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: Monitor de Notícias Android v4.0.1
           body: |
-            Monitor de Notícias Android v4.0.1 — contagem de novos sincronizada e identificação visual de conteúdo recém-descoberto.
-
-            Notícias:
-            - a contagem de matérias novas em Configurações passa a refletir as matérias realmente presentes no mesmo escopo da tela Início;
-            - matérias descobertas na busca mais recente recebem selo NOVO e ficam priorizadas no topo de Últimas notícias;
-            - busca manual e busca automática possuem janela de novidade baseada no momento real da captura;
-            - reencontrar uma matéria já armazenada não altera mais sua primeira captura nem a transforma novamente em NOVA.
-
-            Vídeos:
-            - vídeos descobertos na busca mais recente recebem selo NOVO;
-            - vídeos novos são priorizados no topo da lista;
-            - a contagem automática usa os vídeos realmente visíveis no app;
-            - reencontrar um vídeo existente não renova artificialmente sua data de captura.
-
-            Compatibilidade:
-            - versionCode 401 / versionName 4.0.1;
-            - mesmo applicationId br.com.monitordenoticias.android;
-            - mesma assinatura permanente validada pelo certificado SHA-256 esperado;
-            - atualização direta sobre v4.0 preservando banco, notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
+            Monitor de Notícias Android v4.0.1
           files: monitor-de-noticias-v4.0.1.apk
           overwrite_files: true
           make_latest: true

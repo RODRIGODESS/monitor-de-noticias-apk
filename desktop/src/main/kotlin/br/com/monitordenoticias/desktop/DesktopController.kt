@@ -26,8 +26,10 @@ class DesktopController(
     @Volatile var videoTerms: List<String> = emptyList()
     @Volatile var demands: List<Demand> = emptyList()
     @Volatile var newsProgress: LiveSearchProgress = LiveSearchProgress()
+    @Volatile var demandProgress: LiveSearchProgress = LiveSearchProgress()
     @Volatile var videoProgress: LiveSearchProgress = LiveSearchProgress()
     @Volatile var newsBusy = false
+    @Volatile var demandBusy = false
     @Volatile var videoBusy = false
     @Volatile var status = "Pronto"
     @Volatile var videoStatus = "Pronto"
@@ -70,13 +72,17 @@ class DesktopController(
         if (newsAllSources) emptyList() else SourceCatalog.selected(selectedNewsSourceIds)
 
     private fun selectedVideoSources(): List<VideoSource> =
-        VideoSourceCatalog.selected(selectedVideoSourceIds.ifEmpty { VideoSourceCatalog.defaultIds })
+        VideoSourceCatalog.selected(selectedVideoSourceIds)
 
     fun searchNews(from: Long? = null, to: Long? = null) {
         if (newsBusy) return
+        if (!newsAllSources && selectedNewsSourceIds.isEmpty()) {
+            status = "⚠ Selecione pelo menos uma fonte ou ative ‘Buscar em todos os veículos’."
+            return
+        }
+        newsBusy = true
+        status = if (from == null) "Buscando notícias..." else "Buscando notícias no período..."
         scope.launch {
-            newsBusy = true
-            status = if (from == null) "Buscando notícias..." else "Buscando notícias no período..."
             try {
                 val result = if (from == null || to == null) {
                     newsRepository.searchProgressive(selectedNewsSources(), newsAllSources) { update ->
@@ -101,46 +107,86 @@ class DesktopController(
     }
 
     fun searchDemand(demand: Demand) {
-        if (newsBusy) return
+        if (demandBusy) return
+        demandBusy = true
+        status = "Buscando demanda: ${demand.vehicle} • ${demand.subject}"
+        demandProgress = LiveSearchProgress(
+            active = true,
+            kind = "Demanda",
+            startedAt = System.currentTimeMillis(),
+            total = 1,
+            currentSource = demand.vehicle,
+            currentQuery = demand.subject
+        )
         scope.launch {
-            newsBusy = true
-            status = "Buscando demanda: ${demand.vehicle} • ${demand.subject}"
             try {
                 val result = newsRepository.searchDemand(demand)
                 refresh()
                 status = "✓ Demanda: ${result.foundCount} resultado(s), ${result.newCount} novo(s)"
+                demandProgress = demandProgress.copy(
+                    active = false,
+                    finishedAt = System.currentTimeMillis(),
+                    completed = 1,
+                    found = result.foundCount,
+                    newCount = result.newCount,
+                    errors = if (result.error != null) 1 else 0
+                )
                 if (result.newCount > 0) notify("Nova demanda encontrada", "${demand.vehicle} • ${demand.subject}: ${result.newCount}")
             } catch (t: Throwable) {
                 status = "Falha na demanda: ${t.message ?: t.javaClass.simpleName}"
-            } finally { newsBusy = false }
+                demandProgress = demandProgress.copy(active = false, finishedAt = System.currentTimeMillis(), errors = 1)
+            } finally {
+                demandBusy = false
+            }
         }
     }
 
     fun searchAllDemands() {
-        if (newsBusy) return
+        if (demandBusy) return
+        val active = demands.filter { it.active }
+        if (active.isEmpty()) {
+            status = "Nenhuma demanda ativa para pesquisar"
+            return
+        }
+        demandBusy = true
+        status = "Buscando todas as demandas..."
+        demandProgress = LiveSearchProgress(active = true, kind = "Demandas", startedAt = System.currentTimeMillis(), total = active.size)
         scope.launch {
-            newsBusy = true
-            status = "Buscando todas as demandas..."
             try {
                 val result = newsRepository.searchAllDemands()
                 refresh()
                 status = "✓ ${result.checkedCount} demanda(s) • ${result.foundCount} resultado(s) • ${result.newCount} novo(s)"
+                demandProgress = demandProgress.copy(
+                    active = false,
+                    finishedAt = System.currentTimeMillis(),
+                    completed = result.checkedCount,
+                    found = result.foundCount,
+                    newCount = result.newCount,
+                    errors = result.errors
+                )
                 if (result.newCount > 0) notify("Demandas", "${result.newCount} novo(s) resultado(s)")
             } catch (t: Throwable) {
                 status = "Falha nas demandas: ${t.message ?: t.javaClass.simpleName}"
-            } finally { newsBusy = false }
+                demandProgress = demandProgress.copy(active = false, finishedAt = System.currentTimeMillis(), errors = 1)
+            } finally {
+                demandBusy = false
+            }
         }
     }
 
     fun searchVideos(from: Long? = null, to: Long? = null) {
         if (videoBusy) return
+        val sources = selectedVideoSources()
+        if (sources.isEmpty()) {
+            videoStatus = "⚠ Selecione pelo menos uma fonte de vídeo"
+            return
+        }
+        videoBusy = true
+        videoStatus = if (from == null) "Buscando vídeos..." else "Buscando vídeos no período..."
         scope.launch {
-            videoBusy = true
-            videoStatus = if (from == null) "Buscando vídeos..." else "Buscando vídeos no período..."
             try {
                 videoDb.removeInvalidListingEntries()
                 videoDb.repairStoredMatches()
-                val sources = selectedVideoSources()
                 val result = if (from == null || to == null) {
                     videoRepository.searchProgressive(sources) { update ->
                         videoProgress = update.progress
@@ -158,7 +204,9 @@ class DesktopController(
                 if (result.newRelevantCount > 0) notify("Novos vídeos", "${result.newRelevantCount} vídeo(s) relevante(s)")
             } catch (t: Throwable) {
                 videoStatus = "Falha na busca de vídeos: ${t.message ?: t.javaClass.simpleName}"
-            } finally { videoBusy = false }
+            } finally {
+                videoBusy = false
+            }
         }
     }
 
@@ -172,52 +220,72 @@ class DesktopController(
     fun clearVideoHistory() { videoDb.clear(); refresh() }
 
     fun setNewsSource(id: String, selected: Boolean) {
-        val next=selectedNewsSourceIds.toMutableSet()
-        if(selected) next += id else next -= id
-        selectedNewsSourceIds=next
-        newsAllSources=false
+        val next = selectedNewsSourceIds.toMutableSet()
+        if (selected) next += id else next -= id
+        selectedNewsSourceIds = next
+        newsAllSources = false
     }
 
     fun setVideoSource(id: String, selected: Boolean) {
-        val next=selectedVideoSourceIds.toMutableSet()
-        if(selected) next += id else next -= id
-        selectedVideoSourceIds=next
+        val next = selectedVideoSourceIds.toMutableSet()
+        if (selected) next += id else next -= id
+        selectedVideoSourceIds = next
     }
 
-    fun selectAllNewsSources() { newsAllSources=true; selectedNewsSourceIds=SourceCatalog.all.map { it.id }.toSet() }
-    fun clearNewsSources() { newsAllSources=false; selectedNewsSourceIds=emptySet() }
-    fun selectAllVideoSources() { selectedVideoSourceIds=VideoSourceCatalog.all.map { it.id }.toSet() }
-    fun clearVideoSources() { selectedVideoSourceIds=emptySet() }
+    fun selectAllNewsSources() { newsAllSources = true; selectedNewsSourceIds = SourceCatalog.all.map { it.id }.toSet() }
+    fun clearNewsSources() { newsAllSources = false; selectedNewsSourceIds = emptySet() }
+    fun selectAllVideoSources() { selectedVideoSourceIds = VideoSourceCatalog.all.map { it.id }.toSet() }
+    fun clearVideoSources() { selectedVideoSourceIds = emptySet() }
 
-    fun parsePeriod(startDate:String,startTime:String,endDate:String,endTime:String):Pair<Long,Long>? = runCatching {
-        val zone=ZoneId.systemDefault()
-        val start=LocalDateTime.of(LocalDate.parse(startDate), LocalTime.parse(startTime.ifBlank { "00:00" }))
+    fun parsePeriod(startDate: String, startTime: String, endDate: String, endTime: String): Pair<Long, Long>? = runCatching {
+        val zone = ZoneId.systemDefault()
+        val startDateValue = parseDate(startDate)
+        val endDateValue = parseDate(endDate)
+        val start = LocalDateTime.of(startDateValue, LocalTime.parse(startTime.ifBlank { "00:00" }))
             .atZone(zone).toInstant().toEpochMilli()
-        val end=LocalDateTime.of(LocalDate.parse(endDate), LocalTime.parse(endTime.ifBlank { "23:59" }))
+        val end = LocalDateTime.of(endDateValue, LocalTime.parse(endTime.ifBlank { "23:59" }))
             .atZone(zone).toInstant().toEpochMilli()
-        require(end>=start)
+        require(end > start)
         start to end
     }.getOrNull()
+
+    fun periodPreset(days: Int): PeriodPreset {
+        val end = LocalDateTime.now()
+        val start = when (days) {
+            0 -> end.toLocalDate().atStartOfDay()
+            1 -> end.minusHours(24)
+            else -> end.minusDays(days.toLong())
+        }
+        return PeriodPreset(
+            startDate = start.toLocalDate().format(BR_DATE),
+            startTime = start.toLocalTime().format(TIME),
+            endDate = end.toLocalDate().format(BR_DATE),
+            endTime = end.toLocalTime().format(TIME)
+        )
+    }
+
+    private fun parseDate(value: String): LocalDate = runCatching { LocalDate.parse(value, BR_DATE) }
+        .getOrElse { LocalDate.parse(value, DateTimeFormatter.ISO_LOCAL_DATE) }
 
     private suspend fun automationLoop() {
         while (currentCoroutineContext().isActive) {
             if (automaticMonitoring) {
-                val now=System.currentTimeMillis()
-                val lastNews=prefs.getLong("desktop_auto_news_at",0L)
-                if(!newsBusy && now-lastNews >= newsIntervalMinutes*60_000L) {
-                    prefs.edit().putLong("desktop_auto_news_at",now).apply()
+                val now = System.currentTimeMillis()
+                val lastNews = prefs.getLong("desktop_auto_news_at", 0L)
+                if (!newsBusy && now - lastNews >= newsIntervalMinutes * 60_000L) {
+                    prefs.edit().putLong("desktop_auto_news_at", now).apply()
                     searchNews()
                 }
-                val lastDemand=prefs.getLong("desktop_auto_demands_at",0L)
-                if(!newsBusy && now-lastDemand >= 60L*60L*1000L) {
-                    prefs.edit().putLong("desktop_auto_demands_at",now).apply()
+                val lastDemand = prefs.getLong("desktop_auto_demands_at", 0L)
+                if (!demandBusy && now - lastDemand >= 60L * 60L * 1000L) {
+                    prefs.edit().putLong("desktop_auto_demands_at", now).apply()
                     searchAllDemands()
                 }
-                val dt=LocalDateTime.now()
-                if(dt.minute < 2 && dt.hour in setOf(8,12,15,19,21) && !videoBusy) {
-                    val key=dt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd-HH"))
-                    if(prefs.getString("desktop_auto_video_slot","") != key) {
-                        prefs.edit().putString("desktop_auto_video_slot",key).apply()
+                val dt = LocalDateTime.now()
+                if (dt.minute < 2 && dt.hour in setOf(8, 12, 15, 19, 21) && !videoBusy) {
+                    val key = dt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd-HH"))
+                    if (prefs.getString("desktop_auto_video_slot", "") != key) {
+                        prefs.edit().putString("desktop_auto_video_slot", key).apply()
                         searchVideos()
                     }
                 }
@@ -226,15 +294,27 @@ class DesktopController(
         }
     }
 
-    private fun mergeNewsForUi(old:List<News>,fresh:List<News>):List<News> =
-        (fresh+old).distinctBy { it.link }.sortedWith(compareByDescending<News>{it.capturedAt}.thenByDescending{it.date}).take(1500)
+    private fun mergeNewsForUi(old: List<News>, fresh: List<News>): List<News> =
+        (fresh + old).distinctBy { it.link }.sortedWith(compareByDescending<News> { it.capturedAt }.thenByDescending { it.date }).take(1500)
 
-    private fun mergeVideosForUi(old:List<VideoItem>,fresh:List<VideoItem>):List<VideoItem> =
-        (fresh+old).distinctBy { it.link }.sortedWith(compareByDescending<VideoItem>{it.capturedAt}.thenByDescending{it.publishedAt}).take(2000)
+    private fun mergeVideosForUi(old: List<VideoItem>, fresh: List<VideoItem>): List<VideoItem> =
+        (fresh + old).distinctBy { it.link }.sortedWith(compareByDescending<VideoItem> { it.capturedAt }.thenByDescending { it.publishedAt }).take(2000)
 
     override fun close() {
         scope.cancel()
         newsDb.close()
         videoDb.close()
+    }
+
+    data class PeriodPreset(
+        val startDate: String,
+        val startTime: String,
+        val endDate: String,
+        val endTime: String
+    )
+
+    companion object {
+        private val BR_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+        private val TIME = DateTimeFormatter.ofPattern("HH:mm")
     }
 }

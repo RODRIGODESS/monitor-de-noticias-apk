@@ -1,0 +1,35 @@
+name: Temporary v3.0.11 source expansion patch
+
+on:
+  push:
+    branches:
+      - codex/v3.0.11-source-expansion
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/v3.0.11-source-expansion
+      - name: Apply guarded patch
+        run: python3 tools/patch_v3011_sources.py
+      - name: Verify patch
+        run: |
+          grep -q 'globoplay-fantastico' app/src/main/java/br/com/monitordenoticias/android/VideoSourceCatalog.kt
+          grep -q 'portalProgramScanIds' app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt
+          grep -q 'KEY_PROGRAM_SOURCES_3011_MIGRATED' app/src/main/java/br/com/monitordenoticias/android/VideoViewModel.kt
+          git diff --check
+      - name: Commit application changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/br/com/monitordenoticias/android/VideoSourceCatalog.kt \
+                  app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt \
+                  app/src/main/java/br/com/monitordenoticias/android/VideoViewModel.kt
+          git commit -m 'feat: expand video programs and stabilize source scans'
+          git push origin HEAD:codex/v3.0.11-source-expansion

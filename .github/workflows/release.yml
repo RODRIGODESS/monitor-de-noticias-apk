@@ -47,7 +47,7 @@ jobs:
                   app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt \
                   app/src/main/java/br/com/monitordenoticias/android/NewsRepository.kt \
                   app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt \
-                  app/build.gradle.kts .github/workflows/release.yml
+                  app/build.gradle.kts
           git commit -m "feat: implement v4.0 news discovery and split terms"
           git push origin HEAD:codex/v4.0-news-latest-video-terms
 

@@ -80,9 +80,9 @@ class VideoRepository(
                 errors = unstableSourceIds.size
             }
 
-            // Globoplay e YouTube fazem UMA coleta por fonte/canal. Termos e Demandas
-            // são cruzados localmente depois. As demais fontes mantêm busca por termo
-            // porque alguns portais ainda não oferecem uma listagem recente confiável.
+            // Globoplay, YouTube e páginas estáveis de programas fazem UMA coleta por
+            // fonte/canal. Termos e Demandas são cruzados localmente depois. Portais sem
+            // uma listagem recente confiável preservam a busca tradicional por termo.
             val plan = sources.associateWith { source ->
                 if (isSourceScanMode(source)) {
                     listOf(QuerySpec(query = ""))
@@ -429,6 +429,22 @@ class VideoRepository(
             return emptyList()
         }
 
+        if (source.id in VideoSourceCatalog.portalProgramScanIds) {
+            val landing = runCatching { fetchWebsite(source, capturedAt) }
+                .onFailure { onError("Portal • página do programa") }
+                .getOrDefault(emptyList())
+                .distinctBy { canonicalKey(it.link) }
+            if (landing.isNotEmpty()) return landing
+
+            if (source.searchUrlTemplate.isNotBlank()) {
+                return runCatching { fetchSearchWebsite(source, "", capturedAt) }
+                    .onFailure { onError("Portal • busca fallback") }
+                    .getOrDefault(emptyList())
+                    .distinctBy { canonicalKey(it.link) }
+            }
+            return emptyList()
+        }
+
         return runCatching { fetchWebsite(source, capturedAt) }
             .onFailure { onError("Portal • página") }
             .getOrDefault(emptyList())
@@ -484,6 +500,7 @@ class VideoRepository(
         source.id == "video-globoplay-jornalismo" -> MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN
         source.id in VideoSourceCatalog.globoplayRegionalSweepIds -> MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN
         isGloboplaySource(source) -> MAX_GLOBOPLAY_ITEMS_PER_SCAN
+        source.id in VideoSourceCatalog.portalProgramScanIds -> MAX_PORTAL_PROGRAM_ITEMS_PER_SCAN
         else -> MAX_RESOLVED_PER_QUERY
     }
 
@@ -870,6 +887,7 @@ class VideoRepository(
         return when {
             isGloboplaySource(source) -> GLOBOPLAY_DIRECT_PATH_REGEX.containsMatchIn(path)
             source.id == "video-r7-record" -> hasSpecificSuffix(path, "/videos/") || hasSpecificSuffix(path, "/video/")
+            source.id.startsWith("video-r7-") -> source.linkHints.any { hint -> hasSpecificSuffix(path, hint) }
             source.id == "video-sbt-news" -> hasSpecificSuffix(path, "/videos/")
             source.id == "video-cnn-brasil" -> hasSpecificSuffix(path, "/videos/") || hasSpecificSuffix(path, "/video/")
             source.id.startsWith("video-band") -> hasSpecificSuffix(path, "/videos/")
@@ -889,7 +907,8 @@ class VideoRepository(
     }
 
     private fun isSourceScanMode(source: VideoSource): Boolean =
-        isGloboplaySource(source) || source.youtubeHandle.isNotBlank()
+        isGloboplaySource(source) || source.youtubeHandle.isNotBlank() ||
+            source.id in VideoSourceCatalog.portalProgramScanIds
 
     private fun hasSpecificSuffix(path: String, marker: String): Boolean {
         val index = path.indexOf(marker, ignoreCase = true)
@@ -1082,6 +1101,7 @@ class VideoRepository(
         private const val MAX_GLOBOPLAY_DEEP_FALLBACK_NATIONAL = 72
         private const val MAX_GLOBOPLAY_LINKS_DISCOVERED = 80
         private const val MAX_YOUTUBE_ITEMS_PER_SCAN = 40
+        private const val MAX_PORTAL_PROGRAM_ITEMS_PER_SCAN = 40
         private const val MAX_ENRICHED_SUMMARY_LENGTH = 1800
 
         private val GLOBOPLAY_DIRECT_PATH_REGEX = Regex("/v/[0-9]+/?$", RegexOption.IGNORE_CASE)
@@ -1113,7 +1133,8 @@ class VideoRepository(
             "globoplay-hora-1",
             "globoplay-jornal-hoje",
             "globoplay-jornal-nacional",
-            "globoplay-jornal-da-globo"
+            "globoplay-jornal-da-globo",
+            "globoplay-fantastico"
         )
         private val SEPTEMBER_7_EVENT_TOKENS = setOf(
             "desfile", "desfiles", "comemoracao", "comemoracoes", "independencia"

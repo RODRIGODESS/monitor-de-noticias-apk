@@ -51,6 +51,90 @@ object VideoSourceCatalog {
         )
     )
 
+    /** Programas nacionais com página própria de vídeos e varredura única por fonte. */
+    val portalProgramsNational = listOf(
+        VideoSource(
+            id = "video-band-jornal-da-band",
+            name = "Jornal da Band",
+            group = "Band • Jornal da Band",
+            landingUrl = "https://www.band.com.br/noticias/jornal-da-band/videos",
+            linkHints = listOf("/noticias/jornal-da-band/videos/"),
+            aliases = listOf("Band", "Jornal da Band", "JDB"),
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}",
+            searchPrefix = "Jornal da Band"
+        ),
+        VideoSource(
+            id = "video-band-brasil-urgente",
+            name = "Brasil Urgente",
+            group = "Band • Brasil Urgente",
+            landingUrl = "https://www.band.com.br/noticias/brasil-urgente/videos",
+            linkHints = listOf("/noticias/brasil-urgente/videos/"),
+            aliases = listOf("Band", "Brasil Urgente", "BU"),
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}",
+            searchPrefix = "Brasil Urgente"
+        ),
+        VideoSource(
+            id = "video-r7-jornal-da-record",
+            name = "Jornal da Record",
+            group = "Record • Jornal da Record",
+            landingUrl = "https://noticias.r7.com/jr-na-tv/videos/",
+            linkHints = listOf("/jr-na-tv/videos/"),
+            aliases = listOf("Record", "Record TV", "Jornal da Record", "JR", "JR na TV"),
+            searchUrlTemplate = "https://noticias.r7.com/busca?q={query}",
+            searchPrefix = "Jornal da Record"
+        ),
+        VideoSource(
+            id = "video-r7-domingo-espetacular",
+            name = "Domingo Espetacular",
+            group = "Record • Domingo Espetacular",
+            landingUrl = "https://record.r7.com/domingo-espetacular/videos/",
+            linkHints = listOf("/domingo-espetacular/videos/"),
+            aliases = listOf("Record", "Record TV", "Domingo Espetacular"),
+            searchUrlTemplate = "https://www.r7.com/busca?q={query}",
+            searchPrefix = "Domingo Espetacular"
+        ),
+        VideoSource(
+            id = "video-r7-balanco-geral-sp",
+            name = "Balanço Geral SP",
+            group = "Record • Balanço Geral",
+            region = "Sudeste",
+            state = "SP",
+            landingUrl = "https://record.r7.com/balanco-geral/",
+            linkHints = listOf("/balanco-geral/videos/"),
+            aliases = listOf("Record", "Record TV", "Balanço Geral", "Balanço Geral SP", "BG SP"),
+            searchUrlTemplate = "https://www.r7.com/busca?q={query}",
+            searchPrefix = "Balanço Geral SP"
+        )
+    )
+
+    /** Programas regionais relevantes com página própria de vídeos. */
+    val portalProgramsRegional = listOf(
+        VideoSource(
+            id = "video-band-jornal-do-rio",
+            name = "Jornal do Rio",
+            group = "Band Regional • Jornal do Rio",
+            region = "Sudeste",
+            state = "RJ",
+            landingUrl = "https://www.band.com.br/rio-de-janeiro/videos",
+            linkHints = listOf("/rio-de-janeiro/videos/"),
+            aliases = listOf("Band", "Band Rio", "Jornal do Rio"),
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}",
+            searchPrefix = "Jornal do Rio"
+        ),
+        VideoSource(
+            id = "video-r7-balanco-geral-rj",
+            name = "Balanço Geral RJ",
+            group = "Record • Balanço Geral",
+            region = "Sudeste",
+            state = "RJ",
+            landingUrl = "https://record.r7.com/balanco-geral-rj/videos/",
+            linkHints = listOf("/balanco-geral-rj/videos/"),
+            aliases = listOf("Record", "Record TV", "Balanço Geral", "Balanço Geral RJ", "BG RJ"),
+            searchUrlTemplate = "https://www.r7.com/busca?q={query}",
+            searchPrefix = "Balanço Geral RJ"
+        )
+    )
+
     /** Canais oficiais no YouTube monitorados como fontes independentes. */
     val youtubeOfficial = listOf(
         youtube("youtube-cnn-brasil", "CNN Brasil", "@CNNBrasil", listOf("CNN", "CNN Brasil")),
@@ -68,7 +152,8 @@ object VideoSourceCatalog {
         nationalGlobo("globoplay-hora-1", "Hora 1"),
         nationalGlobo("globoplay-jornal-hoje", "Jornal Hoje"),
         nationalGlobo("globoplay-jornal-nacional", "Jornal Nacional"),
-        nationalGlobo("globoplay-jornal-da-globo", "Jornal da Globo")
+        nationalGlobo("globoplay-jornal-da-globo", "Jornal da Globo"),
+        nationalGlobo("globoplay-fantastico", "Fantástico")
     )
 
     /**
@@ -248,7 +333,7 @@ object VideoSourceCatalog {
     )
 
     val globoplayTelejournalsRegional: List<VideoSource> = globoplayRegionalSpecific + globoplayRegionalSweeps
-    val national: List<VideoSource> = portalNational + youtubeOfficial + globoplayTelejournalsNational
+    val national: List<VideoSource> = portalNational + portalProgramsNational + youtubeOfficial + globoplayTelejournalsNational
 
     private val bandRegional = listOf(
         VideoSource(
@@ -278,12 +363,22 @@ object VideoSourceCatalog {
         )
     )
 
-    val regional: List<VideoSource> = bandRegional + globoplayTelejournalsRegional
+    val regional: List<VideoSource> = bandRegional + portalProgramsRegional + globoplayTelejournalsRegional
     val all: List<VideoSource> = national + regional
     val byId: Map<String, VideoSource> = all.associateBy { it.id }
     val youtubeOfficialIds: Set<String> = youtubeOfficial.map { it.id }.toSet()
     val globoplayTelejournalIds: Set<String> = (globoplayTelejournalsNational + globoplayRegionalSpecific).map { it.id }.toSet()
     val globoplayRegionalSweepIds: Set<String> = globoplayRegionalSweeps.map { it.id }.toSet()
+    val portalProgramScanIds: Set<String> = (portalProgramsNational + portalProgramsRegional + bandRegional).map { it.id }.toSet() +
+        setOf("video-r7-record", "video-sbt-news", "video-band")
+    val v3011StarterIds: Set<String> = setOf(
+        "video-band-jornal-da-band",
+        "video-band-brasil-urgente",
+        "video-r7-jornal-da-record",
+        "video-r7-domingo-espetacular",
+        "video-r7-balanco-geral-sp",
+        "globoplay-fantastico"
+    )
     val defaultIds: Set<String> = national.map { it.id }.toSet()
 
     fun selected(ids: Set<String>): List<VideoSource> = ids.mapNotNull(byId::get)

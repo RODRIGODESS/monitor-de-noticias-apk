@@ -92,57 +92,49 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v3.0.10 release asset
+      - name: Prepare v3.0.11 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.10.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.11.apk
 
-      - name: Point v3.0.10 tag to validated main commit
+      - name: Point v3.0.11 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v3.0.10 "$GITHUB_SHA"
-          git push --force origin refs/tags/v3.0.10
+          git tag -f v3.0.11 "$GITHUB_SHA"
+          git push --force origin refs/tags/v3.0.11
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.10
+          tag_name: v3.0.11
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v3.0.10
+          name: Monitor de Notícias Android v3.0.11
           body: |
-            Monitor de Notícias Android v3.0.10 — correção do fluxo Globoplay/Jarvis e do diagnóstico de fontes instáveis.
+            Monitor de Notícias Android v3.0.11 — ampliação de telejornais e redução de consultas instáveis de vídeo.
 
-            Jornal Hoje e Jornal Nacional:
-            - o Jarvis continua descobrindo candidatos por Termos e Demandas sem voltar ao modelo fonte x termo;
-            - a data de publicação passa a ser extraída do objeto correspondente ao próprio ID do vídeo na página /v/<id>;
-            - datas de vídeos relacionados antigos deixam de contaminar o candidato atual;
-            - corrige o caso em que o JH “Veja os desfiles de 7 de setembro pelo país” podia herdar uma data de 2018;
-            - corrige o fluxo do JN “Comemorações do 7 de setembro reúnem milhares de pessoas em diferentes regiões”.
+            Novas fontes e programas:
+            - Jornal da Band e Brasil Urgente;
+            - Jornal da Record;
+            - Domingo Espetacular;
+            - Balanço Geral SP e Balanço Geral RJ;
+            - Jornal do Rio;
+            - Fantástico via Globoplay/Jarvis.
 
-            Persistência e relevância:
-            - busca e reparo do banco passam a compartilhar a mesma política de correspondência;
-            - evita que um vídeo encontrado seja apagado logo depois por uma regra antiga de validação;
-            - preserva a equivalência controlada entre desfile, desfiles, comemoração, comemorações e independência no contexto de 7 de Setembro.
+            Estratégia de busca:
+            - páginas estáveis de programas passam a fazer uma única varredura recente por fonte e cruzamento local com todos os Termos e Demandas;
+            - Band, R7/Record e SBT deixam de multiplicar consultas quando existe uma listagem recente utilizável;
+            - o fluxo Globoplay mantém Edições, Trechos e Jarvis, incluindo JH, JN e agora Fantástico;
+            - diagnóstico de fontes instáveis continua registrando apenas falhas realmente acionáveis.
 
-            Fontes instáveis:
-            - tentativas auxiliares de descoberta de Edições do Globoplay deixam de condenar sozinhas uma fonte inteira como instável;
-            - falhas realmente acionáveis continuam aparecendo no diagnóstico;
-            - isso reduz falsos positivos como os vários telejornais marcados apenas por “Globoplay • Edições”.
-
-            Mantido:
-            - YouTube continua no caminho que já está encontrando vídeos corretamente;
-            - regionais, Trechos, Edições, Jarvis, resultados progressivos, cronômetro e Limpar vídeos;
-            - janela móvel das últimas 24 horas para buscas normais e automáticas de vídeo;
-            - agenda automática aproximadamente às 08h, 12h, 15h, 19h e 21h.
-
-            Atualização:
-            - versionCode 310 / versionName 3.0.10;
+            Compatibilidade:
+            - versionCode 311 / versionName 3.0.11;
             - mesmo applicationId br.com.monitordenoticias.android;
-            - mesma assinatura permanente;
-            - instalação direta sobre v3.0.9 preservando Termos, Demandas, histórico e configurações.
-          files: monitor-de-noticias-v3.0.10.apk
+            - mesma assinatura permanente validada pelo certificado SHA-256 esperado;
+            - instalação direta sobre v3.0.10 preservando Termos, Demandas, histórico, seleção de fontes e configurações;
+            - novas fontes nacionais são adicionadas uma única vez às instalações existentes sem remover escolhas atuais.
+          files: monitor-de-noticias-v3.0.11.apk
           overwrite_files: true
           make_latest: true

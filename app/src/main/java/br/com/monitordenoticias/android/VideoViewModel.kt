@@ -61,6 +61,11 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             editor.putBoolean(KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, true)
             changed = true
         }
+        if (!prefs.getBoolean(KEY_PROGRAM_SOURCES_3011_MIGRATED, false)) {
+            selected = selected + VideoSourceCatalog.v3011StarterIds.filter { VideoSourceCatalog.byId.containsKey(it) }
+            editor.putBoolean(KEY_PROGRAM_SOURCES_3011_MIGRATED, true)
+            changed = true
+        }
 
         if (changed) editor.putStringSet(KEY_SELECTED_SOURCES, selected).apply()
         return selected
@@ -317,6 +322,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_YOUTUBE_283_MIGRATED = "video_v283_youtube_sources_added"
         const val KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED = "video_v284_globoplay_telejournals_added"
         const val KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED = "video_v285_globoplay_regional_sweeps_added"
+        const val KEY_PROGRAM_SOURCES_3011_MIGRATED = "video_v3011_program_sources_added"
         const val KEY_PERIOD_START_DATE = "video_period_start_date"
         const val KEY_PERIOD_START_TIME = "video_period_start_time"
         const val KEY_PERIOD_END_DATE = "video_period_end_date"

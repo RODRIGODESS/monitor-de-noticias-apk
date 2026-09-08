@@ -15,6 +15,8 @@ class VideoRepository(
     private val context: Context,
     private val db: VideoDb
 ) {
+    private val globoplayTrechosCollector = GloboplayTrechosCollector()
+
     private data class QuerySpec(
         val query: String,
         val term: String = "",
@@ -106,11 +108,21 @@ class VideoRepository(
                     }
                     val cacheKey = canonicalKey(item.link)
                     if (resolvedCache.containsKey(cacheKey)) return resolvedCache[cacheKey]
+
+                    val globoplay = isGloboplaySource(source)
                     val resolved = runCatching { resolveDirectVideoPage(source, item, capturedAt) }
-                        .onFailure { errors++ }
+                        .onFailure {
+                            // Em Trechos, abrir a página individual é enriquecimento opcional.
+                            // O card /cenas/ já fornece título e link direto válidos.
+                            if (!globoplay) errors++
+                        }
                         .getOrNull()
-                    resolvedCache[cacheKey] = resolved
-                    return resolved
+                    val fallback = item.takeIf {
+                        globoplay && usefulTitle(it.title) && isSpecificVideoUrl(source, it.link)
+                    }?.copy(link = canonicalizeUrl(item.link))
+                    val finalItem = resolved ?: fallback
+                    resolvedCache[cacheKey] = finalItem
+                    return finalItem
                 }
 
                 specs.forEach { spec ->
@@ -133,6 +145,18 @@ class VideoRepository(
                     prioritized.asSequence()
                         .take(resolveLimitFor(source))
                         .forEach { raw ->
+                            // A aba Trechos já entrega títulos jornalísticos úteis.
+                            // Filtramos localmente antes de abrir /v/<id>, reduzindo requisições e falhas.
+                            if (scanMode && isGloboplaySource(source)) {
+                                val shallowBody = "${raw.title} ${raw.summary}"
+                                val shallowTermMatch = terms.any { phraseMatches(shallowBody, it) }
+                                val shallowDemandMatch = demands.any { demand ->
+                                    sourceMatchesDemand(source, demand.vehicle) &&
+                                        phraseMatches(shallowBody, demand.subject)
+                                }
+                                if (!shallowTermMatch && !shallowDemandMatch) return@forEach
+                            }
+
                             val item = resolve(raw) ?: return@forEach
                             val body = "${item.title} ${item.summary}"
                             if (!inPeriod(item, from, to)) return@forEach
@@ -238,6 +262,13 @@ class VideoRepository(
         }
 
         if (isGloboplaySource(source)) {
+            // Estratégia principal da v3.0.2: telejornal -> página do programa -> /cenas/ (Trechos).
+            // A busca geral do Globoplay permanece somente como fallback.
+            val trechos = globoplayTrechosCollector.collect(source, capturedAt, onError)
+            if (trechos.isNotEmpty()) {
+                return trechos.distinctBy { canonicalKey(it.link) }
+            }
+
             val primary = when {
                 source.searchPrefix.isNotBlank() && source.searchUrlTemplate.isNotBlank() ->
                     runCatching { fetchSearchWebsite(source, "", capturedAt) }
@@ -358,7 +389,7 @@ class VideoRepository(
         fallbackSummary: String
     ): List<VideoItem> {
         val doc = Jsoup.connect(pageUrl)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.1")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.2")
             .referrer("https://www.google.com/")
             .timeout(14_000)
             .followRedirects(true)
@@ -435,7 +466,7 @@ class VideoRepository(
         if (!isSpecificVideoUrl(source, candidate.link)) return null
 
         val doc = Jsoup.connect(candidate.link)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.1")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.2")
             .referrer(source.landingUrl)
             .timeout(14_000)
             .followRedirects(true)
@@ -633,7 +664,7 @@ class VideoRepository(
     private fun fetchYoutube(source: VideoSource, capturedAt: Long): List<VideoItem> {
         val handle = source.youtubeHandle.removePrefix("@")
         val channelPage = Jsoup.connect("https://www.youtube.com/@$handle/videos")
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.1")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.2")
             .timeout(14_000)
             .get()
             .html()
@@ -644,7 +675,7 @@ class VideoRepository(
             ?: return emptyList()
 
         val feed = Jsoup.connect("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
-            .userAgent("Mozilla/5.0 MonitorNoticias/3.0.1")
+            .userAgent("Mozilla/5.0 MonitorNoticias/3.0.2")
             .timeout(14_000)
             .parser(Parser.xmlParser())
             .get()
@@ -853,8 +884,8 @@ class VideoRepository(
 
     companion object {
         private const val MAX_RESOLVED_PER_QUERY = 8
-        private const val MAX_GLOBOPLAY_ITEMS_PER_SCAN = 10
-        private const val MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN = 18
+        private const val MAX_GLOBOPLAY_ITEMS_PER_SCAN = 24
+        private const val MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN = 32
         private const val MAX_GLOBOPLAY_LINKS_DISCOVERED = 80
         private const val MAX_YOUTUBE_ITEMS_PER_SCAN = 40
         private const val MAX_ENRICHED_SUMMARY_LENGTH = 1800

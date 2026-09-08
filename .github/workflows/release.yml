@@ -73,9 +73,7 @@ jobs:
             local output="$1"
             local line
             line=$(printf '%s\n' "$output" | grep -iE 'certificate.*sha-?256.*digest|sha-?256.*certificate.*digest' | head -1 || true)
-            if [ -z "$line" ]; then
-              line=$(printf '%s\n' "$output" | grep -iE 'sha-?256.*digest' | head -1 || true)
-            fi
+            if [ -z "$line" ]; then line=$(printf '%s\n' "$output" | grep -iE 'sha-?256.*digest' | head -1 || true); fi
             printf '%s\n' "$line" | sed -E 's/.*[Dd]igest:[[:space:]]*//' | tr -d ':[:space:]\r' | tr 'A-F' 'a-f'
           }
           FINAL_CERT=$(extract_cert "$final_output")
@@ -88,46 +86,42 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v4.0.1 release asset
+      - name: Prepare v4.0.2 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.0.1.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.0.2.apk
 
-      - name: Point v4.0.1 tag to validated main commit
+      - name: Point v4.0.2 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v4.0.1 "$GITHUB_SHA"
-          git push --force origin refs/tags/v4.0.1
+          git tag -f v4.0.2 "$GITHUB_SHA"
+          git push --force origin refs/tags/v4.0.2
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.0.1
+          tag_name: v4.0.2
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v4.0.1
+          name: Monitor de Notícias Android v4.0.2
           body: |
-            Monitor de Notícias Android v4.0.1 — contagem de novos sincronizada e identificação visual de conteúdo recém-descoberto.
+            Monitor de Notícias Android v4.0.2 — selo NOVO realmente baseado no histórico.
 
             Notícias:
-            - a contagem de matérias novas em Configurações passa a refletir as matérias realmente presentes no mesmo escopo da tela Início;
-            - matérias descobertas na busca mais recente recebem selo NOVO e ficam priorizadas no topo de Últimas notícias;
-            - busca manual e busca automática possuem janela de novidade baseada no momento real da captura;
-            - reencontrar uma matéria já armazenada não altera mais sua primeira captura nem a transforma novamente em NOVA.
-
-            Vídeos:
-            - vídeos descobertos na busca mais recente recebem selo NOVO;
-            - vídeos novos são priorizados no topo da lista;
-            - a contagem automática usa os vídeos realmente visíveis no app;
-            - reencontrar um vídeo existente não renova artificialmente sua data de captura.
+            - uma matéria só é NOVA quando não existia no histórico antes da busca atual;
+            - resultados reencontrados preservam o horário da primeira captura;
+            - a mesma matéria é reconhecida por URL e também por veículo + título normalizado;
+            - mudanças de URL do Google News deixam de recriar a mesma matéria como nova;
+            - ao finalizar a busca, a tela é reconstruída a partir do banco persistido;
+            - buscas de Demandas seguem a mesma regra de histórico.
 
             Compatibilidade:
-            - versionCode 401 / versionName 4.0.1;
+            - versionCode 402 / versionName 4.0.2;
             - mesmo applicationId br.com.monitordenoticias.android;
             - mesma assinatura permanente validada pelo certificado SHA-256 esperado;
-            - atualização direta sobre v4.0 preservando banco, notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
-          files: monitor-de-noticias-v4.0.1.apk
+            - atualização direta sobre v4.0.1 preservando banco, notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
+          files: monitor-de-noticias-v4.0.2.apk
           overwrite_files: true
           make_latest: true

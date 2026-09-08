@@ -97,8 +97,11 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
                 result.newDemandCount > 0 -> "✓ ${result.newCount} nova(s) • ${result.newDemandCount} demanda(s) encontrada(s)"
                 else -> "✓ ${result.newCount} nova(s) notícia(s) encontrada(s)"
             }
+            // Reconstrói a lista a partir do banco após a busca. Assim nenhum capturedAt
+            // temporário vindo do RSS sobrevive quando a matéria já existia no histórico.
+            val persistedNews = scopedRecent(_state.value)
             _state.value = _state.value.copy(
-                news = result.items,
+                news = persistedNews,
                 history = db.listNews(),
                 busy = false,
                 status = status,

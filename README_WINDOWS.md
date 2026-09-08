@@ -47,10 +47,10 @@ Copiar a pasta completa do programa para outro computador preserva os dados da e
 
 ## Compilar localmente no Windows
 
-Requer JDK 17:
+Requer JDK 17 e Gradle 8.10.2 (ou compatível):
 
 ```powershell
-.\gradlew.bat :desktop:createDistributable
+gradle :desktop:createDistributable
 ```
 
 O app image fica em `desktop\build\compose\binaries\main\app\`.

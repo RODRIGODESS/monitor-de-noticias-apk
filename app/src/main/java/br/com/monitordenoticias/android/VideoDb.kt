@@ -5,7 +5,6 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import java.net.URI
-import java.text.Normalizer
 
 class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1) {
     override fun onCreate(db: SQLiteDatabase) {
@@ -67,9 +66,8 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
     }
 
     /**
-     * Remove resultados antigos da v2.8/v2.8.1 que eram páginas de listagem,
-     * como "Todos os vídeos", /videos ou páginas de busca. Eles não são vídeos
-     * individuais e por isso não devem aparecer na interface.
+     * Remove resultados antigos que eram páginas de listagem, como "Todos os vídeos",
+     * /videos ou páginas de busca. Eles não são vídeos individuais.
      */
     fun removeInvalidListingEntries(): Int {
         val ids = mutableListOf<Long>()
@@ -93,9 +91,10 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
     }
 
     /**
-     * Corrige resultados salvos por versões anteriores quando um termo curto foi
-     * confundido com parte de outra palavra. Ex.: o termo "FAB" não pode casar
-     * com "fábrica". Mantém o vídeo quando ainda existir outro vínculo válido.
+     * Revalida os vínculos salvos com a MESMA política usada durante a busca.
+     * Isso evita o caso v3.0.9 em que um vídeo era encontrado por uma equivalência
+     * válida (ex.: desfiles/comemorações de 7 de Setembro), inserido no banco e
+     * apagado logo depois por um matcher diferente nesta rotina.
      */
     fun repairStoredMatches(): Int {
         data class Repair(val id: Long, val term: String?, val demand: String?, val delete: Boolean)
@@ -111,9 +110,10 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
                 val matchedTerm = c.getString(3).orEmpty()
                 val matchedDemand = c.getString(4).orEmpty()
 
-                val termValid = matchedTerm.isBlank() || phraseMatchesStrict(body, matchedTerm)
+                val termValid = matchedTerm.isBlank() || VideoMatchPolicy.phraseMatches(body, matchedTerm)
                 val demandSubject = matchedDemand.substringAfter(" • ", missingDelimiterValue = matchedDemand).trim()
-                val demandValid = matchedDemand.isBlank() || (demandSubject.isNotBlank() && phraseMatchesStrict(body, demandSubject))
+                val demandValid = matchedDemand.isBlank() ||
+                    (demandSubject.isNotBlank() && VideoMatchPolicy.phraseMatches(body, demandSubject))
 
                 if (termValid && demandValid) continue
                 val keepTerm = if (termValid) matchedTerm else ""
@@ -196,7 +196,7 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
     }
 
     private fun isGenericStoredResult(title: String, link: String): Boolean {
-        val normalizedTitle = normalize(title)
+        val normalizedTitle = VideoTextNormalizer.normalize(title)
         if (normalizedTitle in GENERIC_TITLES || normalizedTitle.startsWith("todos os videos")) return true
 
         val uri = runCatching { URI(link) }.getOrNull() ?: return false
@@ -207,57 +207,17 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
         return false
     }
 
-    private fun phraseMatchesStrict(text: String, phrase: String): Boolean {
-        val haystack = normalize(text)
-        val wanted = normalize(phrase)
-        if (wanted.isBlank()) return false
-
-        val hayTokens = haystack.split(' ').filter { it.isNotBlank() }.toSet()
-        val wantedTokens = wanted.split(' ').filter { it.isNotBlank() }
-        if (wantedTokens.isEmpty()) return false
-        if (wantedTokens.size == 1) return hayTokens.any { tokenEquivalent(it, wantedTokens.first()) }
-        if (" $haystack ".contains(" $wanted ")) return true
-
-        val meaningful = wantedTokens.filter { it.length >= 3 && it !in STOP_WORDS }
-        return meaningful.isNotEmpty() && meaningful.all { wantedToken ->
-            hayTokens.any { actualToken -> tokenEquivalent(actualToken, wantedToken) }
-        }
+    private object VideoTextNormalizer {
+        fun normalize(value: String): String = java.text.Normalizer.normalize(
+            value.lowercase(),
+            java.text.Normalizer.Form.NFD
+        )
+            .replace(Regex("\\p{Mn}+"), "")
+            .replace(Regex("[^a-z0-9]+"), " ")
+            .trim()
     }
-
-    private fun tokenEquivalent(actual: String, wanted: String): Boolean {
-        if (actual == wanted) return true
-        if (actual.length < 5 || wanted.length < 5) return false
-        return actual in inflectionVariants(wanted) || wanted in inflectionVariants(actual)
-    }
-
-    private fun inflectionVariants(token: String): Set<String> = buildSet {
-        add(token)
-        when {
-            token.endsWith("r") -> add(token + "es")
-            token.endsWith("l") -> add(token.dropLast(1) + "is")
-            token.endsWith("m") -> add(token.dropLast(1) + "ns")
-            token.endsWith("ao") -> {
-                add(token.dropLast(2) + "oes")
-                add(token.dropLast(2) + "aes")
-                add(token.dropLast(2) + "aos")
-            }
-            !token.endsWith("s") -> add(token + "s")
-        }
-        when {
-            token.endsWith("res") && token.length > 5 -> add(token.dropLast(2))
-            token.endsWith("is") && token.length > 5 -> add(token.dropLast(2) + "l")
-            token.endsWith("ns") && token.length > 5 -> add(token.dropLast(2) + "m")
-            token.endsWith("s") && token.length > 5 -> add(token.dropLast(1))
-        }
-    }
-
-    private fun normalize(value: String): String = Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
-        .replace(Regex("\\p{Mn}+"), "")
-        .replace(Regex("[^a-z0-9]+"), " ")
-        .trim()
 
     companion object {
-        private val STOP_WORDS = setOf("de", "do", "da", "dos", "das", "e", "em", "no", "na", "nos", "nas", "a", "o", "as", "os")
         private val GENERIC_TITLES = setOf(
             "videos", "video", "todos os videos", "todos videos", "ultimos videos", "mais videos",
             "ver videos", "ver todos os videos", "ao vivo", "assistir ao vivo", "carregar mais", "ver mais", "ver tudo"

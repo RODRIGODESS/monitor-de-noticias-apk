@@ -9,7 +9,7 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe Jarvis video search results
+      - name: Map Jarvis VideoCollection fields
         shell: bash
         run: |
           set -euo pipefail
@@ -17,23 +17,18 @@ jobs:
           import json, urllib.request, urllib.error, concurrent.futures
           endpoint='https://cloud-jarvis.globo.com/graphql'
           headers={'content-type':'application/json','x-platform-id':'web','x-device-id':'desktop','x-client-version':'2024.12-5','user-agent':'Mozilla/5.0'}
-          queries={
-            'TYPE_JH': 'query { search { videos(query:"Jornal Hoje") { __typename } } }',
-            'FIELDS_JH': 'query { search { videos(query:"Jornal Hoje") { id headline description duration title { headline originProgramId } items { __typename } nodes { __typename } results { __typename } videos { __typename } } } }',
-            'TYPE_JN': 'query { search { videos(query:"Jornal Nacional") { __typename } } }',
-            'FIELDS_EVENT': 'query { search { videos(query:"desfiles 7 de setembro") { id headline description duration title { headline originProgramId } items { __typename } nodes { __typename } results { __typename } } } }',
-          }
-          def run(item):
-            name,q=item
+          fields=['data','content','contents','entries','list','lists','hits','resources','resource','collection','page','pages','pagination','nextPage','next','total','totalCount','count','size','pageInfo','hasNextPage','cursor','offset','limit','results','items','nodes','edges','videos','elements','cards','docs','documents']
+          def run(f):
+            q=f'query {{ search {{ videos(query:"Jornal Hoje") {{ {f} {{ __typename }} }} }} }}'
             req=urllib.request.Request(endpoint,data=json.dumps({'query':q}).encode(),headers=headers,method='POST')
             try:
               with urllib.request.urlopen(req,timeout=25) as r: raw=r.read().decode()
             except urllib.error.HTTPError as e: raw=e.read().decode()
             try:d=json.loads(raw)
-            except Exception:d={'raw':raw[:800]}
-            return name,d
-          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
-            for name,d in ex.map(run,queries.items()):
-              print('===',name,'===')
-              print(json.dumps(d,ensure_ascii=False)[:9000])
+            except Exception:d={'raw':raw[:500]}
+            return f,d
+          with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            for f,d in ex.map(run,fields):
+              errs=' | '.join(e.get('message','') for e in (d.get('errors') or []))
+              print(f'FIELD={f} DATA={d.get("data")} ERR={errs[:1000]}')
           PY

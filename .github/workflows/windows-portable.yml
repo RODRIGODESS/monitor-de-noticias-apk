@@ -79,4 +79,6 @@ jobs:
             gh release create $tag $asset $checksum --target "${{ github.sha }}" --title "Monitor de Notícias v4.0.2 — Windows Portable" --notes "Build Windows portable da v4.0.2. Mantém o motor de Notícias/Vídeos da versão Android e adapta somente as camadas específicas da plataforma para Windows." --prerelease
           } else {
             gh release upload $tag $asset $checksum --clobber
+            $releaseId = gh api "repos/${{ github.repository }}/releases/tags/$tag" --jq '.id'
+            gh api --method PATCH "repos/${{ github.repository }}/releases/$releaseId" -f target_commitish="${{ github.sha }}" *> $null
           }

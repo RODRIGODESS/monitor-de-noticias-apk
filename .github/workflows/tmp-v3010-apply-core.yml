@@ -1,0 +1,163 @@
+name: TEMP apply v3.0.10 core fixes
+
+on:
+  push:
+    branches:
+      - fix/v3.0.10-jarvis-dates-source-health
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[v3010-core-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v3.0.10-jarvis-dates-source-health
+      - name: Apply matcher and Globoplay date fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # 1) Repository: use one matcher + bind publication date to current /v/<id>.
+          p = Path('app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt')
+          text = p.read_text()
+
+          old = '''        val publishedAt = parsePublishedAt(doc, capturedAt) ?: candidate.publishedAt.takeIf { it > 0 } ?: 0L\n'''
+          new = '''        val publishedAt = parsePublishedAt(doc, capturedAt, canonical) ?: candidate.publishedAt.takeIf { it > 0 } ?: 0L\n'''
+          if old not in text:
+              raise SystemExit('publishedAt call anchor not found')
+          text = text.replace(old, new, 1)
+
+          start = text.index('    private fun parsePublishedAt(doc: Document, capturedAt: Long): Long? {')
+          end = text.index('\n    private fun fetchYoutube(', start)
+          replacement = r'''    private fun parsePublishedAt(doc: Document, capturedAt: Long, targetUrl: String = ""): Long? {
+        fun parseDate(value: String): Long? {
+            val parsed = runCatching { Instant.parse(value.trim()).toEpochMilli() }.getOrNull()
+            return parsed?.takeIf { it in 1..capturedAt }
+        }
+
+        // Metadados de página são, quando presentes, os sinais mais específicos.
+        val pageValues = listOf(
+            doc.selectFirst("meta[property=article:published_time]")?.attr("content").orEmpty(),
+            doc.selectFirst("meta[property=og:published_time]")?.attr("content").orEmpty(),
+            doc.selectFirst("meta[name=date]")?.attr("content").orEmpty(),
+            doc.selectFirst("meta[itemprop=datePublished]")?.attr("content").orEmpty(),
+            doc.selectFirst("time[datetime]")?.attr("datetime").orEmpty()
+        ).filter { it.isNotBlank() }
+        pageValues.distinct().forEach { value ->
+            parseDate(value)?.let { return it }
+        }
+
+        // O HTML do Globoplay contém o vídeo atual e também vídeos relacionados.
+        // A versão anterior pegava a PRIMEIRA datePublished do HTML inteiro; no JH
+        // 14938964 essa primeira data pertencia a um vídeo relacionado de 2018.
+        // Agora vinculamos a data ao ID do /v/<id> que estamos resolvendo.
+        val targetVideoId = GLOBOPLAY_VIDEO_LINK_REGEX
+            .find(targetUrl)
+            ?.groupValues
+            ?.getOrNull(1)
+            .orEmpty()
+        if (targetVideoId.isNotBlank()) {
+            var bestDate: Long? = null
+            var bestDistance = Int.MAX_VALUE
+
+            doc.select("script[type=application/ld+json], script").take(100).forEach { script ->
+                val scriptText = normalizeEmbeddedScriptText(script.data().ifBlank { script.html() })
+                val markerPositions = mutableListOf<Int>()
+
+                fun collectMarker(marker: String) {
+                    var fromIndex = 0
+                    while (fromIndex < scriptText.length) {
+                        val index = scriptText.indexOf(marker, fromIndex, ignoreCase = true)
+                        if (index < 0) break
+                        markerPositions += index
+                        fromIndex = index + marker.length
+                        if (markerPositions.size >= 12) break
+                    }
+                }
+
+                collectMarker("\"id\":\"$targetVideoId\"")
+                collectMarker("/v/$targetVideoId/")
+                if (markerPositions.isEmpty()) return@forEach
+
+                JSON_DATE_REGEX.findAll(scriptText).take(80).forEach { match ->
+                    val parsed = parseDate(match.groupValues[1]) ?: return@forEach
+                    val distance = markerPositions.minOf { marker -> kotlin.math.abs(match.range.first - marker) }
+                    if (distance <= TARGET_VIDEO_DATE_CONTEXT_CHARS && distance < bestDistance) {
+                        bestDistance = distance
+                        bestDate = parsed
+                    }
+                }
+            }
+            bestDate?.let { return it }
+        }
+
+        // Fallback para portais/formatos sem um ID associável: preserva a lógica
+        // anterior, mas somente depois de esgotar os sinais específicos do vídeo.
+        val values = mutableListOf<String>()
+        doc.select("script[type=application/ld+json], script").take(80).forEach { script ->
+            val scriptText = normalizeEmbeddedScriptText(script.data().ifBlank { script.html() })
+            JSON_DATE_REGEX.findAll(scriptText).take(12).forEach { match ->
+                val date = match.groupValues[1]
+                if (date.isNotBlank()) values += date
+            }
+        }
+        values.distinct().forEach { value ->
+            parseDate(value)?.let { return it }
+        }
+        return null
+    }
+'''
+          text = text[:start] + replacement + text[end:]
+
+          start = text.index('    private fun phraseMatches(text: String, phrase: String): Boolean {')
+          end = text.index('\n    private fun tokenEquivalent(', start)
+          replacement = r'''    private fun phraseMatches(text: String, phrase: String): Boolean {
+        if (normalize(phrase).isBlank()) return true
+        return VideoMatchPolicy.phraseMatches(text, phrase)
+    }
+'''
+          text = text[:start] + replacement + text[end:]
+
+          old = '''            "\\\"(?:datePublished|uploadDate|dateCreated|publishedAt|publicationDate|publishedDate)\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",\n'''
+          new = '''            "\\\"(?:datePublished|uploadDate|dateCreated|publishedAt|publicationDate|publishedDate|exhibitedAt)\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",\n'''
+          if old not in text:
+              raise SystemExit('JSON date regex anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '''        private const val MAX_ENRICHED_SUMMARY_LENGTH = 1800\n'''
+          new = '''        private const val MAX_ENRICHED_SUMMARY_LENGTH = 1800\n        private const val TARGET_VIDEO_DATE_CONTEXT_CHARS = 4_000\n'''
+          if old not in text:
+              raise SystemExit('constants anchor not found')
+          text = text.replace(old, new, 1)
+          p.write_text(text)
+
+          # 2) DB repair must use the exact same matching policy as live search.
+          p = Path('app/src/main/java/br/com/monitordenoticias/android/VideoDb.kt')
+          text = p.read_text()
+          start = text.index('    private fun phraseMatchesStrict(text: String, phrase: String): Boolean {')
+          end = text.index('\n    private fun tokenEquivalent(', start)
+          replacement = r'''    private fun phraseMatchesStrict(text: String, phrase: String): Boolean =
+        VideoMatchPolicy.phraseMatches(text, phrase)
+'''
+          text = text[:start] + replacement + text[end:]
+          p.write_text(text)
+          PY
+
+      - name: Commit core fixes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt app/src/main/java/br/com/monitordenoticias/android/VideoDb.kt
+          git commit -m "fix: keep JH/JN Jarvis results through date and DB validation [v3010-core-applied]"
+          git push origin HEAD:fix/v3.0.10-jarvis-dates-source-health

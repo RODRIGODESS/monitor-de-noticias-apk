@@ -56,6 +56,10 @@ class VideoRepository(
             val demands = newsDb.listDemands().filter { it.active }
             val capturedAt = System.currentTimeMillis()
             val startedAt = capturedAt
+            // A busca normal e a automática trabalham sempre com uma janela móvel de 24h.
+            // Pesquisas de período continuam usando from/to explícitos.
+            val effectiveTo = to ?: capturedAt
+            val effectiveFrom = from ?: (effectiveTo - DEFAULT_VIDEO_WINDOW_MS)
             val collected = linkedMapOf<String, VideoItem>()
             val newKeys = linkedSetOf<String>()
             var errors = 0
@@ -165,7 +169,7 @@ class VideoRepository(
 
                             val item = resolve(raw) ?: return@forEach
                             val body = "${item.title} ${item.summary}"
-                            if (!inPeriod(item, from, to)) return@forEach
+                            if (!inPeriod(item, effectiveFrom, effectiveTo)) return@forEach
                             if (!isDirectResult(item)) return@forEach
 
                             val actualMatchedTerms = terms.filter { phraseMatches(body, it) }
@@ -222,7 +226,7 @@ class VideoRepository(
 
             val items = collected.values
                 .filter { it.relevant && isDirectResult(it) }
-                .filter { item -> inPeriod(item, from, to) }
+                .filter { item -> inPeriod(item, effectiveFrom, effectiveTo) }
                 .distinctBy { canonicalKey(it.link) }
                 .sortedByDescending { it.publishedAt }
 
@@ -681,7 +685,7 @@ class VideoRepository(
     private fun fetchYoutube(source: VideoSource, capturedAt: Long): List<VideoItem> {
         val handle = source.youtubeHandle.removePrefix("@")
         val channelPage = Jsoup.connect("https://www.youtube.com/@$handle/videos")
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.3")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.5")
             .timeout(14_000)
             .get()
             .html()
@@ -692,7 +696,7 @@ class VideoRepository(
             ?: return emptyList()
 
         val feed = Jsoup.connect("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
-            .userAgent("Mozilla/5.0 MonitorNoticias/3.0.3")
+            .userAgent("Mozilla/5.0 MonitorNoticias/3.0.5")
             .timeout(14_000)
             .parser(Parser.xmlParser())
             .get()
@@ -929,6 +933,7 @@ class VideoRepository(
         .trim()
 
     companion object {
+        private const val DEFAULT_VIDEO_WINDOW_MS = 24L * 60L * 60L * 1000L
         private const val BROWSER_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36"
         private const val MAX_HTML_BODY_BYTES = 8 * 1024 * 1024
         private const val MAX_RESOLVED_PER_QUERY = 8

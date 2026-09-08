@@ -92,56 +92,51 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v3.0.4 release asset
+      - name: Prepare v3.0.5 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.4.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.5.apk
 
-      - name: Point v3.0.4 tag to validated main commit
+      - name: Point v3.0.5 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v3.0.4 "$GITHUB_SHA"
-          git push --force origin refs/tags/v3.0.4
+          git tag -f v3.0.5 "$GITHUB_SHA"
+          git push --force origin refs/tags/v3.0.5
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.4
+          tag_name: v3.0.5
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v3.0.4
+          name: Monitor de Notícias Android v3.0.5
           body: |
-            Monitor de Notícias Android v3.0.4 — Globoplay com rotas estáveis, flexões seguras e Limpar vídeos visível.
-
-            Globoplay / telejornais:
-            - rotas estáveis conhecidas de telejornais prioritários entram antes da busca dinâmica do Globoplay;
-            - inclui Jornal Nacional, Jornal Hoje, Hora 1, Bom Dia Brasil, Jornal da Globo, RJ1/RJ2, SP1/SP2, Bom Dia ES e Jornal Tapajós entre as rotas estáveis iniciais;
-            - landings históricas /v/<id> passam a servir como sementes para descobrir a página real /t/<token> do telejornal, sem transformar o vídeo antigo em resultado recorrente;
-            - requisições usam perfil de navegador Android/Chrome e aceitam HTML ampliado para evitar truncar cards e JSON/JavaScript da aba Trechos;
-            - os links /v/<id> continuam sendo extraídos do HTML e do JSON incorporado;
-            - o cruzamento local aceita flexões nominais conservadoras como militar/militares, naval/navais e navio/navios;
-            - tokens curtos continuam exatos, preservando a proteção contra falsos positivos como FAB/fábrica.
+            Monitor de Notícias Android v3.0.5 — janela móvel de 24h e datas reais dos Trechos do Globoplay.
 
             Monitor de Vídeos:
-            - botão Limpar vídeos fica sempre visível no card principal da aba Vídeos;
-            - a limpeza exige confirmação e apaga somente o histórico de vídeos, mantendo Termos, Demandas, fontes e Notícias;
-            - YouTube oficial continua usando feed por canal e cruzamento local;
-            - resultados progressivos, links diretos, deduplicação, cronômetro e barra de progresso são preservados.
+            - buscas manuais normais passam a considerar somente as últimas 24 horas;
+            - buscas automáticas das 08h, 12h, 15h, 19h e 21h usam a mesma janela móvel de 24 horas;
+            - pesquisas de período continuam respeitando exatamente o intervalo escolhido pelo usuário;
+            - o status da busca manual deixa explícito que a janela padrão é de 24h;
+            - botão Limpar vídeos permanece visível e continua apagando somente o histórico de vídeos.
+
+            Globoplay / telejornais:
+            - a aba /cenas/ (Trechos) passa a associar cada card ao cabeçalho de data do bloco, como Hoje 07/09/2026 ou Sábado 05/09/2026;
+            - quando o Globoplay fornece apenas a data do bloco, o candidato usa o fim daquele dia como valor conservador para não perder conteúdo ainda válido na janela de 24h;
+            - quando a página individual /v/<id> fornece timestamp mais preciso, ele continua tendo prioridade;
+            - links encontrados em JSON/JavaScript também tentam herdar a data mais próxima do bloco;
+            - rotas estáveis, sementes históricas, flexões seguras de Termos e links diretos permanecem.
 
             Notícias automáticas:
-            - permanece a sincronização da Home e do Histórico com o banco ao concluir os workers automáticos.
-
-            Agenda:
-            - horários automáticos de vídeos permanecem aproximadamente em 08h, 12h, 15h, 19h e 21h no horário local do aparelho;
-            - busca manual permanece disponível;
-            - Android/Doze pode atrasar alguns minutos execuções em segundo plano.
+            - permanece a sincronização da Home e do Histórico com o banco após os workers automáticos.
 
             Atualização:
-            - versionCode 304 / versionName 3.0.4;
-            - mesmo applicationId e mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v3.0.3 preservando Termos, Demandas, histórico de notícias e configurações.
-          files: monitor-de-noticias-v3.0.4.apk
+            - versionCode 305 / versionName 3.0.5;
+            - mesmo applicationId br.com.monitordenoticias.android;
+            - mesma assinatura permanente da linha v2.5+;
+            - instalação direta sobre v3.0.4 preservando Termos, Demandas, histórico de notícias e configurações.
+          files: monitor-de-noticias-v3.0.5.apk
           overwrite_files: true
           make_latest: true

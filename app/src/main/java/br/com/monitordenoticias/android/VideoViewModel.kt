@@ -110,7 +110,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         val started = System.currentTimeMillis()
         _state.value = _state.value.copy(
             busy = true,
-            status = "Buscando vídeos em tempo real...",
+            status = "Buscando vídeos das últimas 24h...",
             searchProgress = LiveSearchProgress(active = true, kind = "Vídeos", startedAt = started)
         )
         viewModelScope.launch {

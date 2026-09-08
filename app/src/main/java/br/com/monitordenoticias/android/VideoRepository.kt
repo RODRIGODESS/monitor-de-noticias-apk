@@ -17,6 +17,7 @@ class VideoRepository(
 ) {
     private val globoplayTrechosCollector = GloboplayTrechosCollector()
     private val globoplayEditionCollector = GloboplayEditionCollector()
+    private val globoplayJarvisCollector = GloboplayJarvisCollector()
 
     private data class QuerySpec(
         val query: String,
@@ -112,6 +113,33 @@ class VideoRepository(
 
             onUpdate?.invoke(VideoSearchUpdate(progress("Preparando", "")))
 
+            // JH/JN e alguns nacionais recebem os Trechos recentes apenas depois que
+            // o JavaScript do Globoplay roda. Fazemos uma busca Jarvis GLOBAL por
+            // Termo/Demanda (nunca fonte x termo) e depois distribuímos localmente
+            // os vídeos pelo nome/originProgramId do telejornal.
+            val nationalGloboplaySources = sources.filter { it.id in CORE_NATIONAL_GLOBOPLAY_IDS }
+            val jarvisQueries = buildList {
+                addAll(terms)
+                demands
+                    .filter { demand -> nationalGloboplaySources.any { source -> sourceMatchesDemand(source, demand.vehicle) } }
+                    .forEach { demand -> add(demand.subject) }
+            }.map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinctBy(::normalize)
+
+            val jarvisOutcome = if (nationalGloboplaySources.isNotEmpty() && jarvisQueries.isNotEmpty()) {
+                onUpdate?.invoke(
+                    VideoSearchUpdate(progress("Globoplay nacionais", "Jarvis • busca global de Termos/Demandas"))
+                )
+                runCatching {
+                    globoplayJarvisCollector.collect(jarvisQueries, nationalGloboplaySources, capturedAt)
+                }.getOrElse {
+                    GloboplayJarvisCollector.Outcome(emptyMap(), failedQueries = jarvisQueries.size)
+                }
+            } else {
+                GloboplayJarvisCollector.Outcome(emptyMap(), failedQueries = 0)
+            }
+
             plan.forEach { (source, specs) ->
                 val resolvedCache = mutableMapOf<String, VideoItem?>()
                 var sourceRequestFailures = 0
@@ -128,7 +156,18 @@ class VideoRepository(
                 }
 
                 val sourceScanCandidates = if (isSourceScanMode(source)) {
-                    collectRecentBySource(source, capturedAt, effectiveFrom, effectiveTo) { stage -> sourceError(stage) }
+                    val nativeCandidates = collectRecentBySource(
+                        source,
+                        capturedAt,
+                        effectiveFrom,
+                        effectiveTo
+                    ) { stage -> sourceError(stage) }
+                    if (source.id in CORE_NATIONAL_GLOBOPLAY_IDS) {
+                        (jarvisOutcome.candidatesBySourceId[source.id].orEmpty() + nativeCandidates)
+                            .distinctBy { canonicalKey(it.link) }
+                    } else {
+                        nativeCandidates
+                    }
                 } else {
                     emptyList()
                 }
@@ -174,7 +213,11 @@ class VideoRepository(
                         )
                         return@specLoop
                     }
-                    val progressQuery = if (scanMode) "Vídeos recentes • cruzamento local" else spec.query
+                    val progressQuery = when {
+                        !scanMode -> spec.query
+                        source.id in CORE_NATIONAL_GLOBOPLAY_IDS -> "Edições + Trechos + Jarvis • cruzamento local"
+                        else -> "Vídeos recentes • cruzamento local"
+                    }
                     onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery)))
 
                     val rawCandidates = if (scanMode) {

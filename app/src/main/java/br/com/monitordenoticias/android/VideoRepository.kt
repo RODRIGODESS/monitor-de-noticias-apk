@@ -175,7 +175,15 @@ class VideoRepository(
                 // Só classificamos uma fonte de varredura como instável quando ela realmente
                 // não conseguiu entregar candidatos e houve falha de rede/HTTP.
                 if (isSourceScanMode(source) && sourceScanCandidates.isEmpty() && sourceRequestFailures > 0) {
-                    markCurrentSourceUnstable()
+                    val actionableScanFailure = when {
+                        source.youtubeHandle.isNotBlank() -> sourceRequestFailures >= 2
+                        isGloboplaySource(source) -> sourceRequestFailures >= 2
+                        source.id in VideoSourceCatalog.portalProgramScanIds && source.searchPrefix.isNotBlank() ->
+                            sourceFailureStages.containsKey("Portal • página do programa") &&
+                                sourceFailureStages.containsKey("Portal • busca fallback")
+                        else -> sourceFailureStages.containsKey("Portal • página do programa")
+                    }
+                    if (actionableScanFailure) markCurrentSourceUnstable()
                 }
 
                 fun resolve(item: VideoItem): VideoItem? {
@@ -436,7 +444,7 @@ class VideoRepository(
                 .distinctBy { canonicalKey(it.link) }
             if (landing.isNotEmpty()) return landing
 
-            if (source.searchUrlTemplate.isNotBlank()) {
+            if (source.searchUrlTemplate.isNotBlank() && source.searchPrefix.isNotBlank()) {
                 return runCatching { fetchSearchWebsite(source, "", capturedAt) }
                     .onFailure { onError("Portal • busca fallback") }
                     .getOrDefault(emptyList())

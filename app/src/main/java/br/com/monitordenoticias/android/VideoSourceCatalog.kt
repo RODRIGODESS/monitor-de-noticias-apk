@@ -35,7 +35,7 @@ object VideoSourceCatalog {
             id = "video-sbt-news",
             name = "SBT News",
             group = "SBT",
-            landingUrl = "https://sbtnews.sbt.com.br/videos",
+            landingUrl = "https://sbtnews.sbt.com.br/videos/ao-vivo",
             linkHints = listOf("/videos/"),
             aliases = listOf("SBT", "SBT News"),
             searchUrlTemplate = "https://sbtnews.sbt.com.br/busca?q={query}"
@@ -57,7 +57,7 @@ object VideoSourceCatalog {
             id = "video-band-jornal-da-band",
             name = "Jornal da Band",
             group = "Band • Jornal da Band",
-            landingUrl = "https://www.band.com.br/noticias/jornal-da-band/videos",
+            landingUrl = "https://www.band.com.br/programas/jornal-da-band",
             linkHints = listOf("/noticias/jornal-da-band/videos/"),
             aliases = listOf("Band", "Jornal da Band", "JDB"),
             searchUrlTemplate = "https://www.band.com.br/busca?q={query}",
@@ -67,7 +67,7 @@ object VideoSourceCatalog {
             id = "video-band-brasil-urgente",
             name = "Brasil Urgente",
             group = "Band • Brasil Urgente",
-            landingUrl = "https://www.band.com.br/noticias/brasil-urgente/videos",
+            landingUrl = "https://www.band.com.br/programas/brasil-urgente",
             linkHints = listOf("/noticias/brasil-urgente/videos/"),
             aliases = listOf("Band", "Brasil Urgente", "BU"),
             searchUrlTemplate = "https://www.band.com.br/busca?q={query}",
@@ -88,7 +88,7 @@ object VideoSourceCatalog {
             name = "Domingo Espetacular",
             group = "Record • Domingo Espetacular",
             landingUrl = "https://record.r7.com/domingo-espetacular/videos/",
-            linkHints = listOf("/domingo-espetacular/videos/"),
+            linkHints = listOf("/domingo-espetacular/videos/", "/domingo-espetacular/video/"),
             aliases = listOf("Record", "Record TV", "Domingo Espetacular"),
             searchUrlTemplate = "https://www.r7.com/busca?q={query}",
             searchPrefix = "Domingo Espetacular"
@@ -99,7 +99,7 @@ object VideoSourceCatalog {
             group = "Record • Balanço Geral",
             region = "Sudeste",
             state = "SP",
-            landingUrl = "https://record.r7.com/balanco-geral/",
+            landingUrl = "https://record.r7.com/balanco-geral/videos/",
             linkHints = listOf("/balanco-geral/videos/"),
             aliases = listOf("Record", "Record TV", "Balanço Geral", "Balanço Geral SP", "BG SP"),
             searchUrlTemplate = "https://www.r7.com/busca?q={query}",
@@ -338,28 +338,28 @@ object VideoSourceCatalog {
     private val bandRegional = listOf(
         VideoSource(
             id = "video-band-brasilia", name = "Band Brasília", group = "Band Regional", region = "Centro-Oeste", state = "DF",
-            landingUrl = "https://www.band.com.br/band-brasilia/videos", linkHints = listOf("/band-brasilia/videos/"), aliases = listOf("Band Brasília", "Band DF"),
-            searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
+            landingUrl = "https://www.band.com.br/band-brasilia/videos", linkHints = listOf("/band-brasilia/videos/", "/videos/"), aliases = listOf("Band Brasília", "Band DF"),
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}", searchPrefix = "Band Brasília"
         ),
         VideoSource(
             id = "video-band-minas", name = "Band Minas", group = "Band Regional", region = "Sudeste", state = "MG",
-            landingUrl = "https://www.band.com.br/band-minas", linkHints = listOf("/band-minas/videos/", "/videos/"), aliases = listOf("Band Minas", "Band Minas Gerais"),
-            searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
+            landingUrl = "https://www.band.com.br/minas-gerais", linkHints = listOf("/band-minas/videos/", "/minas-gerais/videos/", "/videos/"), aliases = listOf("Band Minas", "Band Minas Gerais"),
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}", searchPrefix = "Band Minas"
         ),
         VideoSource(
             id = "video-band-rio", name = "Band Rio", group = "Band Regional", region = "Sudeste", state = "RJ",
-            landingUrl = "https://www.band.com.br/rio-de-janeiro/videos", linkHints = listOf("/rio-de-janeiro/videos/"), aliases = listOf("Band Rio", "Band Rio de Janeiro"),
-            searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
+            landingUrl = "https://www.band.com.br/rio-de-janeiro/videos", linkHints = listOf("/rio-de-janeiro/videos/", "/videos/"), aliases = listOf("Band Rio", "Band Rio de Janeiro"),
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}", searchPrefix = "Band Rio"
         ),
         VideoSource(
             id = "video-band-parana", name = "Band Paraná", group = "Band Regional", region = "Sul", state = "PR",
-            landingUrl = "https://www.band.com.br/band-parana/videos", linkHints = listOf("/band-parana/videos/"), aliases = listOf("Band Paraná", "Band PR"),
-            searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
+            landingUrl = "https://www.band.com.br/band-parana", linkHints = listOf("/band-parana/videos/", "/videos/"), aliases = listOf("Band Paraná", "Band PR"),
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}", searchPrefix = "Band Paraná"
         ),
         VideoSource(
             id = "video-band-bahia", name = "Band Bahia", group = "Band Regional", region = "Nordeste", state = "BA",
-            landingUrl = "https://www.band.com.br/band-bahia", linkHints = listOf("/band-bahia/videos/", "/videos/"), aliases = listOf("Band Bahia", "Band BA"),
-            searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
+            landingUrl = "https://www.band.com.br/ao-vivo/band-bahia", linkHints = listOf("/band-bahia/videos/", "/videos/"), aliases = listOf("Band Bahia", "Band BA"),
+            searchUrlTemplate = "https://www.band.com.br/busca?q={query}", searchPrefix = "Band Bahia"
         )
     )
 

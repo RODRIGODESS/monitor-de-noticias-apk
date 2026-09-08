@@ -5,6 +5,9 @@ import org.jsoup.nodes.Document
 import java.net.URI
 import java.net.URLEncoder
 import java.text.Normalizer
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import kotlin.math.abs
 
 /**
@@ -171,7 +174,12 @@ class GloboplayTrechosCollector {
     ): List<VideoItem> {
         val out = linkedMapOf<String, VideoItem>()
 
-        fun addCandidate(direct: String, rawTitle: String, rawSummary: String) {
+        fun addCandidate(
+            direct: String,
+            rawTitle: String,
+            rawSummary: String,
+            publishedAt: Long = capturedAt
+        ) {
             val cleanedTitle = cleanTrechoTitle(rawTitle, source.searchPrefix)
             val title = cleanedTitle.takeIf(::usefulTitle)
                 ?: "Trecho recente • ${source.searchPrefix.ifBlank { source.name }}"
@@ -186,7 +194,7 @@ class GloboplayTrechosCollector {
                 title = title.take(220),
                 sourceId = source.id,
                 sourceName = source.name,
-                publishedAt = capturedAt,
+                publishedAt = publishedAt,
                 link = direct,
                 summary = summary,
                 capturedAt = capturedAt
@@ -199,8 +207,18 @@ class GloboplayTrechosCollector {
             }
         }
 
-        // Caminho 1: cards presentes diretamente no HTML.
-        doc.select("a[href]").forEach { anchor ->
+        // Caminho 1: cards presentes diretamente no HTML. Os cabeçalhos da
+        // aba Trechos (ex.: "Hoje, 07/09/2026") delimitam a data dos links abaixo.
+        // Se só houver a data, usamos o fim daquele dia para evitar falso negativo
+        // na janela móvel de 24h; a página /v/<id> ainda pode substituir por horário exato.
+        var sectionPublishedAt: Long? = null
+        doc.select("h1,h2,h3,h4,a[href]").forEach { element ->
+            if (element.tagName().startsWith("h", ignoreCase = true)) {
+                sectionPublishedAt = parseSectionDateEnd(element.text())
+                return@forEach
+            }
+
+            val anchor = element
             val absolute = anchor.absUrl("href").ifBlank { resolveUrl(pageUrl, anchor.attr("href")) }
             val direct = normalizeDirectVideoUrl(absolute) ?: return@forEach
 
@@ -212,7 +230,7 @@ class GloboplayTrechosCollector {
             ).map(::cleanText).firstOrNull { it.isNotBlank() }.orEmpty()
 
             val parentText = cleanText(anchor.parent()?.text().orEmpty())
-            addCandidate(direct, rawTitle, parentText)
+            addCandidate(direct, rawTitle, parentText, sectionPublishedAt ?: capturedAt)
         }
 
         // Caminho 2: o Globoplay frequentemente injeta Trechos via JSON/JavaScript.
@@ -231,7 +249,8 @@ class GloboplayTrechosCollector {
                 .takeUnless { normalize(it) == normalize(source.searchPrefix) }
                 .orEmpty()
             val embeddedSummary = nearestJsonValue(context, center, EMBEDDED_SUMMARY_REGEX, 8, 900)
-            addCandidate(direct, embeddedTitle, embeddedSummary)
+            val embeddedPublishedAt = nearestSectionDateEnd(context, center) ?: capturedAt
+            addCandidate(direct, embeddedTitle, embeddedSummary, embeddedPublishedAt)
         }
 
         return out.values.take(MAX_TRECHOS_PER_SOURCE)
@@ -241,6 +260,7 @@ class GloboplayTrechosCollector {
         var score = 0
         if (!item.title.startsWith("Trecho recente •", ignoreCase = true)) score += 30
         if (item.summary.isNotBlank()) score += minOf(item.summary.length / 30, 20)
+        if (item.publishedAt != item.capturedAt) score += 8
         return score
     }
 
@@ -262,6 +282,32 @@ class GloboplayTrechosCollector {
             .minByOrNull { it.second }
             ?.first
             .orEmpty()
+    }
+
+    private fun nearestSectionDateEnd(context: String, center: Int): Long? =
+        SECTION_DATE_REGEX.findAll(context)
+            .mapNotNull { match ->
+                parseSectionDateEnd(match.value)?.let { publishedAt ->
+                    publishedAt to abs(match.range.first - center)
+                }
+            }
+            .minByOrNull { it.second }
+            ?.first
+
+    private fun parseSectionDateEnd(value: String): Long? {
+        val rawDate = SECTION_DATE_REGEX.find(value)?.groupValues?.getOrNull(1).orEmpty()
+        if (rawDate.isBlank()) return null
+        val parsed = runCatching {
+            SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).apply { isLenient = false }.parse(rawDate)
+        }.getOrNull() ?: return null
+
+        return Calendar.getInstance().apply {
+            time = parsed
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }.timeInMillis
     }
 
     private fun cleanJsonText(value: String): String {
@@ -396,6 +442,7 @@ class GloboplayTrechosCollector {
             "^(?:\\d+\\s*(?:h|min|seg|s)\\s*)+",
             RegexOption.IGNORE_CASE
         )
+        private val SECTION_DATE_REGEX = Regex("\\b(\\d{2}/\\d{2}/\\d{4})\\b")
         private val EMBEDDED_TITLE_REGEX = Regex(
             "\\\"(?:title|headline|name|label|episodeTitle)\\\"\\s*:\\s*\\\"([^\\\"]{2,500})\\\"",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)

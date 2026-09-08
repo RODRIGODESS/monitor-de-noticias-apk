@@ -9,38 +9,42 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe Jarvis GraphQL root fields
+      - name: Probe Jarvis title/search fields
         shell: bash
         run: |
           set -euo pipefail
-          ENDPOINT='https://cloud-jarvis.globo.com/graphql'
           python3 - <<'PY'
-          import json, urllib.request, urllib.error
+          import json, urllib.request, urllib.error, concurrent.futures
           endpoint='https://cloud-jarvis.globo.com/graphql'
           headers={
-            'content-type':'application/json',
-            'x-platform-id':'web',
-            'x-device-id':'desktop',
-            'x-client-version':'2024.12-5',
-            'user-agent':'Mozilla/5.0'
+            'content-type':'application/json','x-platform-id':'web','x-device-id':'desktop',
+            'x-client-version':'2024.12-5','user-agent':'Mozilla/5.0'
           }
-          fields=[
-            'title','titles','program','programs','video','videos','episode','episodes',
-            'clips','scenes','trechos','highlights','rail','rails','collection','collections',
-            'playlist','playlists','search','searchV2','content','contents','catalog','category',
-            'categories','recommendations','titleVideos','programVideos','titleEpisodes'
-          ]
-          for f in fields:
-            payload=json.dumps({'query':f'query Probe {{ {f} {{ __typename }} }}'}).encode()
-            req=urllib.request.Request(endpoint,data=payload,headers=headers,method='POST')
+          queries={
+            'TITLE_ID': 'query { title(id:"819") { __typename id headline name slug originProgramId programId } }',
+            'TITLE_PLAIN': 'query { title { __typename id headline name slug originProgramId programId } }',
+            'TITLE_CHILDREN': 'query { title(id:"819") { videos { __typename } episodes { __typename } seasons { __typename } contents { __typename } clips { __typename } scenes { __typename } } }',
+            'TITLES_FIELDS': 'query { titles { __typename items { __typename } nodes { __typename } edges { __typename } results { __typename } pageInfo { __typename } } }',
+            'SEARCH_FIELDS': 'query { search { __typename items { __typename } results { __typename } videos { __typename } titles { __typename } episodes { __typename } contents { __typename } } }',
+            'SEARCH_QUERY_ARG': 'query { search(query:"Jornal Nacional") { __typename } }',
+            'SEARCH_TERM_ARG': 'query { search(term:"Jornal Nacional") { __typename } }',
+            'SEARCH_TEXT_ARG': 'query { search(text:"Jornal Nacional") { __typename } }',
+            'TITLES_QUERY_ARG': 'query { titles(query:"Jornal Nacional") { __typename } }',
+            'TITLES_SEARCH_ARG': 'query { titles(search:"Jornal Nacional") { __typename } }',
+            'EPISODE': 'query { episode(videoId:"14940098") { __typename id headline description video { __typename } videos { __typename } } }',
+          }
+          def run(item):
+            name,q=item
+            body=json.dumps({'query':q}).encode()
+            req=urllib.request.Request(endpoint,data=body,headers=headers,method='POST')
             try:
-              with urllib.request.urlopen(req,timeout=20) as r: body=r.read().decode()
-            except urllib.error.HTTPError as e:
-              body=e.read().decode()
-            try: d=json.loads(body)
-            except Exception: d={'raw':body[:500]}
-            errs=d.get('errors') or []
-            msgs=' | '.join(x.get('message','') for x in errs)
-            data=d.get('data')
-            print(f'FIELD={f} DATA={data} ERR={msgs[:1200]}')
+              with urllib.request.urlopen(req,timeout=25) as r: raw=r.read().decode()
+            except urllib.error.HTTPError as e: raw=e.read().decode()
+            try:d=json.loads(raw)
+            except Exception:d={'raw':raw[:500]}
+            return name,d
+          with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+            for name,d in ex.map(run,queries.items()):
+              print('===',name,'===')
+              print(json.dumps(d,ensure_ascii=False)[:5000])
           PY

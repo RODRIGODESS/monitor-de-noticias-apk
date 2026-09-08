@@ -148,7 +148,7 @@ private fun HomeScreen(c:DesktopController) {
                     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                         Button(onClick={c.searchNews()},enabled=!c.newsBusy){Icon(Icons.Default.Refresh,null);Spacer(Modifier.width(6.dp));Text("Buscar notícias")}
                         Button(onClick={c.searchVideos()},enabled=!c.videoBusy){Icon(Icons.Default.Refresh,null);Spacer(Modifier.width(6.dp));Text("Buscar vídeos")}
-                        OutlinedButton(onClick={c.searchAllDemands()},enabled=!c.newsBusy){Text("Buscar demandas")}
+                        OutlinedButton(onClick={c.searchAllDemands()},enabled=!c.demandBusy){Text("Buscar demandas")}
                     }
                     Text(c.status)
                     Text(c.videoStatus)
@@ -156,6 +156,7 @@ private fun HomeScreen(c:DesktopController) {
             }
         }
         item { ProgressPanel("Notícias",c.newsProgress) }
+        item { ProgressPanel("Demandas",c.demandProgress) }
         item { ProgressPanel("Vídeos",c.videoProgress) }
         if(c.unstableVideoSources.isNotEmpty()) item {
             Card {
@@ -205,6 +206,15 @@ private fun ProgressPanel(title:String,p:LiveSearchProgress) {
 }
 
 @Composable
+private fun PeriodPresets(c:DesktopController,onPreset:(DesktopController.PeriodPreset)->Unit) {
+    Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+        listOf(0 to "Hoje",1 to "24 horas",7 to "7 dias",30 to "30 dias").forEach { (days,label) ->
+            AssistChip(onClick={onPreset(c.periodPreset(days))},label={Text(label)})
+        }
+    }
+}
+
+@Composable
 private fun NewsScreen(c:DesktopController) {
     var onlyDemands by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -216,10 +226,11 @@ private fun NewsScreen(c:DesktopController) {
             FilterChip(selected=onlyDemands,onClick={onlyDemands=!onlyDemands},label={Text("Só Demandas")})
             OutlinedTextField(query,{query=it},label={Text("Filtrar")},singleLine=true,modifier=Modifier.width(260.dp))
         }
+        PeriodPresets(c) { p -> sd=p.startDate;st=p.startTime;ed=p.endDate;et=p.endTime }
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically) {
-            OutlinedTextField(sd,{sd=it},label={Text("Data inicial (AAAA-MM-DD)")},singleLine=true,modifier=Modifier.width(190.dp))
+            OutlinedTextField(sd,{sd=it},label={Text("Data inicial (dd/MM/aaaa)")},singleLine=true,modifier=Modifier.width(190.dp))
             OutlinedTextField(st,{st=it},label={Text("Hora")},singleLine=true,modifier=Modifier.width(100.dp))
-            OutlinedTextField(ed,{ed=it},label={Text("Data final")},singleLine=true,modifier=Modifier.width(190.dp))
+            OutlinedTextField(ed,{ed=it},label={Text("Data final (dd/MM/aaaa)")},singleLine=true,modifier=Modifier.width(190.dp))
             OutlinedTextField(et,{et=it},label={Text("Hora")},singleLine=true,modifier=Modifier.width(100.dp))
             OutlinedButton(onClick={c.parsePeriod(sd,st,ed,et)?.let{c.searchNews(it.first,it.second)}},enabled=!c.newsBusy){Text("Buscar período")}
         }
@@ -260,10 +271,11 @@ private fun VideosScreen(c:DesktopController) {
             VideoFilter.entries.forEach { f -> FilterChip(selected=filter==f,onClick={filter=f},label={Text(when(f){VideoFilter.ALL->"Todos";VideoFilter.RELEVANT->"Relevantes";VideoFilter.DEMANDS->"Demandas"})}) }
             OutlinedTextField(query,{query=it},label={Text("Filtrar")},singleLine=true,modifier=Modifier.width(240.dp))
         }
+        PeriodPresets(c) { p -> sd=p.startDate;st=p.startTime;ed=p.endDate;et=p.endTime }
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically) {
-            OutlinedTextField(sd,{sd=it},label={Text("Data inicial")},singleLine=true,modifier=Modifier.width(180.dp))
+            OutlinedTextField(sd,{sd=it},label={Text("Data inicial (dd/MM/aaaa)")},singleLine=true,modifier=Modifier.width(190.dp))
             OutlinedTextField(st,{st=it},label={Text("Hora")},singleLine=true,modifier=Modifier.width(100.dp))
-            OutlinedTextField(ed,{ed=it},label={Text("Data final")},singleLine=true,modifier=Modifier.width(180.dp))
+            OutlinedTextField(ed,{ed=it},label={Text("Data final (dd/MM/aaaa)")},singleLine=true,modifier=Modifier.width(190.dp))
             OutlinedTextField(et,{et=it},label={Text("Hora")},singleLine=true,modifier=Modifier.width(100.dp))
             OutlinedButton(onClick={c.parsePeriod(sd,st,ed,et)?.let{c.searchVideos(it.first,it.second)}},enabled=!c.videoBusy){Text("Buscar período")}
         }
@@ -335,8 +347,9 @@ private fun DemandsScreen(c:DesktopController) {
             OutlinedTextField(vehicle,{vehicle=it},label={Text("Veículo")},singleLine=true,modifier=Modifier.width(260.dp))
             OutlinedTextField(subject,{subject=it},label={Text("Assunto")},singleLine=true,modifier=Modifier.weight(1f))
             Button(onClick={c.addDemand(vehicle,subject);vehicle="";subject=""},enabled=vehicle.isNotBlank()&&subject.isNotBlank()){Text("Adicionar")}
-            OutlinedButton(onClick={c.searchAllDemands()},enabled=!c.newsBusy){Text("Buscar todas")}
+            OutlinedButton(onClick={c.searchAllDemands()},enabled=!c.demandBusy){Text("Buscar todas")}
         }
+        ProgressPanel("Demandas",c.demandProgress)
         Text(c.status)
         LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.weight(1f)) {
             items(c.demands,key={it.id}) { d ->
@@ -347,7 +360,7 @@ private fun DemandsScreen(c:DesktopController) {
                             Text("Última busca: ${if(d.lastCheckedAt>0)formatDate(d.lastCheckedAt) else "nunca"} • encontrados ${d.lastFoundCount} • novos ${d.lastNewCount}",style=MaterialTheme.typography.labelMedium)
                             if(d.lastError.isNotBlank()) Text(d.lastError)
                         }
-                        OutlinedButton(onClick={c.searchDemand(d)},enabled=!c.newsBusy){Text("Buscar")}
+                        OutlinedButton(onClick={c.searchDemand(d)},enabled=!c.demandBusy){Text("Buscar")}
                         IconButton(onClick={c.removeDemand(d.id)}){Icon(Icons.Default.Delete,null)}
                     }
                 }
@@ -369,6 +382,7 @@ private fun SourcesScreen(c:DesktopController) {
             OutlinedButton(onClick={if(videos)c.clearVideoSources() else c.clearNewsSources()}){Text("Limpar")}
         }
         if(!videos && c.newsAllSources) Text("Modo Notícias: todas as fontes do catálogo estão ativas.",style=MaterialTheme.typography.labelLarge)
+        if(videos && c.selectedVideoSourceIds.isEmpty()) Text("⚠ Nenhuma fonte de vídeo selecionada. A busca permanecerá bloqueada até selecionar pelo menos uma.",style=MaterialTheme.typography.labelLarge)
         val list = if(videos) {
             VideoSourceCatalog.all.filter{query.isBlank() || "${it.name} ${it.group} ${it.state}".contains(query,true)}
                 .map { Triple(it.id,it.name,"${it.group}${if(it.state.isNotBlank())" • ${it.state}" else ""}") }

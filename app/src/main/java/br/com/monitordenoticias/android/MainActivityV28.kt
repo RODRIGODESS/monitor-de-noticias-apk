@@ -117,7 +117,7 @@ private fun V28App(
                 V28Section.DEMANDS -> V28Demands(news, newsVm)
                 V28Section.PERIOD -> V28Period(news, newsVm)
                 V28Section.HISTORY -> V28History(news, newsVm)
-                V28Section.TERMS -> V28Terms(news, newsVm)
+                V28Section.TERMS -> V28Terms(news, newsVm, videos, videoVm)
                 V28Section.SETTINGS -> V28Settings(news, newsVm, videos)
             }
         }
@@ -128,7 +128,7 @@ private fun V28App(
             Text("Mais opções", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             V28MoreItem(Icons.Outlined.DateRange, "Período", "Pesquisa por data e hora") { section = V28Section.PERIOD; showMore = false }
             V28MoreItem(Icons.Outlined.History, "Histórico", "Matérias armazenadas") { section = V28Section.HISTORY; showMore = false }
-            V28MoreItem(Icons.Outlined.ManageSearch, "Termos", "Palavras monitoradas") { section = V28Section.TERMS; showMore = false }
+            V28MoreItem(Icons.Outlined.ManageSearch, "Termos", "Listas separadas de Notícias e Vídeos") { section = V28Section.TERMS; showMore = false }
             V28MoreItem(Icons.Outlined.Settings, "Configurações", "Automação, bateria e relatórios") { section = V28Section.SETTINGS; showMore = false }
             Spacer(Modifier.navigationBarsPadding().height(12.dp))
         }
@@ -154,7 +154,7 @@ private fun V28TopBar(section: V28Section) {
         V28Section.DEMANDS -> "Alertas por veículo e assunto"
         V28Section.PERIOD -> "Defina o intervalo da pesquisa"
         V28Section.HISTORY -> "Arquivo das matérias capturadas"
-        V28Section.TERMS -> "Palavras usadas no monitoramento"
+        V28Section.TERMS -> "Termos separados para Notícias e Vídeos"
         V28Section.SETTINGS -> "Saúde, automação e preferências"
     }
     Surface(color = V28Bg, modifier = Modifier.statusBarsPadding()) {
@@ -713,26 +713,77 @@ private fun V28History(s: AppState, vm: MonitorViewModel) {
 }
 
 @Composable
-private fun V28Terms(s: AppState, vm: MonitorViewModel) {
-    var term by remember { mutableStateOf("") }
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun V28Terms(s: AppState, vm: MonitorViewModel, videos: VideoState, videoVm: VideoViewModel) {
+    var newsTerm by remember { mutableStateOf("") }
+    var videoTerm by remember { mutableStateOf("") }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item {
+            Text("Termos de Notícias", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+            Text("Usados pelo Google Notícias e pelas varreduras diretas de Últimas notícias.", color = V28Text2, fontSize = 11.sp)
+        }
         item {
             Surface(color = V28Surface, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(term, { term = it }, label = { Text("Novo termo") }, singleLine = true, modifier = Modifier.weight(1f))
-                    FilledIconButton(onClick = { vm.addTerm(term); term = "" }, enabled = term.isNotBlank(), modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.Add, "Adicionar") }
+                    OutlinedTextField(newsTerm, { newsTerm = it }, label = { Text("Novo termo de Notícias") }, singleLine = true, modifier = Modifier.weight(1f))
+                    FilledIconButton(onClick = { if (newsTerm.isNotBlank()) { vm.addTerm(newsTerm); newsTerm = "" } }) {
+                        Icon(Icons.Outlined.Add, "Adicionar termo de Notícias")
+                    }
                 }
             }
         }
-        item { Text("${s.terms.size} termo(s) monitorado(s)", color = V28Text2, fontSize = 11.5.sp) }
-        items(s.terms) { value ->
-            Surface(color = V28Surface, shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, V28Divider)) {
-                Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 7.dp, bottom = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Search, null, tint = V28Accent, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(9.dp))
-                    Text(value, fontSize = 13.5.sp, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { vm.removeTerm(value) }) { Icon(Icons.Outlined.Close, "Excluir", tint = V28Text2) }
+        if (s.terms.isEmpty()) {
+            item { V28Empty("Nenhum termo de Notícias", "Adicione um termo para acompanhar matérias.") }
+        } else {
+            items(s.terms, key = { "news-term-$it" }) { value ->
+                Surface(color = V28Surface, shape = RoundedCornerShape(13.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Article, null, tint = V28Accent, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(9.dp))
+                        Text(value, modifier = Modifier.weight(1f), fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                        IconButton(onClick = { vm.removeTerm(value) }) { Icon(Icons.Outlined.DeleteOutline, "Remover", tint = V28Red) }
+                    }
                 }
             }
+        }
+
+        item {
+            Spacer(Modifier.height(6.dp))
+            HorizontalDivider(color = V28Divider)
+            Spacer(Modifier.height(6.dp))
+            Text("Termos de Vídeos", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = V28Purple)
+            Text("Independentes dos termos de Notícias. Demandas continuam valendo para os dois monitores.", color = V28Text2, fontSize = 11.sp)
+        }
+        item {
+            Surface(color = V28Purple.copy(alpha = .08f), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, V28Purple.copy(alpha = .22f)), modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(videoTerm, { videoTerm = it }, label = { Text("Novo termo de Vídeos") }, singleLine = true, modifier = Modifier.weight(1f))
+                    FilledIconButton(onClick = { if (videoTerm.isNotBlank()) { videoVm.addVideoTerm(videoTerm); videoTerm = "" } }) {
+                        Icon(Icons.Outlined.Add, "Adicionar termo de Vídeos")
+                    }
+                }
+            }
+        }
+        if (videos.videoTerms.isEmpty()) {
+            item { V28Empty("Nenhum termo de Vídeos", "Os vídeos ainda podem ser encontrados pelas Demandas ativas.") }
+        } else {
+            items(videos.videoTerms, key = { "video-term-$it" }) { value ->
+                Surface(color = V28Surface, shape = RoundedCornerShape(13.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.SmartDisplay, null, tint = V28Purple, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(9.dp))
+                        Text(value, modifier = Modifier.weight(1f), fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                        IconButton(onClick = { videoVm.removeVideoTerm(value) }) { Icon(Icons.Outlined.DeleteOutline, "Remover", tint = V28Red) }
+                    }
+                }
+            }
+        }
+        item {
+            Text("Na primeira abertura da v4.0, os termos antigos são copiados para Vídeos uma única vez. Depois, as listas são totalmente independentes.", color = V28Text2, fontSize = 10.5.sp)
         }
     }
 }

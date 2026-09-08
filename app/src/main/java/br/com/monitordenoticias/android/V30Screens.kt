@@ -489,7 +489,7 @@ private fun V30ProgressBody(progress: LiveSearchProgress, color: Color) {
         Text("Termo: ${progress.currentQuery}", color = V30Text2, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
     Spacer(Modifier.height(4.dp))
-    Text("${progress.found} encontrado(s) • ${progress.newCount} novo(s) • ${progress.errors} falha(s)", color = color, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+    Text("${progress.found} encontrado(s) • ${progress.newCount} novo(s) • ${progress.errors} fonte(s) instável(is)", color = color, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
 }
 
 @Composable

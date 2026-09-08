@@ -16,6 +16,7 @@ class VideoRepository(
     private val db: VideoDb
 ) {
     private val globoplayTrechosCollector = GloboplayTrechosCollector()
+    private val globoplayEditionCollector = GloboplayEditionCollector()
 
     private data class QuerySpec(
         val query: String,
@@ -62,8 +63,14 @@ class VideoRepository(
             val effectiveFrom = from ?: (effectiveTo - DEFAULT_VIDEO_WINDOW_MS)
             val collected = linkedMapOf<String, VideoItem>()
             val newKeys = linkedSetOf<String>()
+            val unstableSourceIds = linkedSetOf<String>()
             var errors = 0
             var completed = 0
+
+            fun markUnstable(source: VideoSource) {
+                unstableSourceIds += source.id
+                errors = unstableSourceIds.size
+            }
 
             // Globoplay e YouTube fazem UMA coleta por fonte/canal. Termos e Demandas
             // são cruzados localmente depois. As demais fontes mantêm busca por termo
@@ -100,8 +107,15 @@ class VideoRepository(
 
             plan.forEach { (source, specs) ->
                 val resolvedCache = mutableMapOf<String, VideoItem?>()
+                var sourceRequestFailures = 0
+
+                fun sourceError() {
+                    sourceRequestFailures++
+                    markUnstable(source)
+                }
+
                 val sourceScanCandidates = if (isSourceScanMode(source)) {
-                    collectRecentBySource(source, capturedAt) { errors++ }
+                    collectRecentBySource(source, capturedAt, effectiveFrom, effectiveTo) { sourceError() }
                 } else {
                     emptyList()
                 }
@@ -118,7 +132,7 @@ class VideoRepository(
                         .onFailure {
                             // Em Trechos, abrir a página individual é enriquecimento opcional.
                             // O card /cenas/ já fornece título e link direto válidos.
-                            if (!globoplay) errors++
+                            if (!globoplay) sourceError()
                         }
                         .getOrNull()
                     val fallback = item.takeIf {
@@ -129,15 +143,24 @@ class VideoRepository(
                     return finalItem
                 }
 
-                specs.forEach { spec ->
+                specLoop@ specs.forEach { spec ->
                     val scanMode = isSourceScanMode(source)
+                    if (!scanMode && sourceRequestFailures >= MAX_REQUEST_FAILURES_PER_SOURCE) {
+                        completed++
+                        onUpdate?.invoke(
+                            VideoSearchUpdate(
+                                progress(source.name, "Fonte instável • consultas restantes ignoradas")
+                            )
+                        )
+                        return@specLoop
+                    }
                     val progressQuery = if (scanMode) "Vídeos recentes • cruzamento local" else spec.query
                     onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery)))
 
                     val rawCandidates = if (scanMode) {
                         sourceScanCandidates
                     } else {
-                        collectCandidatesForQuery(source, spec.query, capturedAt) { errors++ }
+                        collectCandidatesForQuery(source, spec.query, capturedAt) { sourceError() }
                     }
 
                     val prioritized = if (isGloboplaySource(source)) {
@@ -150,24 +173,34 @@ class VideoRepository(
                     prioritized.asSequence()
                         .take(resolveLimitFor(source))
                         .forEach { raw ->
-                            // O título/JSON de /cenas/ continua sendo o filtro mais barato.
-                            // Porém uma quantidade pequena e limitada de cards sem match superficial
-                            // também é aberta: no Globoplay o termo pode existir somente na descrição,
-                            // tags, keywords ou JSON da página /v/<id>.
-                            if (scanMode && isGloboplaySource(source)) {
-                                val shallowBody = "${raw.title} ${raw.summary}"
-                                val shallowTermMatch = terms.any { phraseMatches(shallowBody, it) }
-                                val shallowDemandMatch = demands.any { demand ->
-                                    sourceMatchesDemand(source, demand.vehicle) &&
-                                        phraseMatches(shallowBody, demand.subject)
-                                }
-                                if (!shallowTermMatch && !shallowDemandMatch) {
-                                    if (globoplayDeepFallbacks >= deepFallbackLimitFor(source)) return@forEach
-                                    globoplayDeepFallbacks++
-                                }
+                            // Trechos vindos de uma Edição já possuem título, link direto e data
+                            // suficiente para o cruzamento local. Se o Termo/Demanda aparece no card,
+                            // não abrimos /v/<id> de novo. A leitura profunda fica reservada aos cards
+                            // sem match superficial, onde o assunto pode estar só em descrição/tags.
+                            val globoplay = scanMode && isGloboplaySource(source)
+                            val shallowBody = "${raw.title} ${raw.summary}"
+                            val shallowTermMatch = globoplay && terms.any { phraseMatches(shallowBody, it) }
+                            val shallowDemandMatch = globoplay && demands.any { demand ->
+                                sourceMatchesDemand(source, demand.vehicle) &&
+                                    phraseMatches(shallowBody, demand.subject)
                             }
 
-                            val item = resolve(raw) ?: return@forEach
+                            if (globoplay && !shallowTermMatch && !shallowDemandMatch) {
+                                if (globoplayDeepFallbacks >= deepFallbackLimitFor(source)) return@forEach
+                                globoplayDeepFallbacks++
+                            }
+
+                            val item = if (
+                                globoplay &&
+                                (shallowTermMatch || shallowDemandMatch) &&
+                                raw.publishedAt > 0L &&
+                                usefulTitle(raw.title) &&
+                                isSpecificVideoUrl(source, raw.link)
+                            ) {
+                                raw.copy(link = canonicalizeUrl(raw.link))
+                            } else {
+                                resolve(raw) ?: return@forEach
+                            }
                             val body = "${item.title} ${item.summary}"
                             if (!inPeriod(item, effectiveFrom, effectiveTo)) return@forEach
                             if (!isDirectResult(item)) return@forEach
@@ -256,6 +289,8 @@ class VideoRepository(
     private fun collectRecentBySource(
         source: VideoSource,
         capturedAt: Long,
+        from: Long,
+        to: Long,
         onError: () -> Unit
     ): List<VideoItem> {
         if (source.youtubeHandle.isNotBlank()) {
@@ -272,8 +307,13 @@ class VideoRepository(
         }
 
         if (isGloboplaySource(source)) {
-            // Estratégia principal da v3.0.2: telejornal -> página do programa -> /cenas/ (Trechos).
-            // A busca geral do Globoplay permanece somente como fallback.
+            // Estratégia principal da v3.0.7: programa -> Edição recente -> Trechos da Edição.
+            // A aba /cenas/ depende de JavaScript em vários telejornais e fica apenas como fallback.
+            val editionTrechos = globoplayEditionCollector.collect(source, capturedAt, from, to, onError)
+            if (editionTrechos.isNotEmpty()) {
+                return editionTrechos.distinctBy { canonicalKey(it.link) }
+            }
+
             val trechos = globoplayTrechosCollector.collect(source, capturedAt, onError)
             if (trechos.isNotEmpty()) {
                 return trechos.distinctBy { canonicalKey(it.link) }
@@ -446,7 +486,7 @@ class VideoRepository(
                     title = candidateTitle.take(220),
                     sourceId = source.id,
                     sourceName = source.name,
-                    publishedAt = capturedAt,
+                    publishedAt = if (isGloboplaySource(source)) 0L else capturedAt,
                     link = absolute,
                     summary = summary,
                     capturedAt = capturedAt
@@ -469,7 +509,7 @@ class VideoRepository(
                         title = "Vídeo recente • ${source.name}",
                         sourceId = source.id,
                         sourceName = source.name,
-                        publishedAt = capturedAt,
+                        publishedAt = 0L,
                         link = direct,
                         summary = fallbackSummary,
                         capturedAt = capturedAt
@@ -686,7 +726,7 @@ class VideoRepository(
     private fun fetchYoutube(source: VideoSource, capturedAt: Long): List<VideoItem> {
         val handle = source.youtubeHandle.removePrefix("@")
         val channelPage = Jsoup.connect("https://www.youtube.com/@$handle/videos")
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.6")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.7")
             .timeout(14_000)
             .get()
             .html()
@@ -697,7 +737,7 @@ class VideoRepository(
             ?: return emptyList()
 
         val feed = Jsoup.connect("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
-            .userAgent("Mozilla/5.0 MonitorNoticias/3.0.6")
+            .userAgent("Mozilla/5.0 MonitorNoticias/3.0.7")
             .timeout(14_000)
             .parser(Parser.xmlParser())
             .get()
@@ -935,6 +975,7 @@ class VideoRepository(
 
     companion object {
         private const val DEFAULT_VIDEO_WINDOW_MS = 24L * 60L * 60L * 1000L
+        private const val MAX_REQUEST_FAILURES_PER_SOURCE = 3
         private const val BROWSER_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36"
         private const val MAX_HTML_BODY_BYTES = 8 * 1024 * 1024
         private const val MAX_RESOLVED_PER_QUERY = 8

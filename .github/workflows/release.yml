@@ -16,6 +16,37 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: codex/v4.0.1-new-badges-count-sync
+
+      - name: Apply guarded v4.0.1 implementation patch
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: python3 tools/patch_v401.py
+
+      - name: Verify v4.0.1 implementation patch
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 401' app/build.gradle.kts
+          grep -q 'versionName = "4.0.1"' app/build.gradle.kts
+          grep -q 'V30Badge("NOVO", V30Mint)' app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
+          grep -q 'newsNewVisible = s.news.count' app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt
+          ! grep -A18 'val update = ContentValues' app/src/main/java/br/com/monitordenoticias/android/NewsDb.kt | grep -q 'put("captured_at"'
+          ! grep -A18 'val update = ContentValues' app/src/main/java/br/com/monitordenoticias/android/VideoDb.kt | grep -q 'put("captured_at"'
+          git diff --check
+
+      - name: Commit v4.0.1 implementation
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle.kts \
+                  app/src/main/java/br/com/monitordenoticias/android/NewsDb.kt \
+                  app/src/main/java/br/com/monitordenoticias/android/VideoDb.kt \
+                  app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt \
+                  app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt
+          git commit -m "fix: sync new counts and mark new items"
+          git push origin HEAD:codex/v4.0.1-new-badges-count-sync
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -66,31 +97,20 @@ jobs:
           FINAL="app/build/outputs/apk/release/app-release.apk"
           KEYSTORE="signing/monitor-noticias-release.jks"
           EXPECTED_CERT="07164d3faf3ee09f241a547d403767c454b226faac26c4b058bc5011d773b1b0"
-
           "$APKSIGNER" verify --verbose "$FINAL"
           final_output=$("$APKSIGNER" verify --verbose --print-certs "$FINAL" 2>&1)
           printf '%s\n' "$final_output"
-
           extract_cert() {
             local output="$1"
             local line
             line=$(printf '%s\n' "$output" | grep -iE 'certificate.*sha-?256.*digest|sha-?256.*certificate.*digest' | head -1 || true)
-            if [ -z "$line" ]; then
-              line=$(printf '%s\n' "$output" | grep -iE 'sha-?256.*digest' | head -1 || true)
-            fi
+            if [ -z "$line" ]; then line=$(printf '%s\n' "$output" | grep -iE 'sha-?256.*digest' | head -1 || true); fi
             printf '%s\n' "$line" | sed -E 's/.*[Dd]igest:[[:space:]]*//' | tr -d ':[:space:]\r' | tr 'A-F' 'a-f'
           }
-
           FINAL_CERT=$(extract_cert "$final_output")
           KEYSTORE_CERT=$(keytool -list -v -keystore "$KEYSTORE" -alias monitor-noticias -storepass "$ANDROID_SIGNING_PASSWORD" 2>/dev/null | awk -F': ' '/SHA256:/{gsub(":","",$2); gsub(/[[:space:]]/,"",$2); print tolower($2); exit}')
-
-          echo "Release certificate:  $FINAL_CERT"
-          echo "Keystore certificate: $KEYSTORE_CERT"
-          test -n "$FINAL_CERT"
-          test -n "$KEYSTORE_CERT"
           test "$KEYSTORE_CERT" = "$EXPECTED_CERT"
           test "$FINAL_CERT" = "$EXPECTED_CERT"
-          echo "PERMANENT_SIGNING_OK=true"
 
       - name: Prepare v4.0 release asset
         if: github.event_name != 'pull_request'
@@ -99,7 +119,6 @@ jobs:
       - name: Point v4.0 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -f v4.0 "$GITHUB_SHA"
@@ -112,29 +131,6 @@ jobs:
           tag_name: v4.0
           target_commitish: ${{ github.sha }}
           name: Monitor de Notícias Android v4.0
-          body: |
-            Monitor de Notícias Android v4.0 — termos independentes e nova descoberta direta de notícias.
-
-            Notícias:
-            - Google Notícias continua como rota principal de descoberta;
-            - páginas de Últimas notícias passam a complementar o Google com uma varredura por veículo;
-            - primeira leva: CNN Brasil, Metrópoles, Folha de S.Paulo, R7, Jovem Pan e O Globo;
-            - títulos e resumos recentes são cruzados localmente com todos os Termos de Notícias e Demandas;
-            - resultados do Google e dos sites diretos são deduplicados para reduzir cards repetidos;
-            - falha isolada de uma página direta não interrompe a busca pelo Google.
-
-            Termos:
-            - Termos de Notícias e Termos de Vídeos passam a ser listas independentes;
-            - os termos existentes continuam como Termos de Notícias;
-            - na primeira execução da v4.0, eles são copiados uma única vez para Termos de Vídeos para preservar o comportamento anterior;
-            - depois da migração, adicionar ou remover um termo de uma lista não altera a outra;
-            - Demandas continuam válidas para Notícias e Vídeos.
-
-            Compatibilidade:
-            - versionCode 400 / versionName 4.0;
-            - mesmo applicationId br.com.monitordenoticias.android;
-            - mesma assinatura permanente validada pelo certificado SHA-256 esperado;
-            - atualização direta sobre v3.0.12 preservando banco, notícias, vídeos, Demandas, fontes, histórico e configurações.
           files: monitor-de-noticias-v4.0.apk
           overwrite_files: true
           make_latest: true

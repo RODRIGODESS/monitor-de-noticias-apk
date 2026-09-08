@@ -96,6 +96,15 @@ jobs:
         if: github.event_name != 'pull_request'
         run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.1.apk
 
+      - name: Point v3.0.1 tag to validated main commit
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f v3.0.1 "$GITHUB_SHA"
+          git push --force origin refs/tags/v3.0.1
+
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
@@ -116,18 +125,21 @@ jobs:
             - Globoplay/telejornais e canais oficiais do YouTube passam a fazer uma coleta recente por fonte;
             - todos os Termos e Demandas são cruzados localmente depois da coleta, reduzindo drasticamente o número de requisições;
             - evita o cenário de milhares de consultas geradas pela combinação fonte x termo;
-            - mantém análise profunda de título, descrição, tags, keywords e metadados estruturados do Globoplay;
+            - o Globoplay descobre links diretos também dentro de JSON/scripts e analisa título, descrição, tags, keywords e metadados estruturados;
+            - o YouTube usa o feed oficial de cada canal e cruza título/descrição localmente;
             - mantém resultados progressivos, links diretos, deduplicação e palavra inteira para siglas.
 
             Agenda automática de vídeos:
             - horários-alvo: 08h, 12h, 15h, 19h e 21h no horário local do aparelho;
             - a busca manual continua disponível a qualquer momento;
             - Android/Doze pode atrasar alguns minutos uma execução em segundo plano;
-            - a agenda horária antiga é removida automaticamente ao atualizar.
+            - a agenda horária antiga é removida automaticamente ao atualizar;
+            - mudanças de hora/fuso do aparelho recalculam o próximo horário.
 
             Atualização:
             - versionCode 301 / versionName 3.0.1;
             - mesmo applicationId e mesma assinatura permanente da linha v2.5+;
             - instalação direta sobre v3.0.0 preservando dados e configurações.
           files: monitor-de-noticias-v3.0.1.apk
+          overwrite_files: true
           make_latest: true

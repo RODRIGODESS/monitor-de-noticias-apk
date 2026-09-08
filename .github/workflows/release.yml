@@ -16,34 +16,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: codex/v4.0.2-history-aware-new
-
-      - name: Apply guarded v4.0.2 history-aware patch
-        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
-        run: python3 tools/patch_v402.py
-
-      - name: Verify v4.0.2 implementation
-        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
-        run: |
-          set -euo pipefail
-          grep -q 'versionCode = 402' app/build.gradle.kts
-          grep -q 'versionName = "4.0.2"' app/build.gradle.kts
-          grep -q 'historyByStory' app/src/main/java/br/com/monitordenoticias/android/NewsRepository.kt
-          grep -q 'capturedAt = previous.capturedAt.takeIf' app/src/main/java/br/com/monitordenoticias/android/NewsRepository.kt
-          grep -q 'val persistedNews = scopedRecent' app/src/main/java/br/com/monitordenoticias/android/MonitorViewModel.kt
-          git diff --check
-
-      - name: Commit v4.0.2 implementation
-        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/build.gradle.kts \
-                  app/src/main/java/br/com/monitordenoticias/android/NewsRepository.kt \
-                  app/src/main/java/br/com/monitordenoticias/android/MonitorViewModel.kt
-          git commit -m "fix: make NOVO history-aware"
-          git push origin HEAD:codex/v4.0.2-history-aware-new
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -106,32 +78,50 @@ jobs:
           }
           FINAL_CERT=$(extract_cert "$final_output")
           KEYSTORE_CERT=$(keytool -list -v -keystore "$KEYSTORE" -alias monitor-noticias -storepass "$ANDROID_SIGNING_PASSWORD" 2>/dev/null | awk -F': ' '/SHA256:/{gsub(":","",$2); gsub(/[[:space:]]/,"",$2); print tolower($2); exit}')
+          echo "Release certificate:  $FINAL_CERT"
+          echo "Keystore certificate: $KEYSTORE_CERT"
+          test -n "$FINAL_CERT"
+          test -n "$KEYSTORE_CERT"
           test "$KEYSTORE_CERT" = "$EXPECTED_CERT"
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v4.0.1 release asset
+      - name: Prepare v4.0.2 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.0.1.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.0.2.apk
 
-      - name: Point v4.0.1 tag to validated main commit
+      - name: Point v4.0.2 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v4.0.1 "$GITHUB_SHA"
-          git push --force origin refs/tags/v4.0.1
+          git tag -f v4.0.2 "$GITHUB_SHA"
+          git push --force origin refs/tags/v4.0.2
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.0.1
+          tag_name: v4.0.2
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v4.0.1
+          name: Monitor de Notícias Android v4.0.2
           body: |
-            Monitor de Notícias Android v4.0.1
-          files: monitor-de-noticias-v4.0.1.apk
+            Monitor de Notícias Android v4.0.2 — selo NOVO realmente baseado no histórico.
+
+            Notícias:
+            - uma matéria só é NOVA quando não existia no histórico antes da busca atual;
+            - resultados reencontrados preservam o horário da primeira captura;
+            - a mesma matéria é reconhecida por URL e também por veículo + título normalizado;
+            - mudanças de URL do Google News deixam de recriar a mesma matéria como nova;
+            - ao finalizar a busca, a tela é reconstruída a partir do banco persistido;
+            - buscas de Demandas seguem a mesma regra de histórico.
+
+            Compatibilidade:
+            - versionCode 402 / versionName 4.0.2;
+            - mesmo applicationId br.com.monitordenoticias.android;
+            - mesma assinatura permanente validada pelo certificado SHA-256 esperado;
+            - atualização direta sobre v4.0.1 preservando banco, notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
+          files: monitor-de-noticias-v4.0.2.apk
           overwrite_files: true
           make_latest: true

@@ -16,14 +16,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: fix/v3.0.10-jarvis-dates-source-health
-      - name: Apply matcher and Globoplay date fixes
+      - name: Apply matcher and target-video date fixes
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          # 1) Repository: use one matcher + bind publication date to current /v/<id>.
           p = Path('app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt')
           text = p.read_text()
 
@@ -41,7 +40,6 @@ jobs:
             return parsed?.takeIf { it in 1..capturedAt }
         }
 
-        // Metadados de página são, quando presentes, os sinais mais específicos.
         val pageValues = listOf(
             doc.selectFirst("meta[property=article:published_time]")?.attr("content").orEmpty(),
             doc.selectFirst("meta[property=og:published_time]")?.attr("content").orEmpty(),
@@ -53,10 +51,9 @@ jobs:
             parseDate(value)?.let { return it }
         }
 
-        // O HTML do Globoplay contém o vídeo atual e também vídeos relacionados.
-        // A versão anterior pegava a PRIMEIRA datePublished do HTML inteiro; no JH
-        // 14938964 essa primeira data pertencia a um vídeo relacionado de 2018.
-        // Agora vinculamos a data ao ID do /v/<id> que estamos resolvendo.
+        // O HTML do Globoplay contém o vídeo atual e vídeos relacionados. A versão
+        // anterior retornava a primeira datePublished do HTML inteiro. Em JH 14938964,
+        // por exemplo, isso podia retornar a data de um relacionado de 2018.
         val targetVideoId = GLOBOPLAY_VIDEO_LINK_REGEX
             .find(targetUrl)
             ?.groupValues
@@ -85,7 +82,7 @@ jobs:
                 collectMarker("/v/$targetVideoId/")
                 if (markerPositions.isEmpty()) return@forEach
 
-                JSON_DATE_REGEX.findAll(scriptText).take(80).forEach { match ->
+                JSON_DATE_REGEX.findAll(scriptText).take(100).forEach { match ->
                     val parsed = parseDate(match.groupValues[1]) ?: return@forEach
                     val distance = markerPositions.minOf { marker -> kotlin.math.abs(match.range.first - marker) }
                     if (distance <= TARGET_VIDEO_DATE_CONTEXT_CHARS && distance < bestDistance) {
@@ -97,8 +94,6 @@ jobs:
             bestDate?.let { return it }
         }
 
-        // Fallback para portais/formatos sem um ID associável: preserva a lógica
-        // anterior, mas somente depois de esgotar os sinais específicos do vídeo.
         val values = mutableListOf<String>()
         doc.select("script[type=application/ld+json], script").take(80).forEach { script ->
             val scriptText = normalizeEmbeddedScriptText(script.data().ifBlank { script.html() })
@@ -137,7 +132,6 @@ jobs:
           text = text.replace(old, new, 1)
           p.write_text(text)
 
-          # 2) DB repair must use the exact same matching policy as live search.
           p = Path('app/src/main/java/br/com/monitordenoticias/android/VideoDb.kt')
           text = p.read_text()
           start = text.index('    private fun phraseMatchesStrict(text: String, phrase: String): Boolean {')

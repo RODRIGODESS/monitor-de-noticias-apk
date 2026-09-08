@@ -51,7 +51,8 @@ class VideoRepository(
     ): VideoSearchResult = withContext(Dispatchers.IO) {
         val newsDb = NewsDb(context)
         try {
-            val terms = newsDb.listTerms().ifEmpty { DEFAULT_TERMS }
+            val newsTermsForMigration = newsDb.listTerms().ifEmpty { DEFAULT_TERMS }
+            val terms = VideoTermStore.load(context, newsTermsForMigration)
                 .map { it.trim() }
                 .filter { it.isNotBlank() }
                 .distinctBy(::normalize)

@@ -25,6 +25,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
     private val now = System.currentTimeMillis()
     private val defaultFrom = now - 7L * 24L * 60L * 60L * 1000L
     private val initialStats = currentStats()
+    private val initialVideoTerms = loadVideoTerms()
 
     private fun loadSelectedSourcesForV29(): Set<String> {
         val existing = prefs.getStringSet(KEY_SELECTED_SOURCES, null)
@@ -83,7 +84,8 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             periodEndDate = prefs.getString(KEY_PERIOD_END_DATE, formatDate(now)) ?: formatDate(now),
             periodEndTime = prefs.getString(KEY_PERIOD_END_TIME, formatTime(now)) ?: formatTime(now),
             totalStored = initialStats.first,
-            capturedToday = initialStats.second
+            capturedToday = initialStats.second,
+            videoTerms = initialVideoTerms
         )
     )
     val state: StateFlow<VideoState> = _state
@@ -100,7 +102,8 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             _state.value = _state.value.copy(
                 items = scopedItems(),
                 totalStored = stats.first,
-                capturedToday = stats.second
+                capturedToday = stats.second,
+                videoTerms = loadVideoTerms()
             )
         }
     }
@@ -262,6 +265,27 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(selectedSourceIds = next, status = "✓ ${next.size} fonte(s) de vídeo selecionada(s)")
     }
 
+    fun addVideoTerm(value: String) {
+        val next = VideoTermStore.add(getApplication(), value, newsTermSeed())
+        _state.value = _state.value.copy(videoTerms = next, status = "✓ Termo de vídeo adicionado")
+    }
+
+    fun removeVideoTerm(value: String) {
+        val next = VideoTermStore.remove(getApplication(), value, newsTermSeed())
+        _state.value = _state.value.copy(videoTerms = next, status = "✓ Termo de vídeo removido")
+    }
+
+    private fun loadVideoTerms(): List<String> = VideoTermStore.load(getApplication(), newsTermSeed())
+
+    private fun newsTermSeed(): List<String> {
+        val newsDb = NewsDb(getApplication())
+        return try {
+            newsDb.listTerms().ifEmpty { DEFAULT_VIDEO_TERM_SEED }
+        } finally {
+            newsDb.close()
+        }
+    }
+
     fun setFilter(filter: VideoFilter) {
         _state.value = _state.value.copy(filter = filter, status = "Pronto")
     }
@@ -327,6 +351,11 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_PERIOD_START_TIME = "video_period_start_time"
         const val KEY_PERIOD_END_DATE = "video_period_end_date"
         const val KEY_PERIOD_END_TIME = "video_period_end_time"
+
+        private val DEFAULT_VIDEO_TERM_SEED = listOf(
+            "Marinha do Brasil", "Capitania dos Portos", "Distrito Naval", "NAM Atlântico",
+            "Cisne Branco", "Fragata Marinha do Brasil", "Navio-Patrulha Marinha", "Programa Nuclear da Marinha"
+        )
 
         private val V284_STARTER_IDS = setOf(
             "globoplay-bom-dia-brasil", "globoplay-hora-1", "globoplay-jornal-hoje", "globoplay-jornal-nacional", "globoplay-jornal-da-globo",

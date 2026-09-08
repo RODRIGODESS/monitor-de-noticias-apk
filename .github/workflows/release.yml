@@ -92,47 +92,49 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v3.0.12 release asset
+      - name: Prepare v4.0 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.12.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.0.apk
 
-      - name: Point v3.0.12 tag to validated main commit
+      - name: Point v4.0 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v3.0.12 "$GITHUB_SHA"
-          git push --force origin refs/tags/v3.0.12
+          git tag -f v4.0 "$GITHUB_SHA"
+          git push --force origin refs/tags/v4.0
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.12
+          tag_name: v4.0
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v3.0.12
+          name: Monitor de Notícias Android v4.0
           body: |
-            Monitor de Notícias Android v3.0.12 — correção das fontes instáveis observadas no teste real da v3.0.11.
+            Monitor de Notícias Android v4.0 — termos independentes e nova descoberta direta de notícias.
 
-            Fontes e rotas:
-            - Jornal da Band e Brasil Urgente passam a usar as páginas atuais dos programas;
-            - Balanço Geral SP usa diretamente a listagem atual de vídeos;
-            - Domingo Espetacular aceita as rotas atuais /videos/ e /video/;
-            - SBT News usa a página atual de vídeos/ao-vivo;
-            - Band Brasília, Minas, Rio, Paraná e Bahia recebem fallback específico por praça.
+            Notícias:
+            - Google Notícias continua como rota principal de descoberta;
+            - páginas de Últimas notícias passam a complementar o Google com uma varredura por veículo;
+            - primeira leva: CNN Brasil, Metrópoles, Folha de S.Paulo, R7, Jovem Pan e O Globo;
+            - títulos e resumos recentes são cruzados localmente com todos os Termos de Notícias e Demandas;
+            - resultados do Google e dos sites diretos são deduplicados para reduzir cards repetidos;
+            - falha isolada de uma página direta não interrompe a busca pelo Google.
 
-            Diagnóstico de instabilidade:
-            - uma única falha auxiliar de Globoplay • Trechos deixa de condenar a fonte inteira;
-            - um fallback isolado de portal também deixa de marcar a fonte como instável;
-            - fontes continuam sendo marcadas quando as rotas de aquisição realmente falham em conjunto;
-            - isso reduz falsos positivos sem esconder falhas de rede/HTTP acionáveis.
+            Termos:
+            - Termos de Notícias e Termos de Vídeos passam a ser listas independentes;
+            - os termos existentes continuam como Termos de Notícias;
+            - na primeira execução da v4.0, eles são copiados uma única vez para Termos de Vídeos para preservar o comportamento anterior;
+            - depois da migração, adicionar ou remover um termo de uma lista não altera a outra;
+            - Demandas continuam válidas para Notícias e Vídeos.
 
             Compatibilidade:
-            - versionCode 312 / versionName 3.0.12;
+            - versionCode 400 / versionName 4.0;
             - mesmo applicationId br.com.monitordenoticias.android;
             - mesma assinatura permanente validada pelo certificado SHA-256 esperado;
-            - instalação direta sobre v3.0.11 preservando Termos, Demandas, histórico, seleção de fontes e configurações.
-          files: monitor-de-noticias-v3.0.12.apk
+            - atualização direta sobre v3.0.12 preservando banco, notícias, vídeos, Demandas, fontes, histórico e configurações.
+          files: monitor-de-noticias-v4.0.apk
           overwrite_files: true
           make_latest: true

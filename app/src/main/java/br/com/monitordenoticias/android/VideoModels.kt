@@ -65,6 +65,7 @@ data class VideoState(
     val periodEndTime: String = "",
     val searchProgress: LiveSearchProgress = LiveSearchProgress(),
     val unstableSources: List<VideoSourceIssue> = emptyList(),
+    val videoTerms: List<String> = emptyList(),
     val totalStored: Int = 0,
     val capturedToday: Int = 0
 )

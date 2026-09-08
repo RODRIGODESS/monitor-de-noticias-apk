@@ -11,6 +11,7 @@ import java.time.Instant
 import java.time.format.DateTimeFormatter
 
 class NewsRepository(private val db: NewsDb) {
+    private val latestCollector = NewsLatestCollector()
     val defaultTerms = listOf(
         "Marinha do Brasil","Capitania dos Portos","Distrito Naval","NAM Atlântico",
         "Cisne Branco","Fragata Marinha do Brasil","Navio-Patrulha Marinha","Programa Nuclear da Marinha"
@@ -116,6 +117,11 @@ class NewsRepository(private val db: NewsDb) {
         val terms = db.listTerms().ifEmpty { defaultTerms }
         val demands = db.listDemands().filter { it.active }
         val startedAt = System.currentTimeMillis()
+        val directSources = if (from >= startedAt - DIRECT_SCAN_MAX_WINDOW_MS && to >= startedAt - DIRECT_SCAN_RECENCY_TOLERANCE_MS) {
+            latestCollector.supportedSources(selectedSources, searchAllSources)
+        } else {
+            emptyList()
+        }
         val tasks = buildList {
             terms.forEach { term -> add(SearchTask(term, term, "Google Notícias")) }
             if (!searchAllSources && selectedSources.isNotEmpty() && selectedSources.size <= 24) {
@@ -140,7 +146,7 @@ class NewsRepository(private val db: NewsDb) {
             startedAt = startedAt,
             finishedAt = if (active) 0L else System.currentTimeMillis(),
             completed = completed,
-            total = tasks.size,
+            total = tasks.size + directSources.size,
             currentSource = source,
             currentQuery = query,
             found = collected.size,
@@ -194,18 +200,53 @@ class NewsRepository(private val db: NewsDb) {
             onUpdate?.invoke(NewsSearchUpdate(progress(task.sourceLabel, task.term)))
         }
 
+        directSources.forEach { source ->
+            val label = "${source.name} • Últimas notícias"
+            onUpdate?.invoke(NewsSearchUpdate(progress(label, "Todos os termos")))
+            val outcome = latestCollector.collect(source, terms, demands, from, to, System.currentTimeMillis())
+            if (!outcome.failed && outcome.items.isNotEmpty()) {
+                val inserts = mutableListOf<News>()
+                val updates = mutableListOf<News>()
+                outcome.items.forEach { incoming ->
+                    val duplicate = collected.values.firstOrNull { storyKey(it) == storyKey(incoming) }
+                    if (duplicate == null) {
+                        collected[incoming.link] = incoming
+                        inserts += incoming
+                        updates += incoming
+                    } else {
+                        val merged = mergeNews(duplicate, incoming.copy(link = duplicate.link, source = duplicate.source))
+                        collected[duplicate.link] = merged
+                        updates += merged
+                    }
+                }
+                val inserted = db.insertNews(inserts)
+                inserted.forEach { newLinks += it.link }
+                if (updates.isNotEmpty()) {
+                    onUpdate?.invoke(NewsSearchUpdate(progress(label, "Todos os termos"), updates))
+                }
+            }
+            completed++
+            onUpdate?.invoke(NewsSearchUpdate(progress(label, "Todos os termos")))
+        }
+
         val items = collected.values.sortedByDescending { it.date }
         val newDemandCount = items.count { it.link in newLinks && it.demand }
         onUpdate?.invoke(
             NewsSearchUpdate(
                 progress("Concluído", "", active = false).copy(
-                    completed = tasks.size,
+                    completed = tasks.size + directSources.size,
                     found = items.size,
                     newCount = newLinks.size
                 )
             )
         )
         return SearchResult(items, items.size, newLinks.size, newDemandCount, errors)
+    }
+
+    private fun storyKey(news: News): String {
+        val sourceKey = normalize(news.source).replace(" noticias", "").replace(" jornal", "").trim()
+        val titleKey = normalize(news.title)
+        return "$sourceKey|$titleKey"
     }
 
     private fun mergeNews(previous: News, incoming: News): News {
@@ -314,6 +355,8 @@ class NewsRepository(private val db: NewsDb) {
         .getOrDefault(System.currentTimeMillis())
 
     companion object {
+        private const val DIRECT_SCAN_MAX_WINDOW_MS = 48L * 60L * 60L * 1000L
+        private const val DIRECT_SCAN_RECENCY_TOLERANCE_MS = 2L * 60L * 60L * 1000L
         private val STOP_WORDS = setOf("de","do","da","dos","das","e","em","no","na","nos","nas","a","o","as","os")
     }
 }

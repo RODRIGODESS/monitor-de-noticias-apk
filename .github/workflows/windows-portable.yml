@@ -23,6 +23,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: windows-portable-v4.0.2-${{ github.ref }}
+  cancel-in-progress: true
+
 # O próprio runner instala o Gradle porque o projeto Android original não possui wrapper versionado.
 jobs:
   portable:
@@ -56,7 +60,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$($appDir.FullName)\data" | Out-Null
           $zip = "$PWD\monitor-de-noticias-windows-portable-v4.0.2.zip"
           Compress-Archive -Path "$($appDir.FullName)\*" -DestinationPath $zip -Force
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  monitor-de-noticias-windows-portable-v4.0.2.zip" | Set-Content "$PWD\monitor-de-noticias-windows-portable-v4.0.2.sha256" -Encoding ascii
           Get-Item $zip | Format-List FullName,Length
+          Write-Host "SHA256: $hash"
 
       - name: Publish portable ZIP in Windows prerelease
         if: github.ref == 'refs/heads/codex/windows/v4.0.2-portable'
@@ -66,9 +73,10 @@ jobs:
         run: |
           $tag = "windows-v4.0.2-portable"
           $asset = "monitor-de-noticias-windows-portable-v4.0.2.zip"
+          $checksum = "monitor-de-noticias-windows-portable-v4.0.2.sha256"
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag $asset --target "${{ github.sha }}" --title "Monitor de Notícias v4.0.2 — Windows Portable" --notes "Build Windows portable da v4.0.2. Mantém o motor de Notícias/Vídeos da versão Android e adapta somente as camadas específicas da plataforma para Windows." --prerelease
+            gh release create $tag $asset $checksum --target "${{ github.sha }}" --title "Monitor de Notícias v4.0.2 — Windows Portable" --notes "Build Windows portable da v4.0.2. Mantém o motor de Notícias/Vídeos da versão Android e adapta somente as camadas específicas da plataforma para Windows." --prerelease
           } else {
-            gh release upload $tag $asset --clobber
+            gh release upload $tag $asset $checksum --clobber
           }

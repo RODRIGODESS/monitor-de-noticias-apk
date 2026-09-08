@@ -64,19 +64,38 @@ jobs:
           $nativeDlls = @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")
           foreach ($dll in $nativeDlls) {
             $source = Join-Path $env:JAVA_HOME "bin\$dll"
+            $target = Join-Path $runtimeBin $dll
+            Write-Host "$dll already present before copy: $(Test-Path $target)"
             if (Test-Path $source) {
-              Copy-Item $source (Join-Path $runtimeBin $dll) -Force
+              Copy-Item $source $target -Force
               Write-Host "Bundled native dependency: $dll"
             } else {
-              Write-Warning "Native dependency not present in JAVA_HOME: $source"
+              throw "Required native dependency not present in JAVA_HOME: $source"
             }
           }
 
           $jvm = Join-Path $runtimeBin "server\jvm.dll"
           if (!(Test-Path $jvm)) { throw "jvm.dll not found: $jvm" }
-          & (Join-Path $runtimeBin "java.exe") -version
-          if ($LASTEXITCODE -ne 0) { throw "Bundled java.exe could not start." }
 
+          # Validate that Windows can load jvm.dll together with its native dependencies.
+          $env:PATH = "$runtimeBin;$runtimeBin\server;$env:PATH"
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class NativeLibraryCheck {
+              [DllImport("kernel32", SetLastError=true, CharSet=CharSet.Unicode)]
+              public static extern IntPtr LoadLibrary(string lpFileName);
+              [DllImport("kernel32", SetLastError=true)]
+              public static extern bool FreeLibrary(IntPtr hModule);
+          }
+          '@
+          $handle = [NativeLibraryCheck]::LoadLibrary($jvm)
+          if ($handle -eq [IntPtr]::Zero) {
+            $code = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            throw "Windows could not load bundled jvm.dll. Win32 error: $code"
+          }
+          [NativeLibraryCheck]::FreeLibrary($handle) | Out-Null
+          Write-Host "Bundled jvm.dll loaded successfully."
           Get-ChildItem $runtimeBin -Filter "*140*.dll" | Select-Object Name,Length | Format-Table -AutoSize
 
       - name: Smoke test packaged executable
@@ -89,12 +108,23 @@ jobs:
 
           Write-Host "Launching packaged executable: $($exe.FullName)"
           $process = Start-Process -FilePath $exe.FullName -WorkingDirectory $appDir.FullName -PassThru
-          Start-Sleep -Seconds 12
-          $process.Refresh()
-          if ($process.HasExited) {
-            throw "Packaged executable exited during smoke test. Exit code: $($process.ExitCode)"
+          $expectedTitle = "Monitor de Notícias • Windows Portable v4.0.2"
+          $deadline = (Get-Date).AddSeconds(30)
+          $seenTitle = ""
+          while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+            $process.Refresh()
+            if ($process.HasExited) {
+              throw "Packaged executable exited during smoke test. Exit code: $($process.ExitCode)"
+            }
+            $seenTitle = $process.MainWindowTitle
+            if ($seenTitle -eq $expectedTitle) { break }
           }
-          Write-Host "Packaged executable stayed alive for 12 seconds: smoke test passed."
+          if ($seenTitle -ne $expectedTitle) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw "Expected application window did not appear. MainWindowTitle observed: '$seenTitle'"
+          }
+          Write-Host "Real application window appeared with expected title: $seenTitle"
           Stop-Process -Id $process.Id -Force
 
       - name: Verify and create portable ZIP

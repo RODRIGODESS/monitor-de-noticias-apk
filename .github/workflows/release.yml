@@ -16,6 +16,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: codex/v4.0.5-active-ui-fix
+
+      - name: Apply guarded v4.0.5 active UI patch
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: python3 tools/patch_v405_active_ui.py
+
+      - name: Verify v4.0.5 active UI implementation
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 405' app/build.gradle.kts
+          grep -q 'versionName = "4.0.5"' app/build.gradle.kts
+          grep -q 'SourceCatalog.specialized' app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
+          grep -q 'Mídia especializada' app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
+          grep -q 'v30CopyLink(context, "Link da notícia", n.link)' app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
+          grep -q 'v30CopyLink(context, "Link do vídeo", item.link)' app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
+          grep -q 'Icons.Outlined.ContentCopy' app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
+          git diff --check
+
+      - name: Commit v4.0.5 active UI implementation
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle.kts app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
+          git commit -m "fix: apply copy-link and specialized media to active UI"
+          git push origin HEAD:codex/v4.0.5-active-ui-fix
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -108,20 +136,6 @@ jobs:
           name: Monitor de Notícias Android v4.0.4
           body: |
             Monitor de Notícias Android v4.0.4 — copiar link direto de notícias e vídeos.
-
-            Interface:
-            - cada matéria possui botão Copiar link;
-            - cada vídeo possui botão Copiar link;
-            - o link é enviado para a área de transferência do Android;
-            - o app confirma a ação com a mensagem “Link copiado”;
-            - os botões Abrir e WhatsApp permanecem disponíveis nas notícias;
-            - o botão Abrir vídeo permanece disponível nos vídeos.
-
-            Compatibilidade:
-            - versionCode 404 / versionName 4.0.4;
-            - mesmo applicationId br.com.monitordenoticias.android;
-            - mesma assinatura permanente validada pelo certificado SHA-256 esperado;
-            - atualização direta sobre v4.0.3 preservando banco, notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
           files: monitor-de-noticias-v4.0.4.apk
           overwrite_files: true
           make_latest: true

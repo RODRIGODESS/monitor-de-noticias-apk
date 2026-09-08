@@ -13,5 +13,6 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 
-rootProject.name = "MonitorNoticiasAndroid"
+rootProject.name = "MonitorNoticias"
 include(":app")
+include(":desktop")

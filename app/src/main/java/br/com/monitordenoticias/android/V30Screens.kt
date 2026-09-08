@@ -1,5 +1,6 @@
 package br.com.monitordenoticias.android
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
@@ -557,8 +558,21 @@ private fun V30VideoCard(item: VideoItem) {
                 }
             }
             Spacer(Modifier.height(9.dp))
-            OutlinedButton(onClick = open, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Outlined.SmartDisplay, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(7.dp)); Text("Abrir vídeo")
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                OutlinedButton(onClick = open, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Outlined.SmartDisplay, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Abrir vídeo")
+                }
+                OutlinedButton(
+                    onClick = { v30ShareWhatsApp(context, item.title, item.link) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = V30Mint)
+                ) {
+                    Icon(Icons.Outlined.Share, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("WhatsApp")
+                }
             }
         }
     }
@@ -585,7 +599,46 @@ private fun V30NewsCard(n: News) {
                     if (n.matchedTerm.isNotBlank()) V30Badge(n.matchedTerm, V30Accent)
                 }
             }
+            Spacer(Modifier.height(9.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                OutlinedButton(
+                    onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(n.link))) } },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Outlined.OpenInNew, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Abrir notícia")
+                }
+                OutlinedButton(
+                    onClick = { v30ShareWhatsApp(context, n.title, n.link) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = V30Mint)
+                ) {
+                    Icon(Icons.Outlined.Share, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("WhatsApp")
+                }
+            }
         }
+    }
+}
+
+private fun v30ShareWhatsApp(context: Context, title: String, link: String) {
+    val message = listOf(title.trim(), link.trim()).filter { it.isNotBlank() }.joinToString("\n")
+    if (message.isBlank()) return
+
+    fun shareIntent(packageName: String? = null) = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, message)
+        packageName?.let(::setPackage)
+    }
+
+    // Prioriza WhatsApp comum, depois WhatsApp Business. Se nenhum estiver instalado,
+    // abre o seletor padrão do Android sem perder o título + link.
+    if (runCatching { context.startActivity(shareIntent("com.whatsapp")) }.isSuccess) return
+    if (runCatching { context.startActivity(shareIntent("com.whatsapp.w4b")) }.isSuccess) return
+    runCatching {
+        context.startActivity(Intent.createChooser(shareIntent(), "Compartilhar link"))
     }
 }
 

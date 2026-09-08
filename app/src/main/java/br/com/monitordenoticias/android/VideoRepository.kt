@@ -111,13 +111,18 @@ class VideoRepository(
 
                 fun sourceError() {
                     sourceRequestFailures++
-                    markUnstable(source)
                 }
 
                 val sourceScanCandidates = if (isSourceScanMode(source)) {
                     collectRecentBySource(source, capturedAt, effectiveFrom, effectiveTo) { sourceError() }
                 } else {
                     emptyList()
+                }
+                // Uma tentativa auxiliar pode falhar e outro caminho da mesma fonte funcionar.
+                // Só classificamos uma fonte de varredura como instável quando ela realmente
+                // não conseguiu entregar candidatos e houve falha de rede/HTTP.
+                if (isSourceScanMode(source) && sourceScanCandidates.isEmpty() && sourceRequestFailures > 0) {
+                    markUnstable(source)
                 }
 
                 fun resolve(item: VideoItem): VideoItem? {
@@ -146,6 +151,7 @@ class VideoRepository(
                 specs.forEach specLoop@ { spec ->
                     val scanMode = isSourceScanMode(source)
                     if (!scanMode && sourceRequestFailures >= MAX_REQUEST_FAILURES_PER_SOURCE) {
+                        markUnstable(source)
                         completed++
                         onUpdate?.invoke(
                             VideoSearchUpdate(
@@ -402,6 +408,7 @@ class VideoRepository(
 
     private fun resolveLimitFor(source: VideoSource): Int = when {
         source.youtubeHandle.isNotBlank() -> MAX_YOUTUBE_ITEMS_PER_SCAN
+        source.id in CORE_NATIONAL_GLOBOPLAY_IDS -> MAX_GLOBOPLAY_NATIONAL_ITEMS_PER_SCAN
         source.id == "video-globoplay-jornalismo" -> MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN
         source.id in VideoSourceCatalog.globoplayRegionalSweepIds -> MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN
         isGloboplaySource(source) -> MAX_GLOBOPLAY_ITEMS_PER_SCAN
@@ -409,6 +416,10 @@ class VideoRepository(
     }
 
     private fun deepFallbackLimitFor(source: VideoSource): Int = when {
+        // Nos cinco telejornais nacionais, uma menção importante pode existir apenas
+        // na descrição/tags da página individual. O orçamento cobre todos os trechos
+        // usuais de uma edição recente sem transformar todas as regionais em varredura profunda.
+        source.id in CORE_NATIONAL_GLOBOPLAY_IDS -> MAX_GLOBOPLAY_DEEP_FALLBACK_NATIONAL
         source.id == "video-globoplay-jornalismo" -> MAX_GLOBOPLAY_DEEP_FALLBACK_GENERAL
         source.id in VideoSourceCatalog.globoplayRegionalSweepIds -> MAX_GLOBOPLAY_DEEP_FALLBACK_GENERAL
         isGloboplaySource(source) -> MAX_GLOBOPLAY_DEEP_FALLBACK_PER_SOURCE
@@ -979,10 +990,12 @@ class VideoRepository(
         private const val BROWSER_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36"
         private const val MAX_HTML_BODY_BYTES = 8 * 1024 * 1024
         private const val MAX_RESOLVED_PER_QUERY = 8
-        private const val MAX_GLOBOPLAY_ITEMS_PER_SCAN = 24
-        private const val MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN = 32
-        private const val MAX_GLOBOPLAY_DEEP_FALLBACK_PER_SOURCE = 6
-        private const val MAX_GLOBOPLAY_DEEP_FALLBACK_GENERAL = 10
+        private const val MAX_GLOBOPLAY_ITEMS_PER_SCAN = 40
+        private const val MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN = 48
+        private const val MAX_GLOBOPLAY_NATIONAL_ITEMS_PER_SCAN = 72
+        private const val MAX_GLOBOPLAY_DEEP_FALLBACK_PER_SOURCE = 12
+        private const val MAX_GLOBOPLAY_DEEP_FALLBACK_GENERAL = 14
+        private const val MAX_GLOBOPLAY_DEEP_FALLBACK_NATIONAL = 72
         private const val MAX_GLOBOPLAY_LINKS_DISCOVERED = 80
         private const val MAX_YOUTUBE_ITEMS_PER_SCAN = 40
         private const val MAX_ENRICHED_SUMMARY_LENGTH = 1800
@@ -1011,6 +1024,13 @@ class VideoRepository(
             Regex("\\\"browseId\\\":\\\"(UC[0-9A-Za-z_-]{20,})\\\"")
         )
 
+        private val CORE_NATIONAL_GLOBOPLAY_IDS = setOf(
+            "globoplay-bom-dia-brasil",
+            "globoplay-hora-1",
+            "globoplay-jornal-hoje",
+            "globoplay-jornal-nacional",
+            "globoplay-jornal-da-globo"
+        )
         private val STOP_WORDS = setOf("de", "do", "da", "dos", "das", "e", "em", "no", "na", "nos", "nas", "a", "o", "as", "os")
         private val GENERIC_TITLES = setOf(
             "videos", "video", "todos os videos", "todos videos", "ultimos videos", "mais videos",

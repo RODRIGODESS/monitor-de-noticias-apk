@@ -1,0 +1,33 @@
+name: TEMP Probe JH JN raw HTML
+
+on:
+  push:
+    branches:
+      - fix/v3.0.9-national-globoplay-diagnostics-layout
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe Globoplay without JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          UA='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36'
+          curl -L --fail --max-time 25 -A "$UA" -H 'Accept-Language: pt-BR,pt;q=0.9' 'https://globoplay.globo.com/jornal-hoje/t/w7R6S8ssrm/cenas/' -o jh.html
+          curl -L --fail --max-time 25 -A "$UA" -H 'Accept-Language: pt-BR,pt;q=0.9' 'https://globoplay.globo.com/jornal-nacional/t/QgkQnhBNnR/cenas/' -o jn.html
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for key, path in [('JH','jh.html'),('JN','jn.html')]:
+              text=Path(path).read_text(errors='ignore')
+              low=text.lower()
+              ids=list(dict.fromkeys(re.findall(r'/v/(\d{5,})', text)))
+              print(f'{key}_BYTES={len(text)}')
+              print(f'{key}_VIDEO_IDS={len(ids)}')
+              print(f'{key}_HAS_07092026={"07/09/2026" in text}')
+              print(f'{key}_HAS_DESFILES={"desfiles de 7 de setembro" in low}')
+              print(f'{key}_HAS_COMEMORACOES={"comemora" in low and "7 de setembro" in low}')
+              print(f'{key}_HAS_JN_TARGET_ID={"14940098" in text}')
+              print(f'{key}_SAMPLE_IDS={ids[:20]}')
+          PY

@@ -408,7 +408,7 @@ class VideoRepository(
             // O Globoplay frequentemente injeta os cards via JSON/JavaScript. Nesses
             // casos o /v/<id> pode não existir como <a href> no HTML parseado. Extraímos
             // também os links presentes nos scripts, inclusive no formato escapado \/v\/. 
-            val html = doc.html().replace("\\/", "/")
+            val html = normalizeEmbeddedScriptText(doc.html(), decodeQuotes = false)
             GLOBOPLAY_VIDEO_LINK_REGEX.findAll(html).take(MAX_GLOBOPLAY_LINKS_DISCOVERED).forEach { match ->
                 val id = match.groupValues[1]
                 if (id.isBlank()) return@forEach
@@ -512,7 +512,7 @@ class VideoRepository(
             }
 
         doc.select("script[type=application/ld+json], script").take(100).forEach { script ->
-            val text = script.data().ifBlank { script.html() }
+            val text = normalizeEmbeddedScriptText(script.data().ifBlank { script.html() })
             JSON_METADATA_REGEX.findAll(text).take(30).forEach { match ->
                 val raw = match.groupValues.drop(1).firstOrNull { it.isNotBlank() }.orEmpty()
                 QUOTED_VALUE_REGEX.findAll(raw).forEach { q ->
@@ -533,7 +533,7 @@ class VideoRepository(
     private fun extractStructuredText(doc: Document): List<String> {
         val values = linkedSetOf<String>()
         doc.select("script[type=application/ld+json], script").take(100).forEach { script ->
-            val text = script.data().ifBlank { script.html() }
+            val text = normalizeEmbeddedScriptText(script.data().ifBlank { script.html() })
             JSON_TEXT_REGEX.findAll(text).take(30).forEach { match ->
                 val value = cleanJsonText(match.groupValues[1])
                 if (value.length in 8..700 && !isGenericSummary(value)) values += value
@@ -551,8 +551,19 @@ class VideoRepository(
         .map { cleanJsonText(it.trim(' ', '\"', '\'')) }
         .filter { it.length in 2..100 }
 
+    private fun normalizeEmbeddedScriptText(value: String, decodeQuotes: Boolean = true): String {
+        var normalized = value
+            .replace("\\/", "/")
+            .replace("\\u002F", "/", ignoreCase = true)
+            .replace("\\u003A", ":", ignoreCase = true)
+            .replace("\\u0026", "&", ignoreCase = true)
+            .replace("\\u003D", "=", ignoreCase = true)
+        if (decodeQuotes) normalized = normalized.replace("\\\"", "\"")
+        return normalized
+    }
+
     private fun cleanJsonText(value: String): String = cleanText(
-        value
+        normalizeEmbeddedScriptText(value)
             .replace("\\n", " ")
             .replace("\\r", " ")
             .replace("\\t", " ")
@@ -587,7 +598,7 @@ class VideoRepository(
         ) return true
 
         return doc.select("script").take(60).any { script ->
-            val text = script.data().ifBlank { script.html() }
+            val text = normalizeEmbeddedScriptText(script.data().ifBlank { script.html() })
             text.contains("VideoObject", ignoreCase = true) ||
                 text.contains("contentUrl", ignoreCase = true) ||
                 text.contains("embedUrl", ignoreCase = true) ||
@@ -606,7 +617,7 @@ class VideoRepository(
         ).filter { it.isNotBlank() }
 
         doc.select("script[type=application/ld+json], script").take(80).forEach { script ->
-            val text = script.data().ifBlank { script.html() }
+            val text = normalizeEmbeddedScriptText(script.data().ifBlank { script.html() })
             JSON_DATE_REGEX.findAll(text).take(6).forEach { match ->
                 val date = match.groupValues[1]
                 if (date.isNotBlank()) values += date
@@ -854,15 +865,15 @@ class VideoRepository(
             RegexOption.IGNORE_CASE
         )
         private val JSON_METADATA_REGEX = Regex(
-            "\\\"(?:keywords|tags|tag|subjects?|topics?|categories?)\\\"\\s*:\\s*(?:\\\"([^\\\"]+)\\\"|\\[([^]]+)])",
+            "\\\"(?:keywords|tags|tag|subjects?|topics?|categor(?:y|ies))\\\"\\s*:\\s*(?:\\\"([^\\\"]+)\\\"|\\[([^]]+)])",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
         )
         private val JSON_TEXT_REGEX = Regex(
-            "\\\"(?:description|headline|alternativeHeadline|caption|articleBody)\\\"\\s*:\\s*\\\"([^\\\"]{2,700})\\\"",
+            "\\\"(?:description|seoDescription|summary|headline|alternativeHeadline|caption|articleBody)\\\"\\s*:\\s*\\\"([^\\\"]{2,700})\\\"",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
         )
         private val JSON_DATE_REGEX = Regex(
-            "\\\"(?:datePublished|uploadDate|dateCreated)\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",
+            "\\\"(?:datePublished|uploadDate|dateCreated|publishedAt|publicationDate|publishedDate)\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",
             RegexOption.IGNORE_CASE
         )
         private val QUOTED_VALUE_REGEX = Regex("\\\"([^\\\"]{2,100})\\\"")

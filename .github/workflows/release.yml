@@ -92,61 +92,57 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v3.0.9 release asset
+      - name: Prepare v3.0.10 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.9.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.10.apk
 
-      - name: Point v3.0.9 tag to validated main commit
+      - name: Point v3.0.10 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v3.0.9 "$GITHUB_SHA"
-          git push --force origin refs/tags/v3.0.9
+          git tag -f v3.0.10 "$GITHUB_SHA"
+          git push --force origin refs/tags/v3.0.10
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.9
+          tag_name: v3.0.10
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v3.0.9
+          name: Monitor de Notícias Android v3.0.10
           body: |
-            Monitor de Notícias Android v3.0.9 — descoberta dinâmica do Globoplay, diagnóstico de fontes e ajustes de layout.
+            Monitor de Notícias Android v3.0.10 — correção do fluxo Globoplay/Jarvis e do diagnóstico de fontes instáveis.
 
-            Globoplay nacionais:
-            - Bom Dia Brasil, Hora 1, Jornal Hoje, Jornal Nacional e Jornal da Globo combinam Edições, Trechos e o backend Jarvis do próprio Globoplay;
-            - a camada Jarvis contorna páginas /cenas/ cujo conteúdo recente só aparece depois que o JavaScript do site é executado;
-            - Termos e Demandas são consultados globalmente no Jarvis e depois cruzados localmente por telejornal, evitando voltar ao modelo fonte x termo;
-            - vídeos descobertos pelo Jarvis são enriquecidos na página direta /v/<id> antes de serem aceitos na janela de tempo;
-            - o fluxo foi validado com o Jornal Hoje “Veja os desfiles de 7 de setembro pelo país” e com o Jornal Nacional “Comemorações do 7 de setembro reúnem milhares de pessoas em diferentes regiões”.
+            Jornal Hoje e Jornal Nacional:
+            - o Jarvis continua descobrindo candidatos por Termos e Demandas sem voltar ao modelo fonte x termo;
+            - a data de publicação passa a ser extraída do objeto correspondente ao próprio ID do vídeo na página /v/<id>;
+            - datas de vídeos relacionados antigos deixam de contaminar o candidato atual;
+            - corrige o caso em que o JH “Veja os desfiles de 7 de setembro pelo país” podia herdar uma data de 2018;
+            - corrige o fluxo do JN “Comemorações do 7 de setembro reúnem milhares de pessoas em diferentes regiões”.
 
-            7 de Setembro:
-            - consultas ao Jarvis usam variantes mais estáveis sem preposições que causavam timeout no backend;
-            - o matcher reconhece, dentro do mesmo evento, variações controladas como desfile, desfiles, comemoração, comemorações e independência;
-            - a tag “desfiles 7 de setembro” pode encontrar títulos equivalentes sem liberar correspondências genéricas fora desse contexto.
+            Persistência e relevância:
+            - busca e reparo do banco passam a compartilhar a mesma política de correspondência;
+            - evita que um vídeo encontrado seja apagado logo depois por uma regra antiga de validação;
+            - preserva a equivalência controlada entre desfile, desfiles, comemoração, comemorações e independência no contexto de 7 de Setembro.
 
             Fontes instáveis:
-            - o resultado passa a guardar o nome da fonte instável, quantidade de falhas e a etapa principal da falha;
-            - a tela de Vídeos oferece “Ver fontes instáveis” para abrir o diagnóstico;
-            - caminhos auxiliares que falham mas conseguem fallback não devem inflar o total de fontes instáveis.
-
-            Layout:
-            - Abrir notícia e WhatsApp passam a usar a mesma altura e distribuição de largura nos cards de Notícias;
-            - o ajuste também alcança as telas de histórico/período/demandas que reutilizam os cards.
+            - tentativas auxiliares de descoberta de Edições do Globoplay deixam de condenar sozinhas uma fonte inteira como instável;
+            - falhas realmente acionáveis continuam aparecendo no diagnóstico;
+            - isso reduz falsos positivos como os vários telejornais marcados apenas por “Globoplay • Edições”.
 
             Mantido:
-            - YouTube e regionais continuam usando os caminhos que já funcionaram na v3.0.8;
-            - resultados progressivos, cronômetro, progresso e Limpar vídeos;
+            - YouTube continua no caminho que já está encontrando vídeos corretamente;
+            - regionais, Trechos, Edições, Jarvis, resultados progressivos, cronômetro e Limpar vídeos;
             - janela móvel das últimas 24 horas para buscas normais e automáticas de vídeo;
             - agenda automática aproximadamente às 08h, 12h, 15h, 19h e 21h.
 
             Atualização:
-            - versionCode 309 / versionName 3.0.9;
+            - versionCode 310 / versionName 3.0.10;
             - mesmo applicationId br.com.monitordenoticias.android;
             - mesma assinatura permanente;
-            - instalação direta sobre v3.0.8 preservando Termos, Demandas, histórico e configurações.
-          files: monitor-de-noticias-v3.0.9.apk
+            - instalação direta sobre v3.0.9 preservando Termos, Demandas, histórico e configurações.
+          files: monitor-de-noticias-v3.0.10.apk
           overwrite_files: true
           make_latest: true

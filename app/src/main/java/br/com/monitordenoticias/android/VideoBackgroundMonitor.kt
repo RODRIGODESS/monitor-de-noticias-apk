@@ -139,7 +139,7 @@ object VideoAutoRunLog {
             .putInt(KEY_RELEVANT, result.relevantCount)
             .putInt(KEY_NEW_RELEVANT, result.newRelevantCount)
             .putInt(KEY_ERRORS, result.errors)
-            .putString(KEY_ERROR_TEXT, if (result.errors > 0) "${result.errors} consulta(s) sem resposta" else "")
+            .putString(KEY_ERROR_TEXT, if (result.errors > 0) "${result.errors} fonte(s) instável(is) nesta varredura" else "")
             .apply()
     }
 

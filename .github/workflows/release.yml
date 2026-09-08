@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: codex/v4.0-news-latest-video-terms
 
       - name: Apply guarded v4.0 implementation patch
         if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'

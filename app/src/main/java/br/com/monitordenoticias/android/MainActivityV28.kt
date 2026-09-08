@@ -795,13 +795,13 @@ private fun V28Settings(s: AppState, vm: MonitorViewModel, videos: VideoState) {
     val prefs = remember(refreshKey) { context.getSharedPreferences(BackgroundMonitor.PREFS, 0) }
     val newsAttempt = prefs.getLong(AutoRunLog.KEY_NEWS_ATTEMPT_AT, 0L)
     val newsCompleted = prefs.getLong(AutoRunLog.KEY_NEWS_COMPLETED_AT, 0L)
-    val newsNewVisible = s.news.count { v401InRun(it.capturedAt, newsAttempt, newsCompleted) }
+    val newsNewVisible = s.news.count { v401SettingsInRun(it.capturedAt, newsAttempt, newsCompleted) }
     val demandAttempt = prefs.getLong(AutoRunLog.KEY_DEMAND_ATTEMPT_AT, 0L)
     val demandCompleted = prefs.getLong(AutoRunLog.KEY_DEMAND_COMPLETED_AT, 0L)
     val videoAttempt = prefs.getLong(VideoAutoRunLog.KEY_ATTEMPT_AT, 0L)
     val videoCompleted = prefs.getLong(VideoAutoRunLog.KEY_COMPLETED_AT, 0L)
     val videoFound = prefs.getInt(VideoAutoRunLog.KEY_FOUND, 0)
-    val videoNew = videos.items.count { v401InRun(it.capturedAt, videoAttempt, videoCompleted) }
+    val videoNew = videos.items.count { v401SettingsInRun(it.capturedAt, videoAttempt, videoCompleted) }
     val videoRelevant = prefs.getInt(VideoAutoRunLog.KEY_NEW_RELEVANT, 0)
     val videoErrors = prefs.getInt(VideoAutoRunLog.KEY_ERRORS, 0)
     val videoError = prefs.getString(VideoAutoRunLog.KEY_ERROR_TEXT, "").orEmpty()
@@ -997,6 +997,12 @@ private fun v28ShareWhatsApp(context: android.content.Context, title: String, li
     if (runCatching { context.startActivity(shareIntent("com.whatsapp")) }.isSuccess) return
     if (runCatching { context.startActivity(shareIntent("com.whatsapp.w4b")) }.isSuccess) return
     runCatching { context.startActivity(Intent.createChooser(shareIntent(), "Compartilhar link")) }
+}
+
+
+private fun v401SettingsInRun(capturedAt: Long, startedAt: Long, completedAt: Long): Boolean {
+    if (capturedAt <= 0L || startedAt <= 0L || completedAt < startedAt) return false
+    return capturedAt in startedAt..(completedAt + 5_000L)
 }
 
 private fun v28DateTime(ms: Long): String = if (ms <= 0) "—" else SimpleDateFormat("dd/MM HH:mm", Locale("pt", "BR")).format(Date(ms))

@@ -855,20 +855,22 @@ private fun V28NewsCard(n: News) {
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 OutlinedButton(
                     onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(n.link))) } },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {
                     Icon(Icons.Outlined.OpenInNew, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Abrir notícia")
+                    Text("Abrir notícia", maxLines = 1, fontSize = 10.8.sp)
                 }
                 OutlinedButton(
                     onClick = { v28ShareWhatsApp(context, n.title, n.link) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = V28Mint)
                 ) {
                     Icon(Icons.Outlined.Share, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("WhatsApp")
+                    Text("WhatsApp", maxLines = 1, fontSize = 10.8.sp)
                 }
             }
         }

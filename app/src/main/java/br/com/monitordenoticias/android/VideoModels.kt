@@ -30,13 +30,21 @@ data class VideoSource(
     val searchPrefix: String = ""
 )
 
+data class VideoSourceIssue(
+    val sourceId: String,
+    val sourceName: String,
+    val failureCount: Int,
+    val stage: String
+)
+
 data class VideoSearchResult(
     val items: List<VideoItem>,
     val foundCount: Int,
     val newCount: Int,
     val relevantCount: Int,
     val newRelevantCount: Int,
-    val errors: Int
+    val errors: Int,
+    val unstableSources: List<VideoSourceIssue> = emptyList()
 )
 
 data class VideoSearchUpdate(
@@ -56,6 +64,7 @@ data class VideoState(
     val periodEndDate: String = "",
     val periodEndTime: String = "",
     val searchProgress: LiveSearchProgress = LiveSearchProgress(),
+    val unstableSources: List<VideoSourceIssue> = emptyList(),
     val totalStored: Int = 0,
     val capturedToday: Int = 0
 )

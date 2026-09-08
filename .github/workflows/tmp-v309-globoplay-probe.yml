@@ -14,13 +14,22 @@ jobs:
         run: |
           set -euo pipefail
           UA='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36'
-          curl -L --fail --max-time 25 -A "$UA" -H 'Accept-Language: pt-BR,pt;q=0.9' 'https://globoplay.globo.com/jornal-hoje/t/w7R6S8ssrm/cenas/' -o jh.html
-          curl -L --fail --max-time 25 -A "$UA" -H 'Accept-Language: pt-BR,pt;q=0.9' 'https://globoplay.globo.com/jornal-nacional/t/QgkQnhBNnR/cenas/' -o jn.html
+          declare -A URLS
+          URLS[JH_CENAS]='https://globoplay.globo.com/jornal-hoje/t/w7R6S8ssrm/cenas/'
+          URLS[JN_CENAS]='https://globoplay.globo.com/jornal-nacional/t/QgkQnhBNnR/cenas/'
+          URLS[JH_SEARCH]='https://globoplay.globo.com/busca/?q=Jornal+Hoje+desfiles+7+de+setembro'
+          URLS[JH_EXACT]='https://globoplay.globo.com/busca/?q=Veja+os+desfiles+de+7+de+setembro+pelo+pais'
+          URLS[JN_SEARCH]='https://globoplay.globo.com/busca/?q=Jornal+Nacional+7+de+setembro'
+          URLS[JN_EXACT]='https://globoplay.globo.com/busca/?q=Comemoracoes+do+7+de+setembro'
+          for key in "${!URLS[@]}"; do
+            curl -L --fail --max-time 25 -A "$UA" -H 'Accept-Language: pt-BR,pt;q=0.9' "${URLS[$key]}" -o "$key.html"
+          done
           python3 - <<'PY'
           from pathlib import Path
           import re
-          for key, path in [('JH','jh.html'),('JN','jn.html')]:
-              text=Path(path).read_text(errors='ignore')
+          for path in sorted(Path('.').glob('*.html')):
+              key=path.stem
+              text=path.read_text(errors='ignore')
               low=text.lower()
               ids=list(dict.fromkeys(re.findall(r'/v/(\d{5,})', text)))
               print(f'{key}_BYTES={len(text)}')

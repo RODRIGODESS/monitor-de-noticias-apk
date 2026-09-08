@@ -115,9 +115,9 @@ if "v3.0.1" not in release:
 release = release.replace("v3.0.1", "v3.0.2")
 release = replace_once(
     release,
-    "versionCode 301 / versionName 3.0.2",
+    "versionCode 301 / versionName 3.0.1",
     "versionCode 302 / versionName 3.0.2",
-    "release versionCode",
+    "release version",
 )
 release = release.replace(
     "Monitor de Notícias Android v3.0.2 — Demandas silenciosas sem achados e varredura de Vídeos otimizada.",

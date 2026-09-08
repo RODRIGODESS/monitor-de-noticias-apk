@@ -1,0 +1,158 @@
+name: Apply v3.0.7 core
+
+on:
+  push:
+    branches: ["fix/v3.0.7-globoplay-editions-errors"]
+    paths: [".github/workflows/apply-v307-core.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v3.0.7-globoplay-editions-errors
+          fetch-depth: 0
+
+      - name: Apply guarded v3.0.7 changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one occurrence, found {count}\n--- needle ---\n{old}")
+              p.write_text(text.replace(old, new, 1))
+
+          repo = "app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt"
+          replace_once(
+              repo,
+              '''    private val globoplayTrechosCollector = GloboplayTrechosCollector()''',
+              '''    private val globoplayTrechosCollector = GloboplayTrechosCollector()\n    private val globoplayEditionCollector = GloboplayEditionCollector()'''
+          )
+
+          replace_once(
+              repo,
+              '''            val collected = linkedMapOf<String, VideoItem>()\n            val newKeys = linkedSetOf<String>()\n            var errors = 0\n            var completed = 0''',
+              '''            val collected = linkedMapOf<String, VideoItem>()\n            val newKeys = linkedSetOf<String>()\n            val unstableSourceIds = linkedSetOf<String>()\n            var errors = 0\n            var completed = 0\n\n            fun markUnstable(source: VideoSource) {\n                unstableSourceIds += source.id\n                errors = unstableSourceIds.size\n            }'''
+          )
+
+          replace_once(
+              repo,
+              '''            plan.forEach { (source, specs) ->\n                val resolvedCache = mutableMapOf<String, VideoItem?>()\n                val sourceScanCandidates = if (isSourceScanMode(source)) {\n                    collectRecentBySource(source, capturedAt) { errors++ }\n                } else {\n                    emptyList()\n                }''',
+              '''            plan.forEach { (source, specs) ->\n                val resolvedCache = mutableMapOf<String, VideoItem?>()\n                var sourceRequestFailures = 0\n\n                fun sourceError() {\n                    sourceRequestFailures++\n                    markUnstable(source)\n                }\n\n                val sourceScanCandidates = if (isSourceScanMode(source)) {\n                    collectRecentBySource(source, capturedAt, effectiveFrom, effectiveTo) { sourceError() }\n                } else {\n                    emptyList()\n                }'''
+          )
+
+          replace_once(
+              repo,
+              '''                            if (!globoplay) errors++''',
+              '''                            if (!globoplay) sourceError()'''
+          )
+
+          replace_once(
+              repo,
+              '''                specs.forEach { spec ->\n                    val scanMode = isSourceScanMode(source)\n                    val progressQuery = if (scanMode) "Vídeos recentes • cruzamento local" else spec.query''',
+              '''                specLoop@ specs.forEach { spec ->\n                    val scanMode = isSourceScanMode(source)\n                    if (!scanMode && sourceRequestFailures >= MAX_REQUEST_FAILURES_PER_SOURCE) {\n                        completed++\n                        onUpdate?.invoke(\n                            VideoSearchUpdate(\n                                progress(source.name, "Fonte instável • consultas restantes ignoradas")\n                            )\n                        )\n                        return@specLoop\n                    }\n                    val progressQuery = if (scanMode) "Vídeos recentes • cruzamento local" else spec.query'''
+          )
+
+          replace_once(
+              repo,
+              '''                        collectCandidatesForQuery(source, spec.query, capturedAt) { errors++ }''',
+              '''                        collectCandidatesForQuery(source, spec.query, capturedAt) { sourceError() }'''
+          )
+
+          replace_once(
+              repo,
+              '''                    var globoplayDeepFallbacks = 0\n                    prioritized.asSequence()\n                        .take(resolveLimitFor(source))\n                        .forEach { raw ->\n                            // O título/JSON de /cenas/ continua sendo o filtro mais barato.\n                            // Porém uma quantidade pequena e limitada de cards sem match superficial\n                            // também é aberta: no Globoplay o termo pode existir somente na descrição,\n                            // tags, keywords ou JSON da página /v/<id>.\n                            if (scanMode && isGloboplaySource(source)) {\n                                val shallowBody = "${raw.title} ${raw.summary}"\n                                val shallowTermMatch = terms.any { phraseMatches(shallowBody, it) }\n                                val shallowDemandMatch = demands.any { demand ->\n                                    sourceMatchesDemand(source, demand.vehicle) &&\n                                        phraseMatches(shallowBody, demand.subject)\n                                }\n                                if (!shallowTermMatch && !shallowDemandMatch) {\n                                    if (globoplayDeepFallbacks >= deepFallbackLimitFor(source)) return@forEach\n                                    globoplayDeepFallbacks++\n                                }\n                            }\n\n                            val item = resolve(raw) ?: return@forEach''',
+              '''                    var globoplayDeepFallbacks = 0\n                    prioritized.asSequence()\n                        .take(resolveLimitFor(source))\n                        .forEach { raw ->\n                            // Trechos vindos de uma Edição já possuem título, link direto e data\n                            // suficiente para o cruzamento local. Se o Termo/Demanda aparece no card,\n                            // não abrimos /v/<id> de novo. A leitura profunda fica reservada aos cards\n                            // sem match superficial, onde o assunto pode estar só em descrição/tags.\n                            val globoplay = scanMode && isGloboplaySource(source)\n                            val shallowBody = "${raw.title} ${raw.summary}"\n                            val shallowTermMatch = globoplay && terms.any { phraseMatches(shallowBody, it) }\n                            val shallowDemandMatch = globoplay && demands.any { demand ->\n                                sourceMatchesDemand(source, demand.vehicle) &&\n                                    phraseMatches(shallowBody, demand.subject)\n                            }\n\n                            if (globoplay && !shallowTermMatch && !shallowDemandMatch) {\n                                if (globoplayDeepFallbacks >= deepFallbackLimitFor(source)) return@forEach\n                                globoplayDeepFallbacks++\n                            }\n\n                            val item = if (\n                                globoplay &&\n                                (shallowTermMatch || shallowDemandMatch) &&\n                                raw.publishedAt > 0L &&\n                                usefulTitle(raw.title) &&\n                                isSpecificVideoUrl(source, raw.link)\n                            ) {\n                                raw.copy(link = canonicalizeUrl(raw.link))\n                            } else {\n                                resolve(raw) ?: return@forEach\n                            }'''
+          )
+
+          replace_once(
+              repo,
+              '''    private fun collectRecentBySource(\n        source: VideoSource,\n        capturedAt: Long,\n        onError: () -> Unit\n    ): List<VideoItem> {''',
+              '''    private fun collectRecentBySource(\n        source: VideoSource,\n        capturedAt: Long,\n        from: Long,\n        to: Long,\n        onError: () -> Unit\n    ): List<VideoItem> {'''
+          )
+
+          replace_once(
+              repo,
+              '''        if (isGloboplaySource(source)) {\n            // Estratégia principal da v3.0.2: telejornal -> página do programa -> /cenas/ (Trechos).\n            // A busca geral do Globoplay permanece somente como fallback.\n            val trechos = globoplayTrechosCollector.collect(source, capturedAt, onError)\n            if (trechos.isNotEmpty()) {\n                return trechos.distinctBy { canonicalKey(it.link) }\n            }''',
+              '''        if (isGloboplaySource(source)) {\n            // Estratégia principal da v3.0.7: programa -> Edição recente -> Trechos da Edição.\n            // A aba /cenas/ depende de JavaScript em vários telejornais e fica apenas como fallback.\n            val editionTrechos = globoplayEditionCollector.collect(source, capturedAt, from, to, onError)\n            if (editionTrechos.isNotEmpty()) {\n                return editionTrechos.distinctBy { canonicalKey(it.link) }\n            }\n\n            val trechos = globoplayTrechosCollector.collect(source, capturedAt, onError)\n            if (trechos.isNotEmpty()) {\n                return trechos.distinctBy { canonicalKey(it.link) }\n            }'''
+          )
+
+          replace_once(
+              repo,
+              '''                    publishedAt = capturedAt,\n                    link = absolute,\n                    summary = summary,''',
+              '''                    publishedAt = if (isGloboplaySource(source)) 0L else capturedAt,\n                    link = absolute,\n                    summary = summary,'''
+          )
+
+          replace_once(
+              repo,
+              '''                        publishedAt = capturedAt,\n                        link = direct,\n                        summary = fallbackSummary,''',
+              '''                        publishedAt = 0L,\n                        link = direct,\n                        summary = fallbackSummary,'''
+          )
+
+          text = Path(repo).read_text()
+          count = text.count('MonitorNoticias/3.0.6')
+          if count != 2:
+              raise SystemExit(f"VideoRepository: expected two v3.0.6 user agents, found {count}")
+          Path(repo).write_text(text.replace('MonitorNoticias/3.0.6', 'MonitorNoticias/3.0.7'))
+
+          replace_once(
+              repo,
+              '''        private const val DEFAULT_VIDEO_WINDOW_MS = 24L * 60L * 60L * 1000L''',
+              '''        private const val DEFAULT_VIDEO_WINDOW_MS = 24L * 60L * 60L * 1000L\n        private const val MAX_REQUEST_FAILURES_PER_SOURCE = 3'''
+          )
+
+          ui = "app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt"
+          replace_once(
+              ui,
+              '''    Text("${progress.found} encontrado(s) • ${progress.newCount} novo(s) • ${progress.errors} falha(s)", color = color, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)''',
+              '''    Text("${progress.found} encontrado(s) • ${progress.newCount} novo(s) • ${progress.errors} fonte(s) instável(is)", color = color, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)'''
+          )
+
+          gradle = "app/build.gradle.kts"
+          replace_once(gradle, 'versionCode = 306', 'versionCode = 307')
+          replace_once(gradle, 'versionName = "3.0.6"', 'versionName = "3.0.7"')
+
+          # Guardas finais.
+          r = Path(repo).read_text()
+          u = Path(ui).read_text()
+          g = Path(gradle).read_text()
+          edition = Path("app/src/main/java/br/com/monitordenoticias/android/GloboplayEditionCollector.kt").read_text()
+          checks = {
+              "edition_collector_present": "class GloboplayEditionCollector" in edition,
+              "repo_uses_editions": "globoplayEditionCollector.collect(source, capturedAt, from, to, onError)" in r,
+              "repo_circuit_breaker": "MAX_REQUEST_FAILURES_PER_SOURCE = 3" in r and "return@specLoop" in r,
+              "repo_unique_unstable": "unstableSourceIds" in r and "markUnstable(source)" in r,
+              "repo_shallow_fastpath": "raw.copy(link = canonicalizeUrl(raw.link))" in r,
+              "repo_gp_unknown_zero": "publishedAt = if (isGloboplaySource(source)) 0L else capturedAt" in r,
+              "ui_semantics": "fonte(s) instável(is)" in u,
+              "version": "versionCode = 307" in g and 'versionName = "3.0.7"' in g,
+              "agent": r.count("MonitorNoticias/3.0.7") == 2,
+          }
+          for name, ok in checks.items():
+              print(f"{name}={ok}")
+          if not all(checks.values()):
+              raise SystemExit("v3.0.7 guards failed")
+          print("PATCH_V307_CORE_OK=true")
+          PY
+
+      - name: Commit application changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt \
+                  app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt \
+                  app/build.gradle.kts
+          git diff --cached --check
+          git commit -m "fix: ampliar Globoplay e conter fontes instáveis"
+          git push origin HEAD:fix/v3.0.7-globoplay-editions-errors

@@ -50,9 +50,9 @@ class GloboplayEditionCollector {
         }
 
         if (programPages.isEmpty()) {
-            val discoveryUrl = buildDiscoveryUrl(source)
-            val discoveryDoc = fetchDocumentOrNull(discoveryUrl, onError)
-            if (discoveryDoc != null) {
+            buildDiscoveryUrls(source).forEach { discoveryUrl ->
+                if (programPages.isNotEmpty()) return@forEach
+                val discoveryDoc = fetchDocumentOrNull(discoveryUrl, onError) ?: return@forEach
                 extractProgramPages(source, discoveryDoc, discoveryUrl).forEach(programPages::add)
 
                 if (programPages.isEmpty()) {
@@ -112,13 +112,27 @@ class GloboplayEditionCollector {
         .followRedirects(true)
         .get()
 
-    private fun buildDiscoveryUrl(source: VideoSource): String {
-        if (source.searchUrlTemplate.isBlank()) return source.landingUrl
+    private fun buildDiscoveryUrls(source: VideoSource): List<String> {
+        if (source.searchUrlTemplate.isBlank()) return listOf(source.landingUrl)
         val state = source.state.trim().takeIf { it.length == 2 && !it.equals("BR", true) }.orEmpty()
-        val query = listOf(source.searchPrefix.trim(), state)
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-        return source.searchUrlTemplate.replace("{query}", URLEncoder.encode(query, "UTF-8"))
+        val primary = normalize(source.searchPrefix)
+        val queries = buildList {
+            if (source.searchPrefix.isNotBlank()) add(source.searchPrefix.trim())
+            source.aliases
+                .filter { alias ->
+                    val normalized = normalize(alias)
+                    normalized.isNotBlank() &&
+                        normalized != primary &&
+                        normalized !in DISCOVERY_GENERIC_ALIASES
+                }
+                .take(MAX_DISCOVERY_ALIASES)
+                .forEach(::add)
+        }.distinctBy(::normalize)
+
+        return queries.map { program ->
+            val query = listOf(program, state).filter { it.isNotBlank() }.joinToString(" ")
+            source.searchUrlTemplate.replace("{query}", URLEncoder.encode(query, "UTF-8"))
+        }.distinct()
     }
 
     private fun extractProgramPages(source: VideoSource, doc: Document, baseUrl: String): List<String> {
@@ -461,6 +475,7 @@ class GloboplayEditionCollector {
         private const val MAX_PROGRAM_LINKS_IN_HTML = 100
         private const val MAX_VIDEO_LINKS_IN_HTML = 180
         private const val MAX_TRECHOS_PER_SOURCE = 96
+        private const val MAX_DISCOVERY_ALIASES = 2
         private const val EMBEDDED_CONTEXT_WINDOW = 1800
 
         private val KNOWN_PROGRAM_PAGES = mapOf(
@@ -476,7 +491,14 @@ class GloboplayEditionCollector {
             "globoplay-bom-dia-es" to "https://globoplay.globo.com/bom-dia-es/t/DLBLDnCVGs",
             "globoplay-tj1-tapajos" to "https://globoplay.globo.com/jornal-tapajos-1a-edicao/t/hTwfdtmDCQ",
             "globoplay-mg1" to "https://globoplay.globo.com/mg1/t/W7MJbpNcVy",
-            "globoplay-bom-dia-minas" to "https://globoplay.globo.com/bom-dia-minas/t/N22TfC8fcB"
+            "globoplay-mg2" to "https://globoplay.globo.com/mg2/t/5PvVyhyLW1",
+            "globoplay-bom-dia-minas" to "https://globoplay.globo.com/bom-dia-minas/t/N22TfC8fcB",
+            "globoplay-pi1" to "https://globoplay.globo.com/pitv-1a-edicao/t/M5f6Kxnmxd",
+            "globoplay-pi2" to "https://globoplay.globo.com/pitv-2a-edicao/t/LgVGXnBRsd",
+            "globoplay-bom-dia-piaui" to "https://globoplay.globo.com/bom-dia-piaui/t/pPhwC5YTNK",
+            "globoplay-df1" to "https://globoplay.globo.com/df1/t/jcbtdbRMHz",
+            "globoplay-df2" to "https://globoplay.globo.com/df2/t/qP1JkMxfCw",
+            "globoplay-ne1" to "https://globoplay.globo.com/ne1/t/MHH2V957Mn"
         )
 
         private val PROGRAM_LINK_REGEX = Regex(
@@ -502,6 +524,7 @@ class GloboplayEditionCollector {
         )
         private val STOP_WORDS = setOf("de", "do", "da", "dos", "das", "e", "em", "no", "na", "nos", "nas", "a", "o", "as", "os")
         private val GENERIC_ALIAS_TOKENS = setOf("globo", "globoplay", "telejornal", "regional", "jornalismo")
+        private val DISCOVERY_GENERIC_ALIASES = setOf("globo", "globoplay", "tv globo")
         private val GENERIC_TITLES = setOf(
             "videos", "video", "trechos", "edicoes", "mais videos", "ver mais", "mostrar mais",
             "assistir agora", "detalhes", "similares", "extras"

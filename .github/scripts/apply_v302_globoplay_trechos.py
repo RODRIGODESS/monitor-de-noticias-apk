@@ -107,50 +107,12 @@ gradle = replace_once(gradle, "versionCode = 301", "versionCode = 302", "version
 gradle = replace_once(gradle, 'versionName = "3.0.1"', 'versionName = "3.0.2"', "versionName")
 gradle_path.write_text(gradle, encoding="utf-8")
 
-# Release workflow: keep permanent signing checks unchanged, only move release to v3.0.2.
-release_path = ROOT / ".github/workflows/release.yml"
-release = release_path.read_text(encoding="utf-8")
-if "v3.0.1" not in release:
-    raise SystemExit("Expected v3.0.1 release workflow before version bump")
-release = release.replace("v3.0.1", "v3.0.2")
-release = replace_once(
-    release,
-    "versionCode 301 / versionName 3.0.1",
-    "versionCode 302 / versionName 3.0.2",
-    "release version",
-)
-release = release.replace(
-    "Monitor de Notícias Android v3.0.2 — Demandas silenciosas sem achados e varredura de Vídeos otimizada.",
-    "Monitor de Notícias Android v3.0.2 — Trechos do Globoplay e varredura de Vídeos otimizada.",
-)
-release_marker = "            Monitor de Vídeos:\n"
-if release_marker not in release:
-    raise SystemExit("Release notes marker not found")
-release = release.replace(
-    release_marker,
-    release_marker
-    + "            - Globoplay passa a entrar na página de cada telejornal e varrer a aba Trechos (/cenas/);\n"
-    + "            - os títulos dos cards são cruzados localmente com Termos e Demandas antes de abrir o vídeo;\n"
-    + "            - falha no enriquecimento de um /v/<id> não descarta um card de Trechos já válido;\n",
-    1,
-)
-release = release.replace(
-    "instalação direta sobre v3.0.0 preservando dados e configurações.",
-    "instalação direta sobre v3.0.1 preservando dados e configurações.",
-)
-release_path.write_text(release, encoding="utf-8")
-
-# Guardrails after modifications.
 repo_final = repo_path.read_text(encoding="utf-8")
 gradle_final = gradle_path.read_text(encoding="utf-8")
-release_final = release_path.read_text(encoding="utf-8")
-
 assert "globoplayTrechosCollector.collect(source, capturedAt, onError)" in repo_final
 assert "shallowTermMatch" in repo_final
 assert "versionCode = 302" in gradle_final
 assert 'versionName = "3.0.2"' in gradle_final
 assert 'applicationId = "br.com.monitordenoticias.android"' in gradle_final
-assert "tag_name: v3.0.2" in release_final
-assert "EXPECTED_CERT=\"07164d3faf3ee09f241a547d403767c454b226faac26c4b058bc5011d773b1b0\"" in release_final
 
-print("V3.0.2_GLOBOPLAY_TRECHOS_PATCH_OK=true")
+print("V3.0.2_GLOBOPLAY_TRECHOS_CODE_PATCH_OK=true")

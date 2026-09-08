@@ -16,6 +16,32 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: codex/v4.0.4-copy-link
+
+      - name: Apply guarded v4.0.4 copy-link patch
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: python3 tools/patch_v404.py
+
+      - name: Verify v4.0.4 implementation
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 404' app/build.gradle.kts
+          grep -q 'versionName = "4.0.4"' app/build.gradle.kts
+          grep -q 'Link da notícia' app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt
+          grep -q 'Link do vídeo' app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt
+          grep -q 'Icons.Outlined.ContentCopy' app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt
+          git diff --check
+
+      - name: Commit v4.0.4 implementation
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle.kts app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt
+          git commit -m "feat: add copy-link buttons to news and videos"
+          git push origin HEAD:codex/v4.0.4-copy-link
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -108,29 +134,6 @@ jobs:
           name: Monitor de Notícias Android v4.0.3
           body: |
             Monitor de Notícias Android v4.0.3 — novas fontes especializadas em Defesa, Marinha e setor marítimo.
-
-            Mídia especializada:
-            - Defesa em Foco;
-            - Defesa Aérea & Naval;
-            - DefesaNet;
-            - Tecnologia & Defesa (Tecnodefesa);
-            - Zona Militar;
-            - Click Petróleo e Gás;
-            - Poder Naval;
-            - Agência Marinha de Notícias;
-            - Revista Sociedade Militar.
-
-            Busca:
-            - as fontes especializadas passam a integrar o catálogo de Notícias;
-            - participam da descoberta via Google Notícias;
-            - quando a rota pública é utilizável, também são varridas diretamente e os Termos/Demandas são cruzados localmente;
-            - deduplicação e regra NOVO baseada no histórico da v4.0.2 permanecem ativas.
-
-            Compatibilidade:
-            - versionCode 403 / versionName 4.0.3;
-            - mesmo applicationId br.com.monitordenoticias.android;
-            - mesma assinatura permanente validada pelo certificado SHA-256 esperado;
-            - atualização direta sobre v4.0.2 preservando banco, notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
           files: monitor-de-noticias-v4.0.3.apk
           overwrite_files: true
           make_latest: true

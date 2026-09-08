@@ -1,0 +1,41 @@
+name: TEMP v3.0.10 Jarvis date probe
+
+on:
+  push:
+    branches:
+      - fix/v3.0.10-jarvis-dates-source-health
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe Jarvis video date fields
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, urllib.request, urllib.error, time
+          endpoint='https://cloud-jarvis.globo.com/graphql'
+          headers={'content-type':'application/json','x-platform-id':'web','x-device-id':'desktop','x-client-version':'2024.12-5','user-agent':'Mozilla/5.0'}
+          ids=['14938964','14940098']
+          fields=['publicationDate','publishedAt','datePublished','uploadDate','dateCreated','createdAt','availableFor','availableUntil','duration','headline','description','releaseYear','exhibitionDate','firstExhibitionDate','lastExhibitionDate']
+          def call(doc, variables):
+            body={'operationName':'Probe','variables':variables,'query':doc}
+            req=urllib.request.Request(endpoint,data=json.dumps(body).encode(),headers=headers,method='POST')
+            try:
+              with urllib.request.urlopen(req,timeout=30) as r: raw=r.read().decode()
+            except urllib.error.HTTPError as e:
+              raw=e.read().decode()
+            except Exception as e:
+              return {'transport':repr(e)}
+            try:return json.loads(raw)
+            except Exception:return {'raw':raw[:500]}
+          for field in fields:
+            doc=f'''query Probe($id:ID!) {{ video(id:$id) {{ id {field} }} }}'''
+            d=call(doc,{'id':ids[0]})
+            print('FIELD',field,'=>',json.dumps(d,ensure_ascii=False)[:1200])
+          print('=== KNOWN GOOD BASE ===')
+          base='''query Probe($id:ID!) { video(id:$id) { id headline description duration title { headline originProgramId } } }'''
+          for vid in ids:
+            print('VIDEO',vid,json.dumps(call(base,{'id':vid}),ensure_ascii=False)[:2400])
+          PY

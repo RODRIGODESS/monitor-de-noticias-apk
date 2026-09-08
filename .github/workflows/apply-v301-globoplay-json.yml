@@ -1,0 +1,200 @@
+name: Apply v3.0.1 Globoplay embedded JSON fix
+
+on:
+  push:
+    branches: ["fix/v3.0.1-globoplay-embedded-json"]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/v3.0.1-globoplay-embedded-json
+          fetch-depth: 0
+
+      - name: Apply guarded parser changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt")
+          text = path.read_text()
+
+          def replace_once(old: str, new: str, label: str):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly 1 occurrence, found {count}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '''            val html = doc.html().replace("\\\\/", "/")''',
+              '''            val html = normalizeEmbeddedScriptText(doc.html(), decodeQuotes = false)''',
+              "Globoplay scan HTML normalization"
+          )
+
+          replace_once(
+              '''        doc.select("script[type=application/ld+json], script").take(100).forEach { script ->
+            val text = script.data().ifBlank { script.html() }
+            JSON_METADATA_REGEX.findAll(text).take(30).forEach { match ->
+                val raw = match.groupValues.drop(1).firstOrNull { it.isNotBlank() }.orEmpty()
+                QUOTED_VALUE_REGEX.findAll(raw).forEach { q ->
+                    val item = cleanJsonText(q.groupValues[1])
+                    if (item.length in 2..100) values += item
+                }
+                splitMetadata(raw.replace("\\\\\\\"", "\\\"")).forEach(values::add)
+            }
+        }''',
+              '''        doc.select("script[type=application/ld+json], script").take(100).forEach { script ->
+            scriptTextVariants(script.data().ifBlank { script.html() }).forEach { text ->
+                JSON_METADATA_REGEX.findAll(text).take(30).forEach { match ->
+                    val raw = match.groupValues.drop(1).firstOrNull { it.isNotBlank() }.orEmpty()
+                    QUOTED_VALUE_REGEX.findAll(raw).forEach { q ->
+                        val item = cleanJsonText(q.groupValues[1])
+                        if (item.length in 2..100) values += item
+                    }
+                    splitMetadata(raw.replace("\\\\\\\"", "\\\"")).forEach(values::add)
+                }
+            }
+        }''',
+              "metadata script variants"
+          )
+
+          replace_once(
+              '''        doc.select("script[type=application/ld+json], script").take(100).forEach { script ->
+            val text = script.data().ifBlank { script.html() }
+            JSON_TEXT_REGEX.findAll(text).take(30).forEach { match ->
+                val value = cleanJsonText(match.groupValues[1])
+                if (value.length in 8..700 && !isGenericSummary(value)) values += value
+            }
+        }''',
+              '''        doc.select("script[type=application/ld+json], script").take(100).forEach { script ->
+            scriptTextVariants(script.data().ifBlank { script.html() }).forEach { text ->
+                JSON_TEXT_REGEX.findAll(text).take(30).forEach { match ->
+                    val value = cleanJsonText(match.groupValues[1])
+                    if (value.length in 8..700 && !isGenericSummary(value)) values += value
+                }
+            }
+        }''',
+              "structured text script variants"
+          )
+
+          replace_once(
+              '''    private fun cleanJsonText(value: String): String = cleanText(
+        value
+            .replace("\\\\n", " ")
+            .replace("\\\\r", " ")
+            .replace("\\\\t", " ")
+            .replace("\\\\/", "/")
+            .replace("\\\\\\\"", "\\\"")
+            .replace("\\\\u0026", "&", ignoreCase = true)
+    )''',
+              '''    private fun scriptTextVariants(value: String): List<String> {
+        if (value.isBlank()) return emptyList()
+        return listOf(
+            value,
+            normalizeEmbeddedScriptText(value, decodeQuotes = false),
+            normalizeEmbeddedScriptText(value, decodeQuotes = true)
+        ).distinct()
+    }
+
+    private fun normalizeEmbeddedScriptText(value: String, decodeQuotes: Boolean = true): String {
+        var normalized = value
+            .replace("\\\\/", "/")
+            .replace("\\\\u002F", "/", ignoreCase = true)
+            .replace("\\\\u003A", ":", ignoreCase = true)
+            .replace("\\\\u0026", "&", ignoreCase = true)
+            .replace("\\\\u003D", "=", ignoreCase = true)
+        if (decodeQuotes) normalized = normalized.replace("\\\\\\\"", "\\\"")
+        return normalized
+    }
+
+    private fun cleanJsonText(value: String): String = cleanText(
+        normalizeEmbeddedScriptText(value)
+            .replace("\\\\n", " ")
+            .replace("\\\\r", " ")
+            .replace("\\\\t", " ")
+    )''',
+              "embedded script normalization helper"
+          )
+
+          replace_once(
+              '''        return doc.select("script").take(60).any { script ->
+            val text = script.data().ifBlank { script.html() }
+            text.contains("VideoObject", ignoreCase = true) ||
+                text.contains("contentUrl", ignoreCase = true) ||
+                text.contains("embedUrl", ignoreCase = true) ||
+                text.contains("videoId", ignoreCase = true)
+        }''',
+              '''        return doc.select("script").take(60).any { script ->
+            scriptTextVariants(script.data().ifBlank { script.html() }).any { text ->
+                text.contains("VideoObject", ignoreCase = true) ||
+                    text.contains("contentUrl", ignoreCase = true) ||
+                    text.contains("embedUrl", ignoreCase = true) ||
+                    text.contains("videoId", ignoreCase = true)
+            }
+        }''',
+              "video signal script variants"
+          )
+
+          replace_once(
+              '''        doc.select("script[type=application/ld+json], script").take(80).forEach { script ->
+            val text = script.data().ifBlank { script.html() }
+            JSON_DATE_REGEX.findAll(text).take(6).forEach { match ->
+                val date = match.groupValues[1]
+                if (date.isNotBlank()) values += date
+            }
+        }''',
+              '''        doc.select("script[type=application/ld+json], script").take(80).forEach { script ->
+            scriptTextVariants(script.data().ifBlank { script.html() }).forEach { text ->
+                JSON_DATE_REGEX.findAll(text).take(6).forEach { match ->
+                    val date = cleanJsonText(match.groupValues[1])
+                    if (date.isNotBlank()) values += date
+                }
+            }
+        }''',
+              "date script variants"
+          )
+
+          replace_once(
+              '''            "\\\\\\\"(?:keywords|tags|tag|subjects?|topics?|categories?)\\\\\\\"\\\\s*:\\\\s*(?:\\\\\\\"([^\\\\\\\"]+)\\\\\\\"|\\\\[([^]]+)])",''',
+              '''            "\\\\\\\"(?:keywords|tags|tag|subjects?|topics?|categor(?:y|ies))\\\\\\\"\\\\s*:\\\\s*(?:\\\\\\\"([^\\\\\\\"]+)\\\\\\\"|\\\\[([^]]+)])",''',
+              "category metadata regex"
+          )
+
+          replace_once(
+              '''            "\\\\\\\"(?:description|headline|alternativeHeadline|caption|articleBody)\\\\\\\"\\\\s*:\\\\s*\\\\\\\"([^\\\\\\\"]{2,700})\\\\\\\"",''',
+              '''            "\\\\\\\"(?:description|seoDescription|summary|headline|alternativeHeadline|caption|articleBody)\\\\\\\"\\\\s*:\\\\s*\\\\\\\"([^\\\\\\\"]{2,700})\\\\\\\"",''',
+              "structured text regex"
+          )
+
+          replace_once(
+              '''            "\\\\\\\"(?:datePublished|uploadDate|dateCreated)\\\\\\\"\\\\s*:\\\\s*\\\\\\\"([^\\\\\\\"]+)\\\\\\\"",''',
+              '''            "\\\\\\\"(?:datePublished|uploadDate|dateCreated|publishedAt|publicationDate|publishedDate)\\\\\\\"\\\\s*:\\\\s*\\\\\\\"([^\\\\\\\"]+)\\\\\\\"",''',
+              "date metadata regex"
+          )
+
+          path.write_text(text)
+          PY
+
+          git diff --check
+          grep -F 'normalizeEmbeddedScriptText(doc.html(), decodeQuotes = false)' app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt
+          grep -F 'categor(?:y|ies)' app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt
+          grep -F 'publishedAt|publicationDate|publishedDate' app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt
+
+      - name: Commit parser fix and remove one-shot workflow
+        shell: bash
+        run: |
+          rm .github/workflows/apply-v301-globoplay-json.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt .github/workflows/apply-v301-globoplay-json.yml
+          git commit -m "fix: parse escaped Globoplay embedded metadata"
+          git push origin HEAD:fix/v3.0.1-globoplay-embedded-json

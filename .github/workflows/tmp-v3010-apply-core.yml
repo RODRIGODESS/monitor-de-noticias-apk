@@ -1,4 +1,4 @@
-name: TEMP apply v3.0.10 core fixes
+name: TEMP apply v3010 core
 
 on:
   push:
@@ -10,13 +10,23 @@ permissions:
 
 jobs:
   apply:
-    if: ${{ !contains(github.event.head_commit.message, '[v3010-core-applied]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: fix/v3.0.10-jarvis-dates-source-health
+      - name: Stop after applied commit
+        id: guard
+        shell: bash
+        run: |
+          msg="$(git log -1 --pretty=%B)"
+          if printf '%s' "$msg" | grep -q '\[v3010-core-applied\]'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Apply matcher and target-video date fixes
+        if: steps.guard.outputs.skip != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -26,8 +36,8 @@ jobs:
           p = Path('app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt')
           text = p.read_text()
 
-          old = '''        val publishedAt = parsePublishedAt(doc, capturedAt) ?: candidate.publishedAt.takeIf { it > 0 } ?: 0L\n'''
-          new = '''        val publishedAt = parsePublishedAt(doc, capturedAt, canonical) ?: candidate.publishedAt.takeIf { it > 0 } ?: 0L\n'''
+          old = '        val publishedAt = parsePublishedAt(doc, capturedAt) ?: candidate.publishedAt.takeIf { it > 0 } ?: 0L\n'
+          new = '        val publishedAt = parsePublishedAt(doc, capturedAt, canonical) ?: candidate.publishedAt.takeIf { it > 0 } ?: 0L\n'
           if old not in text:
               raise SystemExit('publishedAt call anchor not found')
           text = text.replace(old, new, 1)
@@ -51,9 +61,6 @@ jobs:
             parseDate(value)?.let { return it }
         }
 
-        // O HTML do Globoplay contém o vídeo atual e vídeos relacionados. A versão
-        // anterior retornava a primeira datePublished do HTML inteiro. Em JH 14938964,
-        // por exemplo, isso podia retornar a data de um relacionado de 2018.
         val targetVideoId = GLOBOPLAY_VIDEO_LINK_REGEX
             .find(targetUrl)
             ?.groupValues
@@ -62,7 +69,6 @@ jobs:
         if (targetVideoId.isNotBlank()) {
             var bestDate: Long? = null
             var bestDistance = Int.MAX_VALUE
-
             doc.select("script[type=application/ld+json], script").take(100).forEach { script ->
                 val scriptText = normalizeEmbeddedScriptText(script.data().ifBlank { script.html() })
                 val markerPositions = mutableListOf<Int>()
@@ -98,8 +104,7 @@ jobs:
         doc.select("script[type=application/ld+json], script").take(80).forEach { script ->
             val scriptText = normalizeEmbeddedScriptText(script.data().ifBlank { script.html() })
             JSON_DATE_REGEX.findAll(scriptText).take(12).forEach { match ->
-                val date = match.groupValues[1]
-                if (date.isNotBlank()) values += date
+                if (match.groupValues[1].isNotBlank()) values += match.groupValues[1]
             }
         }
         values.distinct().forEach { value ->
@@ -119,14 +124,14 @@ jobs:
 '''
           text = text[:start] + replacement + text[end:]
 
-          old = '''            "\\\"(?:datePublished|uploadDate|dateCreated|publishedAt|publicationDate|publishedDate)\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",\n'''
-          new = '''            "\\\"(?:datePublished|uploadDate|dateCreated|publishedAt|publicationDate|publishedDate|exhibitedAt)\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",\n'''
+          old = '            "\\\"(?:datePublished|uploadDate|dateCreated|publishedAt|publicationDate|publishedDate)\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",\n'
+          new = '            "\\\"(?:datePublished|uploadDate|dateCreated|publishedAt|publicationDate|publishedDate|exhibitedAt)\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",\n'
           if old not in text:
               raise SystemExit('JSON date regex anchor not found')
           text = text.replace(old, new, 1)
 
-          old = '''        private const val MAX_ENRICHED_SUMMARY_LENGTH = 1800\n'''
-          new = '''        private const val MAX_ENRICHED_SUMMARY_LENGTH = 1800\n        private const val TARGET_VIDEO_DATE_CONTEXT_CHARS = 4_000\n'''
+          old = '        private const val MAX_ENRICHED_SUMMARY_LENGTH = 1800\n'
+          new = '        private const val MAX_ENRICHED_SUMMARY_LENGTH = 1800\n        private const val TARGET_VIDEO_DATE_CONTEXT_CHARS = 4_000\n'
           if old not in text:
               raise SystemExit('constants anchor not found')
           text = text.replace(old, new, 1)
@@ -142,16 +147,13 @@ jobs:
           text = text[:start] + replacement + text[end:]
           p.write_text(text)
           PY
-
       - name: Commit core fixes
+        if: steps.guard.outputs.skip != 'true'
         shell: bash
         run: |
-          if git diff --quiet; then
-            echo "No changes"
-            exit 0
-          fi
+          if git diff --quiet; then exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt app/src/main/java/br/com/monitordenoticias/android/VideoDb.kt
-          git commit -m "fix: keep JH/JN Jarvis results through date and DB validation [v3010-core-applied]"
+          git commit -m "fix: keep JH JN through date and DB validation [v3010-core-applied]"
           git push origin HEAD:fix/v3.0.10-jarvis-dates-source-health

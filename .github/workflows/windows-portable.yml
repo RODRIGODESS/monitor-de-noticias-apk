@@ -48,7 +48,7 @@ jobs:
         shell: pwsh
         run: gradle :desktop:createDistributable --stacktrace
 
-      - name: Make bundled JVM self-contained
+      - name: Validate bundled JVM
         shell: pwsh
         run: |
           $root = "desktop\build\compose\binaries\main\app"
@@ -58,26 +58,21 @@ jobs:
           $runtimeBin = Join-Path $appDir.FullName "runtime\bin"
           if (!(Test-Path $runtimeBin)) { throw "Bundled JVM runtime/bin not found: $runtimeBin" }
 
-          # jlink/jpackage can omit the MSVC runtime DLLs from the reduced image.
-          # Temurin 17 on Windows depends on these DLLs; without them, clean PCs may
-          # show only "Failed to launch JVM" even though jvm.dll itself is present.
           $nativeDlls = @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")
           foreach ($dll in $nativeDlls) {
             $source = Join-Path $env:JAVA_HOME "bin\$dll"
             $target = Join-Path $runtimeBin $dll
-            Write-Host "$dll already present before copy: $(Test-Path $target)"
-            if (Test-Path $source) {
+            if (!(Test-Path $target)) {
+              if (!(Test-Path $source)) { throw "Required native dependency not found: $dll" }
               Copy-Item $source $target -Force
-              Write-Host "Bundled native dependency: $dll"
+              Write-Host "Added native dependency missing from reduced runtime: $dll"
             } else {
-              throw "Required native dependency not present in JAVA_HOME: $source"
+              Write-Host "Native dependency already bundled: $dll"
             }
           }
 
           $jvm = Join-Path $runtimeBin "server\jvm.dll"
           if (!(Test-Path $jvm)) { throw "jvm.dll not found: $jvm" }
-
-          # Validate that Windows can load jvm.dll together with its native dependencies.
           $env:PATH = "$runtimeBin;$runtimeBin\server;$env:PATH"
           Add-Type @'
           using System;
@@ -96,36 +91,48 @@ jobs:
           }
           [NativeLibraryCheck]::FreeLibrary($handle) | Out-Null
           Write-Host "Bundled jvm.dll loaded successfully."
-          Get-ChildItem $runtimeBin -Filter "*140*.dll" | Select-Object Name,Length | Format-Table -AutoSize
 
-      - name: Smoke test packaged executable
+      - name: Smoke test exact packaged launcher and app initialization
         shell: pwsh
         run: |
           $root = "desktop\build\compose\binaries\main\app"
           $appDir = Get-ChildItem $root -Directory | Select-Object -First 1
           $exe = Get-ChildItem $appDir.FullName -Filter *.exe -File | Select-Object -First 1
           if ($null -eq $exe) { throw "Windows executable not found in app image root." }
+          $cfg = Get-ChildItem (Join-Path $appDir.FullName "app") -Filter *.cfg -File | Select-Object -First 1
+          if ($null -eq $cfg) { throw "jpackage launcher cfg not found." }
 
-          Write-Host "Launching packaged executable: $($exe.FullName)"
-          $process = Start-Process -FilePath $exe.FullName -WorkingDirectory $appDir.FullName -PassThru
-          $expectedTitle = "Monitor de Notícias • Windows Portable v4.0.2"
-          $deadline = (Get-Date).AddSeconds(30)
-          $seenTitle = ""
-          while ((Get-Date) -lt $deadline) {
-            Start-Sleep -Milliseconds 500
-            $process.Refresh()
-            if ($process.HasExited) {
-              throw "Packaged executable exited during smoke test. Exit code: $($process.ExitCode)"
+          $originalCfg = [IO.File]::ReadAllText($cfg.FullName)
+          if ($originalCfg -notmatch '(?m)^app\.mainclass=') {
+            throw "app.mainclass was not found in $($cfg.FullName)"
+          }
+          $selfTestCfg = [regex]::Replace(
+            $originalCfg,
+            '(?m)^app\.mainclass=.*$',
+            'app.mainclass=br.com.monitordenoticias.desktop.SelfTestKt'
+          )
+
+          try {
+            [IO.File]::WriteAllText($cfg.FullName, $selfTestCfg, [Text.UTF8Encoding]::new($false))
+            Write-Host "Launching exact packaged EXE with CI self-test main class."
+            $process = Start-Process -FilePath $exe.FullName -WorkingDirectory $appDir.FullName -PassThru
+            if (!$process.WaitForExit(30000)) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw "Packaged EXE self-test did not exit within 30 seconds (possible JVM/startup error dialog)."
             }
-            $seenTitle = $process.MainWindowTitle
-            if ($seenTitle -eq $expectedTitle) { break }
+            if ($process.ExitCode -ne 0) {
+              throw "Packaged EXE self-test failed with exit code $($process.ExitCode)."
+            }
+            Write-Host "Packaged EXE self-test passed with exit code 0."
+          } finally {
+            [IO.File]::WriteAllText($cfg.FullName, $originalCfg, [Text.UTF8Encoding]::new($false))
           }
-          if ($seenTitle -ne $expectedTitle) {
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-            throw "Expected application window did not appear. MainWindowTitle observed: '$seenTitle'"
+
+          $restored = [IO.File]::ReadAllText($cfg.FullName)
+          if ($restored -notmatch '(?m)^app\.mainclass=br\.com\.monitordenoticias\.desktop\.MainKt\s*$') {
+            throw "Production main class was not restored after self-test."
           }
-          Write-Host "Real application window appeared with expected title: $seenTitle"
-          Stop-Process -Id $process.Id -Force
+          Write-Host "Production launcher configuration restored."
 
       - name: Verify and create portable ZIP
         shell: pwsh

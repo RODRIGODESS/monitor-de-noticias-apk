@@ -5,6 +5,7 @@ import org.jsoup.nodes.Document
 import java.net.URI
 import java.net.URLEncoder
 import java.text.Normalizer
+import kotlin.math.abs
 
 /**
  * Coleta recente do Globoplay a partir da página real do programa/telejornal.
@@ -151,6 +152,35 @@ class GloboplayTrechosCollector {
     ): List<VideoItem> {
         val out = linkedMapOf<String, VideoItem>()
 
+        fun addCandidate(direct: String, rawTitle: String, rawSummary: String) {
+            val cleanedTitle = cleanTrechoTitle(rawTitle, source.searchPrefix)
+            val title = cleanedTitle.takeIf(::usefulTitle)
+                ?: "Trecho recente • ${source.searchPrefix.ifBlank { source.name }}"
+            val contextual = cleanText(rawSummary)
+            val summary = listOf(source.searchPrefix, contextual)
+                .filter { it.isNotBlank() && normalize(it) != normalize(title) }
+                .distinctBy(::normalize)
+                .joinToString(" • ")
+                .take(900)
+
+            val candidate = VideoItem(
+                title = title.take(220),
+                sourceId = source.id,
+                sourceName = source.name,
+                publishedAt = capturedAt,
+                link = direct,
+                summary = summary,
+                capturedAt = capturedAt
+            )
+            val key = canonicalKey(direct)
+            val previous = out[key]
+            val candidateScore = candidateQuality(candidate)
+            if (previous == null || candidateScore > candidateQuality(previous)) {
+                out[key] = candidate
+            }
+        }
+
+        // Caminho 1: cards presentes diretamente no HTML.
         doc.select("a[href]").forEach { anchor ->
             val absolute = anchor.absUrl("href").ifBlank { resolveUrl(pageUrl, anchor.attr("href")) }
             val direct = normalizeDirectVideoUrl(absolute) ?: return@forEach
@@ -162,38 +192,71 @@ class GloboplayTrechosCollector {
                 anchor.text()
             ).map(::cleanText).firstOrNull { it.isNotBlank() }.orEmpty()
 
-            val title = cleanTrechoTitle(rawTitle, source.searchPrefix)
-            if (!usefulTitle(title)) return@forEach
-
             val parentText = cleanText(anchor.parent()?.text().orEmpty())
-            val contextual = parentText
-                .takeIf { it.isNotBlank() && normalize(it) != normalize(rawTitle) && it.length <= 360 }
-                ?.let { cleanTrechoTitle(it, source.searchPrefix) }
-                .orEmpty()
-            val summary = listOf(source.searchPrefix, contextual)
-                .filter { it.isNotBlank() && normalize(it) != normalize(title) }
-                .distinctBy(::normalize)
-                .joinToString(" • ")
-                .take(420)
-
-            out.putIfAbsent(
-                canonicalKey(direct),
-                VideoItem(
-                    title = title.take(220),
-                    sourceId = source.id,
-                    sourceName = source.name,
-                    publishedAt = capturedAt,
-                    link = direct,
-                    summary = summary,
-                    capturedAt = capturedAt
-                )
-            )
+            addCandidate(direct, rawTitle, parentText)
         }
 
-        // Fallback para cards injetados por JSON/JavaScript. Sem título útil eles não
-        // entram aqui: o objetivo desta estratégia é justamente usar os títulos de Trechos
-        // para filtrar localmente antes de abrir páginas individuais.
+        // Caminho 2: o Globoplay frequentemente injeta Trechos via JSON/JavaScript.
+        // O Jsoup não executa JavaScript, então os cards podem não existir como <a>.
+        // Extraímos o /v/<id> do HTML bruto e procuramos título/descrição próximos
+        // ao mesmo ID dentro do JSON serializado.
+        val html = normalizeEmbedded(doc.html())
+        VIDEO_LINK_REGEX.findAll(html).take(MAX_VIDEO_LINKS_IN_HTML).forEach { match ->
+            val direct = "https://globoplay.globo.com/v/${match.groupValues[1]}"
+            val contextStart = (match.range.first - EMBEDDED_CONTEXT_WINDOW).coerceAtLeast(0)
+            val contextEnd = (match.range.last + 1 + EMBEDDED_CONTEXT_WINDOW).coerceAtMost(html.length)
+            val context = html.substring(contextStart, contextEnd)
+            val center = match.range.first - contextStart
+
+            val embeddedTitle = nearestJsonValue(context, center, EMBEDDED_TITLE_REGEX, 6, 260)
+                .takeUnless { normalize(it) == normalize(source.searchPrefix) }
+                .orEmpty()
+            val embeddedSummary = nearestJsonValue(context, center, EMBEDDED_SUMMARY_REGEX, 8, 900)
+            addCandidate(direct, embeddedTitle, embeddedSummary)
+        }
+
         return out.values.take(MAX_TRECHOS_PER_SOURCE)
+    }
+
+    private fun candidateQuality(item: VideoItem): Int {
+        var score = 0
+        if (!item.title.startsWith("Trecho recente •", ignoreCase = true)) score += 30
+        if (item.summary.isNotBlank()) score += minOf(item.summary.length / 30, 20)
+        return score
+    }
+
+    private fun nearestJsonValue(
+        context: String,
+        center: Int,
+        regex: Regex,
+        minLength: Int,
+        maxLength: Int
+    ): String {
+        return regex.findAll(context)
+            .mapNotNull { match ->
+                val value = cleanJsonText(match.groupValues[1])
+                if (value.length !in minLength..maxLength) return@mapNotNull null
+                if (value.startsWith("http://", true) || value.startsWith("https://", true)) return@mapNotNull null
+                if (value.contains("/v/")) return@mapNotNull null
+                value to abs(match.range.first - center)
+            }
+            .minByOrNull { it.second }
+            ?.first
+            .orEmpty()
+    }
+
+    private fun cleanJsonText(value: String): String {
+        var decoded = normalizeEmbedded(value)
+            .replace("\\n", " ")
+            .replace("\\r", " ")
+            .replace("\\t", " ")
+            .replace("\\\\", "\\")
+        decoded = UNICODE_ESCAPE_REGEX.replace(decoded) { match ->
+            match.groupValues[1].toIntOrNull(16)?.toChar()?.toString() ?: match.value
+        }
+        return cleanText(decoded)
+            .replace("&quot;", "\"", ignoreCase = true)
+            .replace("&#39;", "'", ignoreCase = true)
     }
 
     private fun normalizeProgramPage(value: String): String? {
@@ -278,13 +341,14 @@ class GloboplayTrechosCollector {
         .trim()
 
     companion object {
-        private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.2"
+        private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.3"
         private const val REQUEST_TIMEOUT_MS = 14_000
         private const val MAX_PROGRAM_PAGES_PER_SOURCE = 2
         private const val MAX_SEED_VIDEOS = 2
         private const val MAX_TRECHOS_PER_SOURCE = 48
         private const val MAX_PROGRAM_LINKS_IN_HTML = 80
-        private const val MAX_VIDEO_LINKS_IN_HTML = 80
+        private const val MAX_VIDEO_LINKS_IN_HTML = 120
+        private const val EMBEDDED_CONTEXT_WINDOW = 1800
 
         private val PROGRAM_LINK_REGEX = Regex(
             "(?:https?://globoplay\\.globo\\.com)?/([a-z0-9-]+)/t/([A-Za-z0-9_-]{6,})/?",
@@ -298,6 +362,15 @@ class GloboplayTrechosCollector {
             "^(?:\\d+\\s*(?:h|min|seg|s)\\s*)+",
             RegexOption.IGNORE_CASE
         )
+        private val EMBEDDED_TITLE_REGEX = Regex(
+            "\\\"(?:title|headline|name|label|episodeTitle)\\\"\\s*:\\s*\\\"([^\\\"]{2,500})\\\"",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        )
+        private val EMBEDDED_SUMMARY_REGEX = Regex(
+            "\\\"(?:description|seoDescription|summary|caption|synopsis)\\\"\\s*:\\s*\\\"([^\\\"]{2,1200})\\\"",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        )
+        private val UNICODE_ESCAPE_REGEX = Regex("\\\\u([0-9a-fA-F]{4})")
         private val STOP_WORDS = setOf("de", "do", "da", "dos", "das", "e", "em", "no", "na", "nos", "nas", "a", "o", "as", "os")
         private val GENERIC_ALIAS_TOKENS = setOf("globo", "globoplay", "telejornal", "regional", "jornalismo")
         private val GENERIC_TITLES = setOf(

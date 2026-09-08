@@ -851,6 +851,26 @@ private fun V28NewsCard(n: News) {
                     if (n.matchedTerm.isNotBlank()) V28Badge(n.matchedTerm, V28Accent)
                 }
             }
+            Spacer(Modifier.height(9.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                OutlinedButton(
+                    onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(n.link))) } },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Outlined.OpenInNew, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Abrir notícia")
+                }
+                OutlinedButton(
+                    onClick = { v28ShareWhatsApp(context, n.title, n.link) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = V28Mint)
+                ) {
+                    Icon(Icons.Outlined.Share, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("WhatsApp")
+                }
+            }
         }
     }
 }
@@ -908,6 +928,21 @@ private fun V28MoreItem(icon: ImageVector, title: String, subtitle: String, onCl
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier.clickable(onClick = onClick)
     )
+}
+
+private fun v28ShareWhatsApp(context: android.content.Context, title: String, link: String) {
+    val message = listOf(title.trim(), link.trim()).filter { it.isNotBlank() }.joinToString("\n")
+    if (message.isBlank()) return
+
+    fun shareIntent(packageName: String? = null) = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, message)
+        packageName?.let(::setPackage)
+    }
+
+    if (runCatching { context.startActivity(shareIntent("com.whatsapp")) }.isSuccess) return
+    if (runCatching { context.startActivity(shareIntent("com.whatsapp.w4b")) }.isSuccess) return
+    runCatching { context.startActivity(Intent.createChooser(shareIntent(), "Compartilhar link")) }
 }
 
 private fun v28DateTime(ms: Long): String = if (ms <= 0) "—" else SimpleDateFormat("dd/MM HH:mm", Locale("pt", "BR")).format(Date(ms))

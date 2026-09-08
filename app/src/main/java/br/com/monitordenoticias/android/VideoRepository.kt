@@ -142,11 +142,14 @@ class VideoRepository(
                         rawCandidates
                     }
 
+                    var globoplayDeepFallbacks = 0
                     prioritized.asSequence()
                         .take(resolveLimitFor(source))
                         .forEach { raw ->
-                            // A aba Trechos já entrega títulos jornalísticos úteis.
-                            // Filtramos localmente antes de abrir /v/<id>, reduzindo requisições e falhas.
+                            // O título/JSON de /cenas/ continua sendo o filtro mais barato.
+                            // Porém uma quantidade pequena e limitada de cards sem match superficial
+                            // também é aberta: no Globoplay o termo pode existir somente na descrição,
+                            // tags, keywords ou JSON da página /v/<id>.
                             if (scanMode && isGloboplaySource(source)) {
                                 val shallowBody = "${raw.title} ${raw.summary}"
                                 val shallowTermMatch = terms.any { phraseMatches(shallowBody, it) }
@@ -154,7 +157,10 @@ class VideoRepository(
                                     sourceMatchesDemand(source, demand.vehicle) &&
                                         phraseMatches(shallowBody, demand.subject)
                                 }
-                                if (!shallowTermMatch && !shallowDemandMatch) return@forEach
+                                if (!shallowTermMatch && !shallowDemandMatch) {
+                                    if (globoplayDeepFallbacks >= deepFallbackLimitFor(source)) return@forEach
+                                    globoplayDeepFallbacks++
+                                }
                             }
 
                             val item = resolve(raw) ?: return@forEach
@@ -358,6 +364,13 @@ class VideoRepository(
         else -> MAX_RESOLVED_PER_QUERY
     }
 
+    private fun deepFallbackLimitFor(source: VideoSource): Int = when {
+        source.id == "video-globoplay-jornalismo" -> MAX_GLOBOPLAY_DEEP_FALLBACK_GENERAL
+        source.id in VideoSourceCatalog.globoplayRegionalSweepIds -> MAX_GLOBOPLAY_DEEP_FALLBACK_GENERAL
+        isGloboplaySource(source) -> MAX_GLOBOPLAY_DEEP_FALLBACK_PER_SOURCE
+        else -> 0
+    }
+
     private fun mergeVideo(previous: VideoItem, incoming: VideoItem): VideoItem {
         val terms = (previous.matchedTerm.split(',') + incoming.matchedTerm.split(','))
             .map { it.trim() }
@@ -389,7 +402,7 @@ class VideoRepository(
         fallbackSummary: String
     ): List<VideoItem> {
         val doc = Jsoup.connect(pageUrl)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.2")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.3")
             .referrer("https://www.google.com/")
             .timeout(14_000)
             .followRedirects(true)
@@ -466,7 +479,7 @@ class VideoRepository(
         if (!isSpecificVideoUrl(source, candidate.link)) return null
 
         val doc = Jsoup.connect(candidate.link)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.2")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.3")
             .referrer(source.landingUrl)
             .timeout(14_000)
             .followRedirects(true)
@@ -664,7 +677,7 @@ class VideoRepository(
     private fun fetchYoutube(source: VideoSource, capturedAt: Long): List<VideoItem> {
         val handle = source.youtubeHandle.removePrefix("@")
         val channelPage = Jsoup.connect("https://www.youtube.com/@$handle/videos")
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.2")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.3")
             .timeout(14_000)
             .get()
             .html()
@@ -675,7 +688,7 @@ class VideoRepository(
             ?: return emptyList()
 
         val feed = Jsoup.connect("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
-            .userAgent("Mozilla/5.0 MonitorNoticias/3.0.2")
+            .userAgent("Mozilla/5.0 MonitorNoticias/3.0.3")
             .timeout(14_000)
             .parser(Parser.xmlParser())
             .get()
@@ -886,6 +899,8 @@ class VideoRepository(
         private const val MAX_RESOLVED_PER_QUERY = 8
         private const val MAX_GLOBOPLAY_ITEMS_PER_SCAN = 24
         private const val MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN = 32
+        private const val MAX_GLOBOPLAY_DEEP_FALLBACK_PER_SOURCE = 6
+        private const val MAX_GLOBOPLAY_DEEP_FALLBACK_GENERAL = 10
         private const val MAX_GLOBOPLAY_LINKS_DISCOVERED = 80
         private const val MAX_YOUTUBE_ITEMS_PER_SCAN = 40
         private const val MAX_ENRICHED_SUMMARY_LENGTH = 1800

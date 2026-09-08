@@ -1,6 +1,7 @@
 package br.com.monitordenoticias.android
 
 import android.app.Application
+import android.content.SharedPreferences
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -21,6 +22,11 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = NewsRepository(db)
     private val prefs = app.getSharedPreferences("monitor_prefs", 0)
     private val locale = Locale("pt", "BR")
+    private val autoRunListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == AutoRunLog.KEY_NEWS_COMPLETED_AT || key == AutoRunLog.KEY_DEMAND_COMPLETED_AT) {
+            refresh()
+        }
+    }
 
     private val savedInterval = prefs.getInt("interval_minutes", 30).coerceAtLeast(15)
     private val savedSourceIds = prefs.getStringSet("selected_source_ids", emptySet())
@@ -44,6 +50,7 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<AppState> = _state
 
     init {
+        prefs.registerOnSharedPreferenceChangeListener(autoRunListener)
         refresh()
         schedule(savedInterval)
         scheduleDemandMonitor()
@@ -427,5 +434,9 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun publish(block: (AppState) -> AppState) { _state.value = block(_state.value) }
 
-    override fun onCleared() { db.close(); super.onCleared() }
+    override fun onCleared() {
+        prefs.unregisterOnSharedPreferenceChangeListener(autoRunListener)
+        db.close()
+        super.onCleared()
+    }
 }

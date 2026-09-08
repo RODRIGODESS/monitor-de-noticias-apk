@@ -1,0 +1,49 @@
+name: Probe v3.0.7 Globoplay HTML
+
+on:
+  push:
+    branches: ["fix/v3.0.7-globoplay-editions-errors"]
+    paths: [".github/workflows/probe-v307-globoplay.yml"]
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch public Globoplay pages as a non-JS client
+        shell: bash
+        run: |
+          set -euo pipefail
+          UA='Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36'
+          fetch() { curl -fL --max-time 20 -A "$UA" -H 'Accept-Language: pt-BR,pt;q=0.9' "$1" -o "$2"; }
+          fetch 'https://globoplay.globo.com/rj1/t/hcSthQ56JW/' rj1-program.html
+          fetch 'https://globoplay.globo.com/v/14938516/' rj1-edition.html
+          fetch 'https://globoplay.globo.com/pitv-1a-edicao/t/M5f6Kxnmxd/' pitv-program.html
+          fetch 'https://globoplay.globo.com/v/14938668/' pitv-edition.html
+      - name: Validate edition and trecho graph
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def normalize(s):
+              return s.replace('\\/','/').replace('\\u002F','/').replace('\\u003A',':')
+
+          cases = [
+              ('RJ1 programa', 'rj1-program.html', ['07/09/2026']),
+              ('RJ1 edição', 'rj1-edition.html', ['14938238', 'militares']),
+              ('PITV programa', 'pitv-program.html', ['07/09/2026']),
+              ('PITV edição', 'pitv-edition.html', ['14938171', 'militares']),
+          ]
+          for label, path, needles in cases:
+              text = normalize(Path(path).read_text(errors='ignore'))
+              ids = sorted(set(re.findall(r'/v/(\d{5,})', text)))
+              print(f'{label}: bytes={len(text)} video_ids={len(ids)} sample={ids[:12]}')
+              for needle in needles:
+                  ok = needle.lower() in text.lower()
+                  print(f'  {needle!r}: {ok}')
+                  if not ok:
+                      raise SystemExit(f'{label}: missing {needle}')
+          print('GLOBOPLAY_RAW_HTML_GRAPH_OK=true')
+          PY

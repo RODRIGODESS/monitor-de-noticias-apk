@@ -18,24 +18,20 @@ jobs:
         with:
           ref: fix/v3.0.2-globoplay-trechos-last
 
-      - name: Apply guarded patch
+      - name: Apply guarded code patch
         run: python3 .github/scripts/apply_v302_globoplay_trechos.py
 
-      - name: Verify patch
+      - name: Verify code patch
         run: |
           grep -q 'globoplayTrechosCollector.collect' app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt
           grep -q 'versionCode = 302' app/build.gradle.kts
           grep -q 'versionName = "3.0.2"' app/build.gradle.kts
-          grep -q 'tag_name: v3.0.2' .github/workflows/release.yml
 
-      - name: Commit changes and remove temporary files
+      - name: Commit Android code only
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/apply-v302-globoplay-trechos.yml
-          git rm .github/scripts/apply_v302_globoplay_trechos.py
           git add app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt
           git add app/build.gradle.kts
-          git add .github/workflows/release.yml
           git commit -m "v3.0.2: usar Trechos do Globoplay como coleta principal"
           git push origin HEAD:fix/v3.0.2-globoplay-trechos-last

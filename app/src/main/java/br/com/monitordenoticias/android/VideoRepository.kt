@@ -526,7 +526,7 @@ class VideoRepository(
             .joinToString(" • ")
             .take(MAX_ENRICHED_SUMMARY_LENGTH)
 
-        val publishedAt = parsePublishedAt(doc) ?: candidate.publishedAt.takeIf { it > 0 } ?: capturedAt
+        val publishedAt = parsePublishedAt(doc, capturedAt) ?: candidate.publishedAt.takeIf { it > 0 } ?: 0L
         val hasVideoSignal = pageHasVideoSignal(doc)
         if (!isSpecificVideoUrl(source, canonical) && !hasVideoSignal) return null
 
@@ -658,7 +658,7 @@ class VideoRepository(
         }
     }
 
-    private fun parsePublishedAt(doc: Document): Long? {
+    private fun parsePublishedAt(doc: Document, capturedAt: Long): Long? {
         val values = mutableListOf<String>()
         values += listOf(
             doc.selectFirst("meta[property=article:published_time]")?.attr("content").orEmpty(),
@@ -677,7 +677,8 @@ class VideoRepository(
         }
 
         values.distinct().forEach { value ->
-            runCatching { Instant.parse(value.trim()).toEpochMilli() }.getOrNull()?.let { return it }
+            val parsed = runCatching { Instant.parse(value.trim()).toEpochMilli() }.getOrNull()
+            if (parsed != null && parsed in 1..capturedAt) return parsed
         }
         return null
     }
@@ -685,7 +686,7 @@ class VideoRepository(
     private fun fetchYoutube(source: VideoSource, capturedAt: Long): List<VideoItem> {
         val handle = source.youtubeHandle.removePrefix("@")
         val channelPage = Jsoup.connect("https://www.youtube.com/@$handle/videos")
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.5")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.6")
             .timeout(14_000)
             .get()
             .html()
@@ -696,7 +697,7 @@ class VideoRepository(
             ?: return emptyList()
 
         val feed = Jsoup.connect("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
-            .userAgent("Mozilla/5.0 MonitorNoticias/3.0.5")
+            .userAgent("Mozilla/5.0 MonitorNoticias/3.0.6")
             .timeout(14_000)
             .parser(Parser.xmlParser())
             .get()

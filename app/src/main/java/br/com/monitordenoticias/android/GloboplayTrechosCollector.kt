@@ -5,6 +5,7 @@ import org.jsoup.nodes.Document
 import java.net.URI
 import java.net.URLEncoder
 import java.text.Normalizer
+import java.time.Instant
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -178,7 +179,7 @@ class GloboplayTrechosCollector {
             direct: String,
             rawTitle: String,
             rawSummary: String,
-            publishedAt: Long = capturedAt
+            publishedAt: Long = 0L
         ) {
             val cleanedTitle = cleanTrechoTitle(rawTitle, source.searchPrefix)
             val title = cleanedTitle.takeIf(::usefulTitle)
@@ -209,12 +210,14 @@ class GloboplayTrechosCollector {
 
         // Caminho 1: cards presentes diretamente no HTML. Os cabeçalhos da
         // aba Trechos (ex.: "Hoje, 07/09/2026") delimitam a data dos links abaixo.
-        // Se só houver a data, usamos o fim daquele dia para evitar falso negativo
-        // na janela móvel de 24h; a página /v/<id> ainda pode substituir por horário exato.
+        // Uma data sem horário representa um intervalo possível. Usamos o limite
+        // superior desse intervalo, mas nunca além do momento da captura. Assim
+        // "hoje" não vira 23:59 no futuro e um dia parcialmente dentro das últimas
+        // 24h continua elegível até a página /v/<id> fornecer um horário preciso.
         var sectionPublishedAt: Long? = null
         doc.select("h1,h2,h3,h4,a[href]").forEach { element ->
             if (element.tagName().startsWith("h", ignoreCase = true)) {
-                sectionPublishedAt = parseSectionDateEnd(element.text())
+                sectionPublishedAt = parseSectionDateUpperBound(element.text(), capturedAt)
                 return@forEach
             }
 
@@ -230,7 +233,7 @@ class GloboplayTrechosCollector {
             ).map(::cleanText).firstOrNull { it.isNotBlank() }.orEmpty()
 
             val parentText = cleanText(anchor.parent()?.text().orEmpty())
-            addCandidate(direct, rawTitle, parentText, sectionPublishedAt ?: capturedAt)
+            addCandidate(direct, rawTitle, parentText, sectionPublishedAt ?: 0L)
         }
 
         // Caminho 2: o Globoplay frequentemente injeta Trechos via JSON/JavaScript.
@@ -249,7 +252,9 @@ class GloboplayTrechosCollector {
                 .takeUnless { normalize(it) == normalize(source.searchPrefix) }
                 .orEmpty()
             val embeddedSummary = nearestJsonValue(context, center, EMBEDDED_SUMMARY_REGEX, 8, 900)
-            val embeddedPublishedAt = nearestSectionDateEnd(context, center) ?: capturedAt
+            val embeddedPublishedAt = nearestEmbeddedPublishedAt(context, center, capturedAt)
+                ?: nearestSectionDateUpperBound(context, center, capturedAt)
+                ?: 0L
             addCandidate(direct, embeddedTitle, embeddedSummary, embeddedPublishedAt)
         }
 
@@ -260,7 +265,7 @@ class GloboplayTrechosCollector {
         var score = 0
         if (!item.title.startsWith("Trecho recente •", ignoreCase = true)) score += 30
         if (item.summary.isNotBlank()) score += minOf(item.summary.length / 30, 20)
-        if (item.publishedAt != item.capturedAt) score += 8
+        if (item.publishedAt > 0L && item.publishedAt != item.capturedAt) score += 8
         return score
     }
 
@@ -284,30 +289,61 @@ class GloboplayTrechosCollector {
             .orEmpty()
     }
 
-    private fun nearestSectionDateEnd(context: String, center: Int): Long? =
-        SECTION_DATE_REGEX.findAll(context)
-            .mapNotNull { match ->
-                parseSectionDateEnd(match.value)?.let { publishedAt ->
-                    publishedAt to abs(match.range.first - center)
-                }
+    private fun nearestEmbeddedPublishedAt(
+        context: String,
+        center: Int,
+        capturedAt: Long
+    ): Long? = EMBEDDED_PUBLISHED_AT_REGEX.findAll(context)
+        .mapNotNull { match ->
+            parsePrecisePublishedAt(match.groupValues[1], capturedAt)?.let { publishedAt ->
+                publishedAt to abs(match.range.first - center)
             }
-            .minByOrNull { it.second }
-            ?.first
+        }
+        .minByOrNull { it.second }
+        ?.first
 
-    private fun parseSectionDateEnd(value: String): Long? {
+    private fun parsePrecisePublishedAt(value: String, capturedAt: Long): Long? {
+        val parsed = runCatching { Instant.parse(value.trim()).toEpochMilli() }.getOrNull() ?: return null
+        return parsed.takeIf { it in 1..capturedAt }
+    }
+
+    private fun nearestSectionDateUpperBound(
+        context: String,
+        center: Int,
+        capturedAt: Long
+    ): Long? = SECTION_DATE_REGEX.findAll(context)
+        .mapNotNull { match ->
+            parseSectionDateUpperBound(match.value, capturedAt)?.let { publishedAt ->
+                publishedAt to abs(match.range.first - center)
+            }
+        }
+        .minByOrNull { it.second }
+        ?.first
+
+    private fun parseSectionDateUpperBound(value: String, capturedAt: Long): Long? {
         val rawDate = SECTION_DATE_REGEX.find(value)?.groupValues?.getOrNull(1).orEmpty()
         if (rawDate.isBlank()) return null
         val parsed = runCatching {
             SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).apply { isLenient = false }.parse(rawDate)
         }.getOrNull() ?: return null
 
-        return Calendar.getInstance().apply {
+        val startOfDay = Calendar.getInstance().apply {
+            time = parsed
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        if (startOfDay > capturedAt) return null
+
+        val endOfDay = Calendar.getInstance().apply {
             time = parsed
             set(Calendar.HOUR_OF_DAY, 23)
             set(Calendar.MINUTE, 59)
             set(Calendar.SECOND, 59)
             set(Calendar.MILLISECOND, 999)
         }.timeInMillis
+        return minOf(endOfDay, capturedAt)
     }
 
     private fun cleanJsonText(value: String): String {
@@ -443,6 +479,10 @@ class GloboplayTrechosCollector {
             RegexOption.IGNORE_CASE
         )
         private val SECTION_DATE_REGEX = Regex("\\b(\\d{2}/\\d{2}/\\d{4})\\b")
+        private val EMBEDDED_PUBLISHED_AT_REGEX = Regex(
+            "\\\"(?:datePublished|uploadDate|dateCreated|publishedAt|publicationDate|publishedDate)\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",
+            RegexOption.IGNORE_CASE
+        )
         private val EMBEDDED_TITLE_REGEX = Regex(
             "\\\"(?:title|headline|name|label|episodeTitle)\\\"\\s*:\\s*\\\"([^\\\"]{2,500})\\\"",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)

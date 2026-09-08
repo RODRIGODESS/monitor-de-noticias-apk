@@ -13,153 +13,29 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           ref: fix/v3.0.2-globoplay-trechos-last
 
-      - name: Apply guarded changes
+      - name: Apply guarded patch
+        run: python3 .github/scripts/apply_v302_globoplay_trechos.py
+
+      - name: Verify patch
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          repo = Path('app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt')
-          text = repo.read_text()
-
-          def replace_once(src, old, new, label):
-              count = src.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected exactly 1 match, got {count}')
-              return src.replace(old, new, 1)
-
-          text = replace_once(
-              text,
-              ') {\n    private data class QuerySpec(',
-              ') {\n    private val globoplayTrechosCollector = GloboplayTrechosCollector()\n\n    private data class QuerySpec(',
-              'collector property'
-          )
-
-          resolve_start_marker = '                fun resolve(item: VideoItem): VideoItem? {'
-          resolve_end_marker = '\n\n                specs.forEach { spec ->'
-          start = text.find(resolve_start_marker)
-          end = text.find(resolve_end_marker, start)
-          if start < 0 or end < 0:
-              raise SystemExit(f'resolve markers not found: start={start} end={end}')
-          new_resolve = '''                fun resolve(item: VideoItem): VideoItem? {
-                    if (isYoutubeUrl(item.link)) {
-                        return if (isYoutubeVideoUrl(item.link)) item.copy(link = canonicalizeUrl(item.link)) else null
-                    }
-                    val cacheKey = canonicalKey(item.link)
-                    if (resolvedCache.containsKey(cacheKey)) return resolvedCache[cacheKey]
-
-                    val globoplay = isGloboplaySource(source)
-                    val resolved = runCatching { resolveDirectVideoPage(source, item, capturedAt) }
-                        .onFailure {
-                            // Em Trechos, abrir a página individual é enriquecimento opcional.
-                            // O card /cenas/ já fornece título e link direto válidos.
-                            if (!globoplay) errors++
-                        }
-                        .getOrNull()
-                    val fallback = item.takeIf {
-                        globoplay && usefulTitle(it.title) && isSpecificVideoUrl(source, it.link)
-                    }?.copy(link = canonicalizeUrl(item.link))
-                    val finalItem = resolved ?: fallback
-                    resolvedCache[cacheKey] = finalItem
-                    return finalItem
-                }'''
-          text = text[:start] + new_resolve + text[end:]
-
-          item_marker = '                            val item = resolve(raw) ?: return@forEach\n'
-          item_replacement = '''                            // Cards da aba Trechos já possuem títulos jornalísticos úteis.
-                            // O cruzamento local vem antes da abertura de /v/<id>.
-                            if (scanMode && isGloboplaySource(source)) {
-                                val shallowBody = "${raw.title} ${raw.summary}"
-                                val shallowTermMatch = terms.any { phraseMatches(shallowBody, it) }
-                                val shallowDemandMatch = demands.any { demand ->
-                                    sourceMatchesDemand(source, demand.vehicle) &&
-                                        phraseMatches(shallowBody, demand.subject)
-                                }
-                                if (!shallowTermMatch && !shallowDemandMatch) return@forEach
-                            }
-
-                            val item = resolve(raw) ?: return@forEach
-'''
-          text = replace_once(text, item_marker, item_replacement, 'shallow Globoplay filtering')
-
-          globo_marker = '        if (isGloboplaySource(source)) {\n            val primary = when {'
-          globo_replacement = '''        if (isGloboplaySource(source)) {
-            // Estratégia principal da v3.0.2: telejornal -> /t/<token>/ -> /cenas/ (Trechos).
-            // A busca geral permanece somente como fallback.
-            val trechos = globoplayTrechosCollector.collect(source, capturedAt, onError)
-            if (trechos.isNotEmpty()) {
-                return trechos.distinctBy { canonicalKey(it.link) }
-            }
-
-            val primary = when {'''
-          text = replace_once(text, globo_marker, globo_replacement, 'Globoplay Trechos primary')
-
-          text = text.replace('MonitorNoticias/3.0.1', 'MonitorNoticias/3.0.2')
-          text = replace_once(
-              text,
-              'private const val MAX_GLOBOPLAY_ITEMS_PER_SCAN = 10',
-              'private const val MAX_GLOBOPLAY_ITEMS_PER_SCAN = 24',
-              'Globoplay per-source limit'
-          )
-          text = replace_once(
-              text,
-              'private const val MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN = 18',
-              'private const val MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN = 32',
-              'Globoplay general limit'
-          )
-          repo.write_text(text)
-
-          gradle = Path('app/build.gradle.kts')
-          g = gradle.read_text()
-          g = replace_once(g, 'versionCode = 301', 'versionCode = 302', 'versionCode')
-          g = replace_once(g, 'versionName = "3.0.1"', 'versionName = "3.0.2"', 'versionName')
-          gradle.write_text(g)
-
-          release = Path('.github/workflows/release.yml')
-          r = release.read_text()
-          if 'v3.0.1' not in r:
-              raise SystemExit('Expected v3.0.1 release workflow')
-          r = r.replace('v3.0.1', 'v3.0.2')
-          r = replace_once(
-              r,
-              'versionCode 301 / versionName 3.0.2',
-              'versionCode 302 / versionName 3.0.2',
-              'release versionCode'
-          )
-          r = r.replace(
-              'Monitor de Notícias Android v3.0.2 — Demandas silenciosas sem achados e varredura de Vídeos otimizada.',
-              'Monitor de Notícias Android v3.0.2 — Trechos do Globoplay e varredura de Vídeos otimizada.'
-          )
-          marker = '            Monitor de Vídeos:\n'
-          if marker not in r:
-              raise SystemExit('Release body marker not found')
-          r = r.replace(
-              marker,
-              marker +
-              '            - Globoplay passa a entrar na página de cada telejornal e varrer a aba Trechos (/cenas/);\n'
-              '            - os títulos dos cards são cruzados localmente com Termos e Demandas antes de abrir o vídeo;\n'
-              '            - falha no enriquecimento de um /v/<id> não descarta um card de Trechos já válido;\n',
-              1
-          )
-          r = r.replace(
-              'instalação direta sobre v3.0.0 preservando dados e configurações.',
-              'instalação direta sobre v3.0.1 preservando dados e configurações.'
-          )
-          release.write_text(r)
-          PY
-
           grep -q 'globoplayTrechosCollector.collect' app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt
           grep -q 'versionCode = 302' app/build.gradle.kts
+          grep -q 'versionName = "3.0.2"' app/build.gradle.kts
           grep -q 'tag_name: v3.0.2' .github/workflows/release.yml
 
-      - name: Commit changes and remove temporary workflow
+      - name: Commit changes and remove temporary files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/apply-v302-globoplay-trechos.yml
-          git add app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt app/build.gradle.kts .github/workflows/release.yml
+          git rm .github/scripts/apply_v302_globoplay_trechos.py
+          git add app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt
+          git add app/build.gradle.kts
+          git add .github/workflows/release.yml
           git commit -m "v3.0.2: usar Trechos do Globoplay como coleta principal"
           git push origin HEAD:fix/v3.0.2-globoplay-trechos-last

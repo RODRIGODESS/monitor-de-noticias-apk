@@ -92,57 +92,59 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v3.0.7 release asset
+      - name: Prepare v3.0.8 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.7.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.8.apk
 
-      - name: Point v3.0.7 tag to validated main commit
+      - name: Point v3.0.8 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v3.0.7 "$GITHUB_SHA"
-          git push --force origin refs/tags/v3.0.7
+          git tag -f v3.0.8 "$GITHUB_SHA"
+          git push --force origin refs/tags/v3.0.8
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.7
+          tag_name: v3.0.8
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v3.0.7
+          name: Monitor de Notícias Android v3.0.8
           body: |
-            Monitor de Notícias Android v3.0.7 — cobertura ampliada do Globoplay e diagnóstico de fontes instáveis.
+            Monitor de Notícias Android v3.0.8 — metadados profundos do Globoplay e compartilhamento no WhatsApp.
 
-            Globoplay / telejornais:
-            - o caminho principal passa a ser Programa -> Edição recente -> Trechos da Edição;
-            - a aba /cenas/ permanece como fallback porque em vários programas ela depende de JavaScript e pode chegar vazia ao coletor Android;
-            - páginas de Edição /v/<id> são usadas para extrair os links diretos dos trechos exibidos naquele telejornal;
-            - somente edições que se sobrepõem à janela pesquisada são abertas;
-            - busca normal e automática continuam usando a janela móvel das últimas 24 horas;
-            - trechos cujo título já casa com Termo/Demanda entram sem uma segunda abertura da página individual, reduzindo chamadas desnecessárias;
-            - leitura profunda permanece limitada para encontrar Termos que apareçam apenas em descrição, tags ou metadados;
-            - links genéricos do Globoplay sem data verificável deixam de herdar artificialmente o horário da captura.
+            Globoplay:
+            - mantém Programa -> Edição recente -> Trechos da Edição como caminho principal;
+            - Bom Dia Brasil, Hora 1, Jornal Hoje, Jornal Nacional e Jornal da Globo passam a ter orçamento de leitura profunda ampliado;
+            - até 72 trechos por telejornal nacional podem ter a página individual analisada quando o Termo/Demanda não aparece no título do card;
+            - descrição, tags, keywords e JSON estruturado continuam participando do cruzamento local;
+            - regionais também recebem limites moderadamente maiores sem voltar à explosão de milhares de consultas;
+            - o objetivo é capturar casos como vídeos do Jornal Hoje em que “militar/militares” aparece apenas na descrição.
 
-            Estabilidade e desempenho:
-            - o indicador deixa de somar cada requisição HTTP fracassada e passa a mostrar quantas fontes únicas ficaram instáveis;
-            - uma mesma fonte pode falhar várias vezes internamente, mas conta apenas uma vez no indicador;
-            - fontes tradicionais que acumularem 3 falhas reais na mesma varredura entram em circuit breaker e têm as consultas restantes ignoradas;
-            - isso evita que uma fonte fora do ar gere dezenas de falhas e prolongue a busca por vários minutos.
+            Diagnóstico:
+            - uma fonte de varredura só é marcada como instável quando não entrega candidatos e houve falha de rede/HTTP;
+            - falhas em caminhos auxiliares que depois conseguem fallback deixam de inflar o contador de fontes instáveis;
+            - circuit breaker das fontes tradicionais continua ativo.
+
+            Compartilhamento:
+            - cards de Notícias passam a ter Abrir notícia e WhatsApp;
+            - cards de Vídeos passam a ter Abrir vídeo e WhatsApp;
+            - o compartilhamento envia título + link direto;
+            - prioriza WhatsApp comum, depois WhatsApp Business e usa o seletor Android como fallback.
 
             Mantido:
-            - Termos e Demandas cruzados localmente no Globoplay e YouTube;
+            - janela móvel das últimas 24 horas para buscas normais e automáticas de vídeo;
             - flexões seguras como militar/militares;
-            - resultados progressivos, cronômetro e botão Limpar vídeos;
-            - agenda automática aproximadamente às 08h, 12h, 15h, 19h e 21h;
-            - pesquisas personalizadas por período.
+            - resultados progressivos, cronômetro e Limpar vídeos;
+            - agenda automática aproximadamente às 08h, 12h, 15h, 19h e 21h.
 
             Atualização:
-            - versionCode 307 / versionName 3.0.7;
+            - versionCode 308 / versionName 3.0.8;
             - mesmo applicationId br.com.monitordenoticias.android;
-            - mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v3.0.6 preservando Termos, Demandas, histórico de notícias e configurações.
-          files: monitor-de-noticias-v3.0.7.apk
+            - mesma assinatura permanente;
+            - instalação direta sobre v3.0.7 preservando Termos, Demandas, histórico e configurações.
+          files: monitor-de-noticias-v3.0.8.apk
           overwrite_files: true
           make_latest: true

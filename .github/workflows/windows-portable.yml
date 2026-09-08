@@ -48,6 +48,55 @@ jobs:
         shell: pwsh
         run: gradle :desktop:createDistributable --stacktrace
 
+      - name: Make bundled JVM self-contained
+        shell: pwsh
+        run: |
+          $root = "desktop\build\compose\binaries\main\app"
+          if (!(Test-Path $root)) { throw "Compose app image was not generated: $root" }
+          $appDir = Get-ChildItem $root -Directory | Select-Object -First 1
+          if ($null -eq $appDir) { throw "Portable application directory not found." }
+          $runtimeBin = Join-Path $appDir.FullName "runtime\bin"
+          if (!(Test-Path $runtimeBin)) { throw "Bundled JVM runtime/bin not found: $runtimeBin" }
+
+          # jlink/jpackage can omit the MSVC runtime DLLs from the reduced image.
+          # Temurin 17 on Windows depends on these DLLs; without them, clean PCs may
+          # show only "Failed to launch JVM" even though jvm.dll itself is present.
+          $nativeDlls = @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")
+          foreach ($dll in $nativeDlls) {
+            $source = Join-Path $env:JAVA_HOME "bin\$dll"
+            if (Test-Path $source) {
+              Copy-Item $source (Join-Path $runtimeBin $dll) -Force
+              Write-Host "Bundled native dependency: $dll"
+            } else {
+              Write-Warning "Native dependency not present in JAVA_HOME: $source"
+            }
+          }
+
+          $jvm = Join-Path $runtimeBin "server\jvm.dll"
+          if (!(Test-Path $jvm)) { throw "jvm.dll not found: $jvm" }
+          & (Join-Path $runtimeBin "java.exe") -version
+          if ($LASTEXITCODE -ne 0) { throw "Bundled java.exe could not start." }
+
+          Get-ChildItem $runtimeBin -Filter "*140*.dll" | Select-Object Name,Length | Format-Table -AutoSize
+
+      - name: Smoke test packaged executable
+        shell: pwsh
+        run: |
+          $root = "desktop\build\compose\binaries\main\app"
+          $appDir = Get-ChildItem $root -Directory | Select-Object -First 1
+          $exe = Get-ChildItem $appDir.FullName -Filter *.exe -File | Select-Object -First 1
+          if ($null -eq $exe) { throw "Windows executable not found in app image root." }
+
+          Write-Host "Launching packaged executable: $($exe.FullName)"
+          $process = Start-Process -FilePath $exe.FullName -WorkingDirectory $appDir.FullName -PassThru
+          Start-Sleep -Seconds 12
+          $process.Refresh()
+          if ($process.HasExited) {
+            throw "Packaged executable exited during smoke test. Exit code: $($process.ExitCode)"
+          }
+          Write-Host "Packaged executable stayed alive for 12 seconds: smoke test passed."
+          Stop-Process -Id $process.Id -Force
+
       - name: Verify and create portable ZIP
         shell: pwsh
         run: |

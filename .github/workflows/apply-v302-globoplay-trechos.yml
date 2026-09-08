@@ -45,62 +45,56 @@ jobs:
           if start < 0 or end < 0:
               raise SystemExit(f'resolve markers not found: start={start} end={end}')
           new_resolve = '''                fun resolve(item: VideoItem): VideoItem? {
-                      if (isYoutubeUrl(item.link)) {
-                          return if (isYoutubeVideoUrl(item.link)) item.copy(link = canonicalizeUrl(item.link)) else null
-                      }
-                      val cacheKey = canonicalKey(item.link)
-                      if (resolvedCache.containsKey(cacheKey)) return resolvedCache[cacheKey]
+                    if (isYoutubeUrl(item.link)) {
+                        return if (isYoutubeVideoUrl(item.link)) item.copy(link = canonicalizeUrl(item.link)) else null
+                    }
+                    val cacheKey = canonicalKey(item.link)
+                    if (resolvedCache.containsKey(cacheKey)) return resolvedCache[cacheKey]
 
-                      val globoplay = isGloboplaySource(source)
-                      val resolved = runCatching { resolveDirectVideoPage(source, item, capturedAt) }
-                          .onFailure {
-                              // Em Trechos, abrir a página individual é enriquecimento opcional.
-                              // O card /cenas/ já fornece título e link direto válidos.
-                              if (!globoplay) errors++
-                          }
-                          .getOrNull()
-                      val fallback = item.takeIf {
-                          globoplay && usefulTitle(it.title) && isSpecificVideoUrl(source, it.link)
-                      }?.copy(link = canonicalizeUrl(item.link))
-                      val finalItem = resolved ?: fallback
-                      resolvedCache[cacheKey] = finalItem
-                      return finalItem
-                  }'''
+                    val globoplay = isGloboplaySource(source)
+                    val resolved = runCatching { resolveDirectVideoPage(source, item, capturedAt) }
+                        .onFailure {
+                            // Em Trechos, abrir a página individual é enriquecimento opcional.
+                            // O card /cenas/ já fornece título e link direto válidos.
+                            if (!globoplay) errors++
+                        }
+                        .getOrNull()
+                    val fallback = item.takeIf {
+                        globoplay && usefulTitle(it.title) && isSpecificVideoUrl(source, it.link)
+                    }?.copy(link = canonicalizeUrl(item.link))
+                    val finalItem = resolved ?: fallback
+                    resolvedCache[cacheKey] = finalItem
+                    return finalItem
+                }'''
           text = text[:start] + new_resolve + text[end:]
 
-          loop_marker = '''                        .forEach { raw ->
-                              val item = resolve(raw) ?: return@forEach
-          '''
-          loop_replacement = '''                        .forEach { raw ->
-                              // Cards da aba Trechos já possuem títulos jornalísticos úteis.
-                              // O cruzamento local vem antes da abertura de /v/<id>.
-                              if (scanMode && isGloboplaySource(source)) {
-                                  val shallowBody = "${raw.title} ${raw.summary}"
-                                  val shallowTermMatch = terms.any { phraseMatches(shallowBody, it) }
-                                  val shallowDemandMatch = demands.any { demand ->
-                                      sourceMatchesDemand(source, demand.vehicle) &&
-                                          phraseMatches(shallowBody, demand.subject)
-                                  }
-                                  if (!shallowTermMatch && !shallowDemandMatch) return@forEach
-                              }
+          item_marker = '                            val item = resolve(raw) ?: return@forEach\n'
+          item_replacement = '''                            // Cards da aba Trechos já possuem títulos jornalísticos úteis.
+                            // O cruzamento local vem antes da abertura de /v/<id>.
+                            if (scanMode && isGloboplaySource(source)) {
+                                val shallowBody = "${raw.title} ${raw.summary}"
+                                val shallowTermMatch = terms.any { phraseMatches(shallowBody, it) }
+                                val shallowDemandMatch = demands.any { demand ->
+                                    sourceMatchesDemand(source, demand.vehicle) &&
+                                        phraseMatches(shallowBody, demand.subject)
+                                }
+                                if (!shallowTermMatch && !shallowDemandMatch) return@forEach
+                            }
 
-                              val item = resolve(raw) ?: return@forEach
-          '''
-          text = replace_once(text, loop_marker, loop_replacement, 'shallow Globoplay filtering')
+                            val item = resolve(raw) ?: return@forEach
+'''
+          text = replace_once(text, item_marker, item_replacement, 'shallow Globoplay filtering')
 
-          globo_marker = '''        if (isGloboplaySource(source)) {
-              val primary = when {
-          '''
+          globo_marker = '        if (isGloboplaySource(source)) {\n            val primary = when {'
           globo_replacement = '''        if (isGloboplaySource(source)) {
-              // Estratégia principal da v3.0.2: telejornal -> /t/<token>/ -> /cenas/ (Trechos).
-              // A busca geral permanece somente como fallback.
-              val trechos = globoplayTrechosCollector.collect(source, capturedAt, onError)
-              if (trechos.isNotEmpty()) {
-                  return trechos.distinctBy { canonicalKey(it.link) }
-              }
+            // Estratégia principal da v3.0.2: telejornal -> /t/<token>/ -> /cenas/ (Trechos).
+            // A busca geral permanece somente como fallback.
+            val trechos = globoplayTrechosCollector.collect(source, capturedAt, onError)
+            if (trechos.isNotEmpty()) {
+                return trechos.distinctBy { canonicalKey(it.link) }
+            }
 
-              val primary = when {
-          '''
+            val primary = when {'''
           text = replace_once(text, globo_marker, globo_replacement, 'Globoplay Trechos primary')
 
           text = text.replace('MonitorNoticias/3.0.1', 'MonitorNoticias/3.0.2')

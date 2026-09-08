@@ -9,49 +9,38 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect Globoplay frontend operations
+      - name: Probe Jarvis GraphQL root fields
         shell: bash
         run: |
           set -euo pipefail
-          UA='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36'
-          PAGE='https://globoplay.globo.com/jornal-nacional/t/QgkQnhBNnR/cenas/'
-          curl -L --fail --max-time 25 -A "$UA" "$PAGE" -o page.html
+          ENDPOINT='https://cloud-jarvis.globo.com/graphql'
           python3 - <<'PY'
-          from pathlib import Path
-          from urllib.parse import urljoin
-          import re
-          text=Path('page.html').read_text(errors='ignore')
-          srcs=[]
-          for s in re.findall(r'<script[^>]+src=["\']([^"\']+)', text, flags=re.I):
-              u=urljoin('https://globoplay.globo.com/', s)
-              if u not in srcs: srcs.append(u)
-          print('SCRIPT_COUNT=',len(srcs))
-          Path('scripts.txt').write_text('\n'.join(srcs[:60]))
-          for i,u in enumerate(srcs[:60]): print(f'SCRIPT_{i}={u}')
-          PY
-          mkdir -p js
-          i=0
-          while IFS= read -r url; do
-            [ -n "$url" ] || continue
-            curl -L -sS --fail --max-time 25 -A "$UA" "$url" -o "js/$i.js" || true
-            i=$((i+1))
-          done < scripts.txt
-          echo "DOWNLOADED_JS=$i"
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          needles=['cloud-jarvis','graphql','Trechos','trechos','clips','scenes','originProgramId','programId','titleId','getTitle','episodes','videos']
-          for p in sorted(Path('js').glob('*.js')):
-              t=p.read_text(errors='ignore')
-              hits=[n for n in needles if n in t]
-              if not hits: continue
-              print(f'FILE={p.name} BYTES={len(t)} HITS={hits}')
-              # Show compact contexts around operation/query vocabulary only
-              for pat in [r'operationName.{0,180}', r'query [A-Za-z0-9_]+.{0,220}', r'cloud-jarvis.{0,220}', r'originProgramId.{0,260}', r'programId.{0,260}', r'trechos.{0,260}', r'clips.{0,260}', r'scenes.{0,260}']:
-                  found=[]
-                  for m in re.finditer(pat,t,re.I|re.S):
-                      s=re.sub(r'\s+',' ',m.group(0))[:500]
-                      if s not in found: found.append(s)
-                      if len(found)>=8: break
-                  for s in found: print('CTX=',s)
+          import json, urllib.request, urllib.error
+          endpoint='https://cloud-jarvis.globo.com/graphql'
+          headers={
+            'content-type':'application/json',
+            'x-platform-id':'web',
+            'x-device-id':'desktop',
+            'x-client-version':'2024.12-5',
+            'user-agent':'Mozilla/5.0'
+          }
+          fields=[
+            'title','titles','program','programs','video','videos','episode','episodes',
+            'clips','scenes','trechos','highlights','rail','rails','collection','collections',
+            'playlist','playlists','search','searchV2','content','contents','catalog','category',
+            'categories','recommendations','titleVideos','programVideos','titleEpisodes'
+          ]
+          for f in fields:
+            payload=json.dumps({'query':f'query Probe {{ {f} {{ __typename }} }}'}).encode()
+            req=urllib.request.Request(endpoint,data=payload,headers=headers,method='POST')
+            try:
+              with urllib.request.urlopen(req,timeout=20) as r: body=r.read().decode()
+            except urllib.error.HTTPError as e:
+              body=e.read().decode()
+            try: d=json.loads(body)
+            except Exception: d={'raw':body[:500]}
+            errs=d.get('errors') or []
+            msgs=' | '.join(x.get('message','') for x in errs)
+            data=d.get('data')
+            print(f'FIELD={f} DATA={data} ERR={msgs[:1200]}')
           PY

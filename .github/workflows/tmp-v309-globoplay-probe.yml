@@ -9,46 +9,49 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe public Globoplay GraphQL
+      - name: Inspect Globoplay frontend operations
         shell: bash
         run: |
           set -euo pipefail
-          ENDPOINT='https://cloud-jarvis.globo.com/graphql'
-          COMMON=(-H 'content-type: application/json' -H 'x-platform-id: web' -H 'x-device-id: desktop' -H 'x-client-version: 2024.12-5')
-
-          python3 - <<'PY' > video.json
-          import json
-          print(json.dumps({
-            "operationName":"getVideoView",
-            "variables":{"videoId":"14940098"},
-            "query":"query getVideoView($videoId: ID!) { video(id: $videoId) { id duration description headline title { originProgramId headline } } }"
-          }))
-          PY
-          curl -sS --fail --max-time 25 "${COMMON[@]}" --data @video.json "$ENDPOINT" -o video-response.json
+          UA='Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36'
+          PAGE='https://globoplay.globo.com/jornal-nacional/t/QgkQnhBNnR/cenas/'
+          curl -L --fail --max-time 25 -A "$UA" "$PAGE" -o page.html
           python3 - <<'PY'
-          import json
-          d=json.load(open('video-response.json'))
-          print('VIDEO_RESPONSE=', json.dumps(d, ensure_ascii=False)[:3000])
+          from pathlib import Path
+          from urllib.parse import urljoin
+          import re
+          text=Path('page.html').read_text(errors='ignore')
+          srcs=[]
+          for s in re.findall(r'<script[^>]+src=["\']([^"\']+)', text, flags=re.I):
+              u=urljoin('https://globoplay.globo.com/', s)
+              if u not in srcs: srcs.append(u)
+          print('SCRIPT_COUNT=',len(srcs))
+          Path('scripts.txt').write_text('\n'.join(srcs[:60]))
+          for i,u in enumerate(srcs[:60]): print(f'SCRIPT_{i}={u}')
           PY
-
-          python3 - <<'PY' > schema.json
-          import json
-          print(json.dumps({
-            "operationName":"ProbeSchema",
-            "variables":{},
-            "query":"query ProbeSchema { __schema { queryType { fields { name args { name } } } } }"
-          }))
-          PY
-          set +e
-          curl -sS --max-time 25 "${COMMON[@]}" --data @schema.json "$ENDPOINT" -o schema-response.json
-          set -e
+          mkdir -p js
+          i=0
+          while IFS= read -r url; do
+            [ -n "$url" ] || continue
+            curl -L -sS --fail --max-time 25 -A "$UA" "$url" -o "js/$i.js" || true
+            i=$((i+1))
+          done < scripts.txt
+          echo "DOWNLOADED_JS=$i"
           python3 - <<'PY'
-          import json
-          try:
-              d=json.load(open('schema-response.json'))
-          except Exception as e:
-              print('SCHEMA_PARSE_ERROR=',e); raise SystemExit
-          fields=((d.get('data') or {}).get('__schema') or {}).get('queryType',{}).get('fields',[])
-          print('SCHEMA_ERRORS=', d.get('errors'))
-          print('QUERY_FIELDS=', [(f.get('name'), [a.get('name') for a in f.get('args',[])]) for f in fields][:300])
+          from pathlib import Path
+          import re
+          needles=['cloud-jarvis','graphql','Trechos','trechos','clips','scenes','originProgramId','programId','titleId','getTitle','episodes','videos']
+          for p in sorted(Path('js').glob('*.js')):
+              t=p.read_text(errors='ignore')
+              hits=[n for n in needles if n in t]
+              if not hits: continue
+              print(f'FILE={p.name} BYTES={len(t)} HITS={hits}')
+              # Show compact contexts around operation/query vocabulary only
+              for pat in [r'operationName.{0,180}', r'query [A-Za-z0-9_]+.{0,220}', r'cloud-jarvis.{0,220}', r'originProgramId.{0,260}', r'programId.{0,260}', r'trechos.{0,260}', r'clips.{0,260}', r'scenes.{0,260}']:
+                  found=[]
+                  for m in re.finditer(pat,t,re.I|re.S):
+                      s=re.sub(r'\s+',' ',m.group(0))[:500]
+                      if s not in found: found.append(s)
+                      if len(found)>=8: break
+                  for s in found: print('CTX=',s)
           PY

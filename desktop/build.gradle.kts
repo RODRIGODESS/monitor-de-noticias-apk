@@ -54,6 +54,10 @@ compose.desktop {
     application {
         mainClass = "br.com.monitordenoticias.desktop.MainKt"
         nativeDistributions {
+            // O app usa JDBC/SQLite, AWT/Swing, XML, rede e bibliotecas que carregam
+            // classes por reflexão. Um runtime reduzido pode compilar normalmente e
+            // falhar apenas ao abrir o EXE com a mensagem genérica "Failed to launch JVM".
+            includeAllModules = true
             targetFormats(TargetFormat.Msi)
             packageName = "MonitorDeNoticias"
             packageVersion = "4.0.2"

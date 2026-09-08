@@ -16,6 +16,35 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: codex/v4.0.3-specialized-news
+
+      - name: Apply guarded v4.0.3 specialized-media patch
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: python3 tools/patch_v403.py
+
+      - name: Verify v4.0.3 implementation
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 403' app/build.gradle.kts
+          grep -q 'versionName = "4.0.3"' app/build.gradle.kts
+          grep -q 'val specialized = listOf' app/src/main/java/br/com/monitordenoticias/android/SourceCatalog.kt
+          grep -q 'especializada-poder-naval' app/src/main/java/br/com/monitordenoticias/android/SourceCatalog.kt
+          grep -q 'especializada-agencia-marinha' app/src/main/java/br/com/monitordenoticias/android/NewsLatestCollector.kt
+          grep -q 'SourceCatalog.national + SourceCatalog.specialized' app/src/main/java/br/com/monitordenoticias/android/NewsLatestCollector.kt
+          git diff --check
+
+      - name: Commit v4.0.3 implementation
+        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle.kts \
+                  app/src/main/java/br/com/monitordenoticias/android/SourceCatalog.kt \
+                  app/src/main/java/br/com/monitordenoticias/android/NewsLatestCollector.kt
+          git commit -m "feat: add specialized defense and naval news sources"
+          git push origin HEAD:codex/v4.0.3-specialized-news
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -107,21 +136,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: Monitor de Notícias Android v4.0.2
           body: |
-            Monitor de Notícias Android v4.0.2 — selo NOVO realmente baseado no histórico.
-
-            Notícias:
-            - uma matéria só é NOVA quando não existia no histórico antes da busca atual;
-            - resultados reencontrados preservam o horário da primeira captura;
-            - a mesma matéria é reconhecida por URL e também por veículo + título normalizado;
-            - mudanças de URL do Google News deixam de recriar a mesma matéria como nova;
-            - ao finalizar a busca, a tela é reconstruída a partir do banco persistido;
-            - buscas de Demandas seguem a mesma regra de histórico.
-
-            Compatibilidade:
-            - versionCode 402 / versionName 4.0.2;
-            - mesmo applicationId br.com.monitordenoticias.android;
-            - mesma assinatura permanente validada pelo certificado SHA-256 esperado;
-            - atualização direta sobre v4.0.1 preservando banco, notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
+            Monitor de Notícias Android v4.0.2
           files: monitor-de-noticias-v4.0.2.apk
           overwrite_files: true
           make_latest: true

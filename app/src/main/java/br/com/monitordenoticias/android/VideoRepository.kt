@@ -143,7 +143,7 @@ class VideoRepository(
                     return finalItem
                 }
 
-                specLoop@ specs.forEach { spec ->
+                specs.forEach specLoop@ { spec ->
                     val scanMode = isSourceScanMode(source)
                     if (!scanMode && sourceRequestFailures >= MAX_REQUEST_FAILURES_PER_SOURCE) {
                         completed++

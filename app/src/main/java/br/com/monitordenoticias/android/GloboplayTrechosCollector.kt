@@ -29,10 +29,29 @@ class GloboplayTrechosCollector {
         if (source.searchPrefix.isBlank()) return emptyList()
 
         val programPages = linkedMapOf<String, Int>()
-        val directLandingProgram = normalizeProgramPage(source.landingUrl)
-        if (directLandingProgram != null) {
-            programPages[directLandingProgram] = Int.MAX_VALUE
-        } else {
+
+        // Rotas estáveis confirmadas entram antes da busca dinâmica do Globoplay.
+        KNOWN_PROGRAM_PAGES[source.id]?.let { programPages[it] = Int.MAX_VALUE }
+
+        // Se a fonte já for uma página /programa/t/<token>, use-a diretamente.
+        normalizeProgramPage(source.landingUrl)?.let { programPages[it] = Int.MAX_VALUE - 1 }
+
+        // Landings históricas /v/<id> servem apenas como sementes para descobrir
+        // a página estável do programa. O vídeo antigo não vira resultado recorrente.
+        if (programPages.isEmpty() && normalizeDirectVideoUrl(source.landingUrl) != null) {
+            val seedDoc = runCatching { fetchDocument(source.landingUrl) }
+                .onFailure { onError() }
+                .getOrNull()
+            if (seedDoc != null) {
+                extractProgramPages(source, seedDoc, source.landingUrl)
+                    .forEach { (url, score) ->
+                        programPages[url] = maxOf(programPages[url] ?: Int.MIN_VALUE, score)
+                    }
+            }
+        }
+
+        // A busca geral fica como último recurso de descoberta.
+        if (programPages.isEmpty()) {
             val discoveryUrl = buildDiscoveryUrl(source)
             val discoveryDoc = runCatching { fetchDocument(discoveryUrl) }
                 .onFailure { onError() }
@@ -45,8 +64,6 @@ class GloboplayTrechosCollector {
                     }
 
                 if (programPages.isEmpty()) {
-                    // Algumas versões da busca entregam apenas cards /v/<id> no HTML.
-                    // Esses vídeos servem como sementes para descobrir o link do programa.
                     extractDirectVideoLinks(discoveryDoc, discoveryUrl)
                         .take(MAX_SEED_VIDEOS)
                         .forEach { seed ->
@@ -99,8 +116,10 @@ class GloboplayTrechosCollector {
 
     private fun fetchDocument(url: String): Document = Jsoup.connect(url)
         .userAgent(USER_AGENT)
+        .header("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.7")
         .referrer("https://www.google.com/")
         .timeout(REQUEST_TIMEOUT_MS)
+        .maxBodySize(MAX_HTML_BODY_BYTES)
         .followRedirects(true)
         .get()
 
@@ -341,9 +360,24 @@ class GloboplayTrechosCollector {
         .trim()
 
     companion object {
-        private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.3"
+        private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36"
         private const val REQUEST_TIMEOUT_MS = 14_000
+        private const val MAX_HTML_BODY_BYTES = 8 * 1024 * 1024
         private const val MAX_PROGRAM_PAGES_PER_SOURCE = 2
+
+        private val KNOWN_PROGRAM_PAGES = mapOf(
+            "globoplay-bom-dia-brasil" to "https://globoplay.globo.com/bom-dia-brasil/t/6Qg1RywhG5",
+            "globoplay-hora-1" to "https://globoplay.globo.com/hora-1/t/s1Zp7Mf9Mn",
+            "globoplay-jornal-hoje" to "https://globoplay.globo.com/jornal-hoje/t/w7R6S8ssrm",
+            "globoplay-jornal-nacional" to "https://globoplay.globo.com/jornal-nacional/t/QgkQnhBNnR",
+            "globoplay-jornal-da-globo" to "https://globoplay.globo.com/jornal-da-globo/t/N6jszcBg6m",
+            "globoplay-rj1" to "https://globoplay.globo.com/rj1/t/hcSthQ56JW",
+            "globoplay-rj2" to "https://globoplay.globo.com/rj2/t/x5SwXtgSZn",
+            "globoplay-sp1" to "https://globoplay.globo.com/sp1/t/MvdbFs2kN8",
+            "globoplay-sp2" to "https://globoplay.globo.com/sp2/t/xbFtFNTP81",
+            "globoplay-bom-dia-es" to "https://globoplay.globo.com/bom-dia-es/t/DLBLDnCVGs",
+            "globoplay-tj1-tapajos" to "https://globoplay.globo.com/jornal-tapajos-1a-edicao/t/hTwfdtmDCQ"
+        )
         private const val MAX_SEED_VIDEOS = 2
         private const val MAX_TRECHOS_PER_SOURCE = 48
         private const val MAX_PROGRAM_LINKS_IN_HTML = 80

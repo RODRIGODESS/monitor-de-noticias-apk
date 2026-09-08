@@ -193,6 +193,18 @@ fun V30Videos(s: VideoState, vm: VideoViewModel, openSources: () -> Unit) {
                             Icon(if (s.busy) Icons.Outlined.HourglassTop else Icons.Outlined.Refresh, "Buscar vídeos")
                         }
                     }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = { confirmClear = true },
+                        enabled = !s.busy && s.totalStored > 0,
+                        modifier = Modifier.fillMaxWidth().height(42.dp),
+                        border = BorderStroke(1.dp, V30Red.copy(alpha = .38f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = V30Red)
+                    ) {
+                        Icon(Icons.Outlined.DeleteSweep, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(7.dp))
+                        Text("Limpar vídeos")
+                    }
                     if (s.searchProgress.startedAt > 0L) {
                         Spacer(Modifier.height(10.dp))
                         V30ProgressBody(s.searchProgress, V30Purple)
@@ -211,7 +223,6 @@ fun V30Videos(s: VideoState, vm: VideoViewModel, openSources: () -> Unit) {
                 V30Chip("Demandas", s.filter == VideoFilter.DEMANDS) { vm.setFilter(VideoFilter.DEMANDS) }
                 V30Chip("Fontes (${s.selectedSourceIds.size})", false, openSources)
                 V30Chip("Período", showPeriod) { showPeriod = !showPeriod }
-                V30Chip("Limpar", false) { confirmClear = true }
             }
         }
 

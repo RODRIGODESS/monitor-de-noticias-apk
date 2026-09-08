@@ -795,12 +795,13 @@ private fun V28Settings(s: AppState, vm: MonitorViewModel, videos: VideoState) {
     val prefs = remember(refreshKey) { context.getSharedPreferences(BackgroundMonitor.PREFS, 0) }
     val newsAttempt = prefs.getLong(AutoRunLog.KEY_NEWS_ATTEMPT_AT, 0L)
     val newsCompleted = prefs.getLong(AutoRunLog.KEY_NEWS_COMPLETED_AT, 0L)
+    val newsNewVisible = s.news.count { v401InRun(it.capturedAt, newsAttempt, newsCompleted) }
     val demandAttempt = prefs.getLong(AutoRunLog.KEY_DEMAND_ATTEMPT_AT, 0L)
     val demandCompleted = prefs.getLong(AutoRunLog.KEY_DEMAND_COMPLETED_AT, 0L)
     val videoAttempt = prefs.getLong(VideoAutoRunLog.KEY_ATTEMPT_AT, 0L)
     val videoCompleted = prefs.getLong(VideoAutoRunLog.KEY_COMPLETED_AT, 0L)
     val videoFound = prefs.getInt(VideoAutoRunLog.KEY_FOUND, 0)
-    val videoNew = prefs.getInt(VideoAutoRunLog.KEY_NEW, 0)
+    val videoNew = videos.items.count { v401InRun(it.capturedAt, videoAttempt, videoCompleted) }
     val videoRelevant = prefs.getInt(VideoAutoRunLog.KEY_NEW_RELEVANT, 0)
     val videoErrors = prefs.getInt(VideoAutoRunLog.KEY_ERRORS, 0)
     val videoError = prefs.getString(VideoAutoRunLog.KEY_ERROR_TEXT, "").orEmpty()
@@ -822,7 +823,7 @@ private fun V28Settings(s: AppState, vm: MonitorViewModel, videos: VideoState) {
                 }
             }
         }
-        item { V28ReportCard("Notícias automáticas", Icons.Outlined.Article, V28Accent, newsAttempt, newsCompleted, "${prefs.getInt(AutoRunLog.KEY_NEWS_FOUND, 0)} resultado(s) • ${prefs.getInt(AutoRunLog.KEY_NEWS_NEW, 0)} nova(s)", prefs.getString(AutoRunLog.KEY_NEWS_ERROR_TEXT, "").orEmpty()) }
+        item { V28ReportCard("Notícias automáticas", Icons.Outlined.Article, V28Accent, newsAttempt, newsCompleted, "${prefs.getInt(AutoRunLog.KEY_NEWS_FOUND, 0)} resultado(s) • $newsNewVisible nova(s)", prefs.getString(AutoRunLog.KEY_NEWS_ERROR_TEXT, "").orEmpty()) }
         item { V28ReportCard("Demandas automáticas", Icons.Outlined.NotificationsActive, V28Mint, demandAttempt, demandCompleted, "${prefs.getInt(AutoRunLog.KEY_DEMAND_CHECKED, 0)} demanda(s) • ${prefs.getInt(AutoRunLog.KEY_DEMAND_NEW, 0)} nova(s)", prefs.getString(AutoRunLog.KEY_DEMAND_ERROR_TEXT, "").orEmpty()) }
         item { V28ReportCard("Vídeos automáticos", Icons.Outlined.SmartDisplay, V28Purple, videoAttempt, videoCompleted, "$videoFound detectado(s) • $videoNew novo(s) • $videoRelevant relevante(s) • $videoErrors falha(s)", videoError) }
         item {

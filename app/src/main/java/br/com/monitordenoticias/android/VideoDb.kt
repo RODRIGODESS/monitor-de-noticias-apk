@@ -53,7 +53,6 @@ class VideoDb(context: Context) : SQLiteOpenHelper(context, "videos.db", null, 1
                         put("summary", item.summary)
                         if (item.matchedTerm.isNotBlank()) put("matched_term", item.matchedTerm)
                         if (item.matchedDemand.isNotBlank()) put("matched_demand", item.matchedDemand)
-                        put("captured_at", item.capturedAt)
                     }
                     writableDatabase.update("videos", update, "link=?", arrayOf(item.link))
                 }

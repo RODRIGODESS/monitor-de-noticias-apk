@@ -56,7 +56,6 @@ class NewsDb(context: Context) : SQLiteOpenHelper(context, "news.db", null, 3) {
                         if (n.demand) put("demand", 1)
                         if (n.matchedTerm.isNotBlank()) put("matched_term", n.matchedTerm)
                         if (n.matchedDemand.isNotBlank()) put("matched_demand", n.matchedDemand)
-                        put("captured_at", n.capturedAt)
                     }
                     writableDatabase.update("news", update, "link=?", arrayOf(n.link))
                 }

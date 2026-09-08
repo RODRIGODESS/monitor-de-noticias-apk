@@ -31,31 +31,19 @@ jobs:
                   raise SystemExit(f'{label}: expected exactly 1 match, got {count}')
               return src.replace(old, new, 1)
 
-          text = replace_once(text, '''class VideoRepository(
-              private val context: Context,
-              private val db: VideoDb
-          ) {
-              private data class QuerySpec(''', '''class VideoRepository(
-              private val context: Context,
-              private val db: VideoDb
-          ) {
-              private val globoplayTrechosCollector = GloboplayTrechosCollector()
+          text = replace_once(
+              text,
+              ') {\n    private data class QuerySpec(',
+              ') {\n    private val globoplayTrechosCollector = GloboplayTrechosCollector()\n\n    private data class QuerySpec(',
+              'collector property'
+          )
 
-              private data class QuerySpec(''', 'collector property')
-
-          old_resolve = '''                fun resolve(item: VideoItem): VideoItem? {
-                      if (isYoutubeUrl(item.link)) {
-                          return if (isYoutubeVideoUrl(item.link)) item.copy(link = canonicalizeUrl(item.link)) else null
-                      }
-                      val cacheKey = canonicalKey(item.link)
-                      if (resolvedCache.containsKey(cacheKey)) return resolvedCache[cacheKey]
-                      val resolved = runCatching { resolveDirectVideoPage(source, item, capturedAt) }
-                          .onFailure { errors++ }
-                          .getOrNull()
-                      resolvedCache[cacheKey] = resolved
-                      return resolved
-                  }
-          '''
+          resolve_start_marker = '                fun resolve(item: VideoItem): VideoItem? {'
+          resolve_end_marker = '\n\n                specs.forEach { spec ->'
+          start = text.find(resolve_start_marker)
+          end = text.find(resolve_end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit(f'resolve markers not found: start={start} end={end}')
           new_resolve = '''                fun resolve(item: VideoItem): VideoItem? {
                       if (isYoutubeUrl(item.link)) {
                           return if (isYoutubeVideoUrl(item.link)) item.copy(link = canonicalizeUrl(item.link)) else null
@@ -77,22 +65,15 @@ jobs:
                       val finalItem = resolved ?: fallback
                       resolvedCache[cacheKey] = finalItem
                       return finalItem
-                  }
-          '''
-          text = replace_once(text, old_resolve, new_resolve, 'resolve fallback')
+                  }'''
+          text = text[:start] + new_resolve + text[end:]
 
-          old_loop = '''                    prioritized.asSequence()
-                          .take(resolveLimitFor(source))
-                          .forEach { raw ->
+          loop_marker = '''                        .forEach { raw ->
                               val item = resolve(raw) ?: return@forEach
-                              val body = "${item.title} ${item.summary}"
           '''
-          new_loop = '''                    prioritized.asSequence()
-                          .take(resolveLimitFor(source))
-                          .forEach { raw ->
+          loop_replacement = '''                        .forEach { raw ->
                               // Cards da aba Trechos já possuem títulos jornalísticos úteis.
-                              // Fazemos o cruzamento local ANTES de abrir /v/<id>, evitando
-                              // dezenas de requisições por telejornal quando nada interessa.
+                              // O cruzamento local vem antes da abertura de /v/<id>.
                               if (scanMode && isGloboplaySource(source)) {
                                   val shallowBody = "${raw.title} ${raw.summary}"
                                   val shallowTermMatch = terms.any { phraseMatches(shallowBody, it) }
@@ -104,16 +85,15 @@ jobs:
                               }
 
                               val item = resolve(raw) ?: return@forEach
-                              val body = "${item.title} ${item.summary}"
           '''
-          text = replace_once(text, old_loop, new_loop, 'shallow Globoplay filtering')
+          text = replace_once(text, loop_marker, loop_replacement, 'shallow Globoplay filtering')
 
-          old_globo = '''        if (isGloboplaySource(source)) {
+          globo_marker = '''        if (isGloboplaySource(source)) {
               val primary = when {
           '''
-          new_globo = '''        if (isGloboplaySource(source)) {
-              // Estratégia principal da v3.0.2: Telejornal -> página do programa -> /cenas/ (Trechos).
-              // A busca geral do Globoplay permanece somente como fallback.
+          globo_replacement = '''        if (isGloboplaySource(source)) {
+              // Estratégia principal da v3.0.2: telejornal -> /t/<token>/ -> /cenas/ (Trechos).
+              // A busca geral permanece somente como fallback.
               val trechos = globoplayTrechosCollector.collect(source, capturedAt, onError)
               if (trechos.isNotEmpty()) {
                   return trechos.distinctBy { canonicalKey(it.link) }
@@ -121,19 +101,27 @@ jobs:
 
               val primary = when {
           '''
-          text = replace_once(text, old_globo, new_globo, 'Globoplay Trechos primary strategy')
+          text = replace_once(text, globo_marker, globo_replacement, 'Globoplay Trechos primary')
 
           text = text.replace('MonitorNoticias/3.0.1', 'MonitorNoticias/3.0.2')
-          text = text.replace('private const val MAX_GLOBOPLAY_ITEMS_PER_SCAN = 10', 'private const val MAX_GLOBOPLAY_ITEMS_PER_SCAN = 24')
-          text = text.replace('private const val MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN = 18', 'private const val MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN = 32')
+          text = replace_once(
+              text,
+              'private const val MAX_GLOBOPLAY_ITEMS_PER_SCAN = 10',
+              'private const val MAX_GLOBOPLAY_ITEMS_PER_SCAN = 24',
+              'Globoplay per-source limit'
+          )
+          text = replace_once(
+              text,
+              'private const val MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN = 18',
+              'private const val MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN = 32',
+              'Globoplay general limit'
+          )
           repo.write_text(text)
 
           gradle = Path('app/build.gradle.kts')
           g = gradle.read_text()
-          if 'versionCode = 301' not in g or 'versionName = "3.0.1"' not in g:
-              raise SystemExit('Unexpected Android version before v3.0.2 bump')
-          g = g.replace('versionCode = 301', 'versionCode = 302', 1)
-          g = g.replace('versionName = "3.0.1"', 'versionName = "3.0.2"', 1)
+          g = replace_once(g, 'versionCode = 301', 'versionCode = 302', 'versionCode')
+          g = replace_once(g, 'versionName = "3.0.1"', 'versionName = "3.0.2"', 'versionName')
           gradle.write_text(g)
 
           release = Path('.github/workflows/release.yml')
@@ -141,7 +129,12 @@ jobs:
           if 'v3.0.1' not in r:
               raise SystemExit('Expected v3.0.1 release workflow')
           r = r.replace('v3.0.1', 'v3.0.2')
-          r = r.replace('versionCode 301 / versionName 3.0.2', 'versionCode 302 / versionName 3.0.2')
+          r = replace_once(
+              r,
+              'versionCode 301 / versionName 3.0.2',
+              'versionCode 302 / versionName 3.0.2',
+              'release versionCode'
+          )
           r = r.replace(
               'Monitor de Notícias Android v3.0.2 — Demandas silenciosas sem achados e varredura de Vídeos otimizada.',
               'Monitor de Notícias Android v3.0.2 — Trechos do Globoplay e varredura de Vídeos otimizada.'
@@ -149,12 +142,18 @@ jobs:
           marker = '            Monitor de Vídeos:\n'
           if marker not in r:
               raise SystemExit('Release body marker not found')
-          r = r.replace(marker, marker +
+          r = r.replace(
+              marker,
+              marker +
               '            - Globoplay passa a entrar na página de cada telejornal e varrer a aba Trechos (/cenas/);\n'
               '            - os títulos dos cards são cruzados localmente com Termos e Demandas antes de abrir o vídeo;\n'
-              '            - falha no enriquecimento de um /v/<id> não descarta um card de Trechos já válido;\n', 1)
-          r = r.replace('instalação direta sobre v3.0.0 preservando dados e configurações.',
-                        'instalação direta sobre v3.0.1 preservando dados e configurações.')
+              '            - falha no enriquecimento de um /v/<id> não descarta um card de Trechos já válido;\n',
+              1
+          )
+          r = r.replace(
+              'instalação direta sobre v3.0.0 preservando dados e configurações.',
+              'instalação direta sobre v3.0.1 preservando dados e configurações.'
+          )
           release.write_text(r)
           PY
 

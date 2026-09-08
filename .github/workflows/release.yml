@@ -86,51 +86,42 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v4.0.3 release asset
+      - name: Prepare v4.0.4 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.0.3.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.0.4.apk
 
-      - name: Point v4.0.3 tag to validated main commit
+      - name: Point v4.0.4 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v4.0.3 "$GITHUB_SHA"
-          git push --force origin refs/tags/v4.0.3
+          git tag -f v4.0.4 "$GITHUB_SHA"
+          git push --force origin refs/tags/v4.0.4
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.0.3
+          tag_name: v4.0.4
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v4.0.3
+          name: Monitor de Notícias Android v4.0.4
           body: |
-            Monitor de Notícias Android v4.0.3 — novas fontes especializadas em Defesa, Marinha e setor marítimo.
+            Monitor de Notícias Android v4.0.4 — copiar link direto de notícias e vídeos.
 
-            Mídia especializada:
-            - Defesa em Foco;
-            - Defesa Aérea & Naval;
-            - DefesaNet;
-            - Tecnologia & Defesa (Tecnodefesa);
-            - Zona Militar;
-            - Click Petróleo e Gás;
-            - Poder Naval;
-            - Agência Marinha de Notícias;
-            - Revista Sociedade Militar.
-
-            Busca:
-            - as fontes especializadas passam a integrar o catálogo de Notícias;
-            - participam da descoberta via Google Notícias;
-            - quando a rota pública é utilizável, também são varridas diretamente e os Termos/Demandas são cruzados localmente;
-            - deduplicação e regra NOVO baseada no histórico da v4.0.2 permanecem ativas.
+            Interface:
+            - cada matéria possui botão Copiar link;
+            - cada vídeo possui botão Copiar link;
+            - o link é enviado para a área de transferência do Android;
+            - o app confirma a ação com a mensagem “Link copiado”;
+            - os botões Abrir e WhatsApp permanecem disponíveis nas notícias;
+            - o botão Abrir vídeo permanece disponível nos vídeos.
 
             Compatibilidade:
-            - versionCode 403 / versionName 4.0.3;
+            - versionCode 404 / versionName 4.0.4;
             - mesmo applicationId br.com.monitordenoticias.android;
             - mesma assinatura permanente validada pelo certificado SHA-256 esperado;
-            - atualização direta sobre v4.0.2 preservando banco, notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
-          files: monitor-de-noticias-v4.0.3.apk
+            - atualização direta sobre v4.0.3 preservando banco, notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
+          files: monitor-de-noticias-v4.0.4.apk
           overwrite_files: true
           make_latest: true

@@ -23,6 +23,7 @@ on:
 permissions:
   contents: read
 
+# O próprio runner instala o Gradle porque o projeto Android original não possui wrapper versionado.
 jobs:
   portable:
     runs-on: windows-latest

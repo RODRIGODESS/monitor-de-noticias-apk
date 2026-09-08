@@ -111,7 +111,8 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(
             busy = true,
             status = "Buscando vídeos das últimas 24h...",
-            searchProgress = LiveSearchProgress(active = true, kind = "Vídeos", startedAt = started)
+            searchProgress = LiveSearchProgress(active = true, kind = "Vídeos", startedAt = started),
+            unstableSources = emptyList()
         )
         viewModelScope.launch {
             val result = repo.searchProgressive(selected) { update -> publishVideoUpdate(update, false) }
@@ -121,7 +122,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             prefs.edit().putLong(KEY_LAST_MANUAL, finished).apply()
             val stats = currentStats()
             val status = when {
-                result.errors > 0 && result.foundCount == 0 -> "⚠ Busca concluída sem vídeos diretos • ${result.errors} consulta(s) falharam"
+                result.errors > 0 && result.foundCount == 0 -> "⚠ Busca concluída sem vídeos diretos • ${result.errors} fonte(s) instável(is)"
                 result.newCount > 0 -> "✓ ${result.newCount} novo(s) vídeo(s) • ${result.foundCount} encontrado(s)"
                 result.foundCount > 0 -> "✓ Busca concluída • ${result.foundCount} vídeo(s) encontrado(s)"
                 else -> "✓ Busca concluída • nenhum vídeo para os Termos/Demandas"
@@ -133,7 +134,8 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
                 lastManualAt = finished,
                 totalStored = stats.first,
                 capturedToday = stats.second,
-                searchProgress = _state.value.searchProgress.copy(active = false, finishedAt = finished)
+                searchProgress = _state.value.searchProgress.copy(active = false, finishedAt = finished),
+                unstableSources = result.unstableSources
             )
         }
     }
@@ -162,7 +164,8 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             items = emptyList(),
             busy = true,
             status = "Pesquisando vídeos no período em tempo real...",
-            searchProgress = LiveSearchProgress(active = true, kind = "Vídeos • Período", startedAt = started)
+            searchProgress = LiveSearchProgress(active = true, kind = "Vídeos • Período", startedAt = started),
+            unstableSources = emptyList()
         )
         viewModelScope.launch {
             val result = repo.searchPeriodProgressive(selected, from, to) { update -> publishVideoUpdate(update, true) }
@@ -174,7 +177,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
             val finished = System.currentTimeMillis()
             val stats = currentStats()
             val status = when {
-                result.errors > 0 && periodItems.isEmpty() -> "⚠ Pesquisa do período concluída sem vídeos • ${result.errors} consulta(s) falharam"
+                result.errors > 0 && periodItems.isEmpty() -> "⚠ Pesquisa do período concluída sem vídeos • ${result.errors} fonte(s) instável(is)"
                 periodItems.isNotEmpty() -> "✓ Período: ${periodItems.size} vídeo(s) relacionado(s) aos Termos/Demandas"
                 else -> "✓ Período pesquisado • nenhum vídeo relacionado encontrado"
             }
@@ -185,7 +188,8 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
                 lastManualAt = finished,
                 totalStored = stats.first,
                 capturedToday = stats.second,
-                searchProgress = _state.value.searchProgress.copy(active = false, finishedAt = finished)
+                searchProgress = _state.value.searchProgress.copy(active = false, finishedAt = finished),
+                unstableSources = result.unstableSources
             )
         }
     }

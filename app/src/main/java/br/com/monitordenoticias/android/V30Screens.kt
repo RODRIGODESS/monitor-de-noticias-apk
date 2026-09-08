@@ -7,6 +7,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -158,6 +159,7 @@ fun V30Home(
 fun V30Videos(s: VideoState, vm: VideoViewModel, openSources: () -> Unit) {
     var showPeriod by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
+    var showUnstable by remember { mutableStateOf(false) }
     val from = v30ParseDateTime(s.periodStartDate, s.periodStartTime)
     val to = v30ParseDateTime(s.periodEndDate, s.periodEndTime)
     val validPeriod = from != null && to != null && from < to
@@ -213,6 +215,21 @@ fun V30Videos(s: VideoState, vm: VideoViewModel, openSources: () -> Unit) {
                         Spacer(Modifier.height(8.dp))
                         Text("Os cards entram nesta tela assim que cada vídeo é validado, sem esperar o fim da varredura.", color = V30Text2, fontSize = 10.5.sp)
                     }
+                }
+            }
+        }
+
+        if (!s.busy && s.unstableSources.isNotEmpty()) {
+            item {
+                OutlinedButton(
+                    onClick = { showUnstable = true },
+                    modifier = Modifier.fillMaxWidth().height(42.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = V30Amber),
+                    border = BorderStroke(1.dp, V30Amber.copy(alpha = .38f))
+                ) {
+                    Icon(Icons.Outlined.ErrorOutline, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Text("Ver fontes instáveis (${s.unstableSources.size})")
                 }
             }
         }
@@ -293,6 +310,45 @@ fun V30Videos(s: VideoState, vm: VideoViewModel, openSources: () -> Unit) {
             text = { Text("Isso apaga o histórico de vídeos detectados. Termos, Demandas e fontes selecionadas serão mantidos.") },
             confirmButton = { TextButton(onClick = { confirmClear = false; vm.clearHistory() }) { Text("Limpar", color = V30Red) } },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancelar") } },
+            containerColor = V30Surface2
+        )
+    }
+
+    if (showUnstable) {
+        AlertDialog(
+            onDismissRequest = { showUnstable = false },
+            icon = { Icon(Icons.Outlined.ErrorOutline, null, tint = V30Amber) },
+            title = { Text("Fontes instáveis (${s.unstableSources.size})") },
+            text = {
+                Column(
+                    Modifier.heightIn(max = 430.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "Uma fonte entra aqui quando não conseguiu completar sua rota principal. O número de falhas e a etapa ajudam a identificar URLs fora do ar, bloqueios e timeouts.",
+                        color = V30Text2,
+                        fontSize = 10.8.sp
+                    )
+                    s.unstableSources.forEach { issue ->
+                        Surface(
+                            color = V30Amber.copy(alpha = .07f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, V30Amber.copy(alpha = .18f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(Modifier.padding(9.dp)) {
+                                Text(issue.sourceName, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "${issue.failureCount} falha(s) • ${issue.stage}",
+                                    color = V30Text2,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showUnstable = false }) { Text("Fechar") } },
             containerColor = V30Surface2
         )
     }
@@ -566,12 +622,13 @@ private fun V30VideoCard(item: VideoItem) {
                 }
                 OutlinedButton(
                     onClick = { v30ShareWhatsApp(context, item.title, item.link) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = V30Mint)
                 ) {
                     Icon(Icons.Outlined.Share, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("WhatsApp")
+                    Text("WhatsApp", maxLines = 1, fontSize = 10.8.sp)
                 }
             }
         }
@@ -603,11 +660,12 @@ private fun V30NewsCard(n: News) {
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 OutlinedButton(
                     onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(n.link))) } },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {
                     Icon(Icons.Outlined.OpenInNew, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Abrir notícia")
+                    Text("Abrir notícia", maxLines = 1, fontSize = 10.8.sp)
                 }
                 OutlinedButton(
                     onClick = { v30ShareWhatsApp(context, n.title, n.link) },

@@ -17,6 +17,7 @@ class VideoRepository(
 ) {
     private val globoplayTrechosCollector = GloboplayTrechosCollector()
     private val globoplayEditionCollector = GloboplayEditionCollector()
+    private val globoplayJarvisCollector = GloboplayJarvisCollector()
 
     private data class QuerySpec(
         val query: String,
@@ -64,11 +65,18 @@ class VideoRepository(
             val collected = linkedMapOf<String, VideoItem>()
             val newKeys = linkedSetOf<String>()
             val unstableSourceIds = linkedSetOf<String>()
+            val unstableDetails = linkedMapOf<String, VideoSourceIssue>()
             var errors = 0
             var completed = 0
 
-            fun markUnstable(source: VideoSource) {
+            fun markUnstable(source: VideoSource, failureCount: Int, stage: String) {
                 unstableSourceIds += source.id
+                unstableDetails[source.id] = VideoSourceIssue(
+                    sourceId = source.id,
+                    sourceName = source.name,
+                    failureCount = failureCount.coerceAtLeast(1),
+                    stage = stage.ifBlank { "HTTP/rede" }
+                )
                 errors = unstableSourceIds.size
             }
 
@@ -105,16 +113,61 @@ class VideoRepository(
 
             onUpdate?.invoke(VideoSearchUpdate(progress("Preparando", "")))
 
+            // JH/JN e alguns nacionais recebem os Trechos recentes apenas depois que
+            // o JavaScript do Globoplay roda. Fazemos uma busca Jarvis GLOBAL por
+            // Termo/Demanda (nunca fonte x termo) e depois distribuímos localmente
+            // os vídeos pelo nome/originProgramId do telejornal.
+            val nationalGloboplaySources = sources.filter { it.id in CORE_NATIONAL_GLOBOPLAY_IDS }
+            val jarvisQueries = buildList {
+                addAll(terms)
+                demands
+                    .filter { demand -> nationalGloboplaySources.any { source -> sourceMatchesDemand(source, demand.vehicle) } }
+                    .forEach { demand -> add(demand.subject) }
+            }.map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinctBy(::normalize)
+
+            val jarvisOutcome = if (nationalGloboplaySources.isNotEmpty() && jarvisQueries.isNotEmpty()) {
+                onUpdate?.invoke(
+                    VideoSearchUpdate(progress("Globoplay nacionais", "Jarvis • busca global de Termos/Demandas"))
+                )
+                runCatching {
+                    globoplayJarvisCollector.collect(jarvisQueries, nationalGloboplaySources, capturedAt)
+                }.getOrElse {
+                    GloboplayJarvisCollector.Outcome(emptyMap(), failedQueries = jarvisQueries.size)
+                }
+            } else {
+                GloboplayJarvisCollector.Outcome(emptyMap(), failedQueries = 0)
+            }
+
             plan.forEach { (source, specs) ->
                 val resolvedCache = mutableMapOf<String, VideoItem?>()
                 var sourceRequestFailures = 0
+                val sourceFailureStages = linkedMapOf<String, Int>()
 
-                fun sourceError() {
+                fun sourceError(stage: String = "HTTP/rede") {
                     sourceRequestFailures++
+                    sourceFailureStages[stage] = (sourceFailureStages[stage] ?: 0) + 1
+                }
+
+                fun markCurrentSourceUnstable() {
+                    val primaryStage = sourceFailureStages.maxByOrNull { it.value }?.key ?: "HTTP/rede"
+                    markUnstable(source, sourceRequestFailures, primaryStage)
                 }
 
                 val sourceScanCandidates = if (isSourceScanMode(source)) {
-                    collectRecentBySource(source, capturedAt, effectiveFrom, effectiveTo) { sourceError() }
+                    val nativeCandidates = collectRecentBySource(
+                        source,
+                        capturedAt,
+                        effectiveFrom,
+                        effectiveTo
+                    ) { stage -> sourceError(stage) }
+                    if (source.id in CORE_NATIONAL_GLOBOPLAY_IDS) {
+                        (jarvisOutcome.candidatesBySourceId[source.id].orEmpty() + nativeCandidates)
+                            .distinctBy { canonicalKey(it.link) }
+                    } else {
+                        nativeCandidates
+                    }
                 } else {
                     emptyList()
                 }
@@ -122,7 +175,7 @@ class VideoRepository(
                 // Só classificamos uma fonte de varredura como instável quando ela realmente
                 // não conseguiu entregar candidatos e houve falha de rede/HTTP.
                 if (isSourceScanMode(source) && sourceScanCandidates.isEmpty() && sourceRequestFailures > 0) {
-                    markUnstable(source)
+                    markCurrentSourceUnstable()
                 }
 
                 fun resolve(item: VideoItem): VideoItem? {
@@ -137,7 +190,7 @@ class VideoRepository(
                         .onFailure {
                             // Em Trechos, abrir a página individual é enriquecimento opcional.
                             // O card /cenas/ já fornece título e link direto válidos.
-                            if (!globoplay) sourceError()
+                            if (!globoplay) sourceError("Abrir página do vídeo")
                         }
                         .getOrNull()
                     val fallback = item.takeIf {
@@ -151,7 +204,7 @@ class VideoRepository(
                 specs.forEach specLoop@ { spec ->
                     val scanMode = isSourceScanMode(source)
                     if (!scanMode && sourceRequestFailures >= MAX_REQUEST_FAILURES_PER_SOURCE) {
-                        markUnstable(source)
+                        markCurrentSourceUnstable()
                         completed++
                         onUpdate?.invoke(
                             VideoSearchUpdate(
@@ -160,13 +213,17 @@ class VideoRepository(
                         )
                         return@specLoop
                     }
-                    val progressQuery = if (scanMode) "Vídeos recentes • cruzamento local" else spec.query
+                    val progressQuery = when {
+                        !scanMode -> spec.query
+                        source.id in CORE_NATIONAL_GLOBOPLAY_IDS -> "Edições + Trechos + Jarvis • cruzamento local"
+                        else -> "Vídeos recentes • cruzamento local"
+                    }
                     onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery)))
 
                     val rawCandidates = if (scanMode) {
                         sourceScanCandidates
                     } else {
-                        collectCandidatesForQuery(source, spec.query, capturedAt) { sourceError() }
+                        collectCandidatesForQuery(source, spec.query, capturedAt) { sourceError("Busca por termo") }
                     }
 
                     val prioritized = if (isGloboplaySource(source)) {
@@ -285,7 +342,8 @@ class VideoRepository(
                 newCount = newKeys.size,
                 relevantCount = items.size,
                 newRelevantCount = newKeys.size,
-                errors = errors
+                errors = errors,
+                unstableSources = unstableDetails.values.sortedBy { it.sourceName.lowercase() }
             )
         } finally {
             newsDb.close()
@@ -297,48 +355,62 @@ class VideoRepository(
         capturedAt: Long,
         from: Long,
         to: Long,
-        onError: () -> Unit
+        onError: (String) -> Unit
     ): List<VideoItem> {
         if (source.youtubeHandle.isNotBlank()) {
             val feed = runCatching { fetchYoutube(source, capturedAt) }
-                .onFailure { onError() }
+                .onFailure { onError("YouTube • feed/canal") }
                 .getOrDefault(emptyList())
             if (feed.isNotEmpty()) return feed.distinctBy { canonicalKey(it.link) }
 
             // Fallback somente se o feed oficial não puder ser obtido.
             return runCatching { fetchWebsite(source, capturedAt) }
-                .onFailure { onError() }
+                .onFailure { onError("YouTube • página") }
                 .getOrDefault(emptyList())
                 .distinctBy { canonicalKey(it.link) }
         }
 
         if (isGloboplaySource(source)) {
-            // Estratégia principal da v3.0.7: programa -> Edição recente -> Trechos da Edição.
-            // A aba /cenas/ depende de JavaScript em vários telejornais e fica apenas como fallback.
-            val editionTrechos = globoplayEditionCollector.collect(source, capturedAt, from, to, onError)
-            if (editionTrechos.isNotEmpty()) {
-                return editionTrechos.distinctBy { canonicalKey(it.link) }
+            // Regionais normalmente expõem Trechos dentro da própria Edição. JH/JN e
+            // outros nacionais podem expor apenas "Mais Vídeos" na Edição enquanto os
+            // Trechos reais ficam em /cenas/. Nos cinco nacionais, portanto, combinamos
+            // os dois grafos em vez de encerrar no primeiro que devolver qualquer link.
+            val editionTrechos = globoplayEditionCollector.collect(source, capturedAt, from, to) {
+                onError("Globoplay • Edições")
             }
-
-            val trechos = globoplayTrechosCollector.collect(source, capturedAt, onError)
-            if (trechos.isNotEmpty()) {
-                return trechos.distinctBy { canonicalKey(it.link) }
+            if (source.id in CORE_NATIONAL_GLOBOPLAY_IDS) {
+                val sceneTrechos = globoplayTrechosCollector.collect(source, capturedAt) {
+                    onError("Globoplay • Trechos")
+                }
+                val combined = (editionTrechos + sceneTrechos)
+                    .distinctBy { canonicalKey(it.link) }
+                if (combined.isNotEmpty()) return combined
+            } else {
+                if (editionTrechos.isNotEmpty()) {
+                    return editionTrechos.distinctBy { canonicalKey(it.link) }
+                }
+                val trechos = globoplayTrechosCollector.collect(source, capturedAt) {
+                    onError("Globoplay • Trechos")
+                }
+                if (trechos.isNotEmpty()) {
+                    return trechos.distinctBy { canonicalKey(it.link) }
+                }
             }
 
             val primary = when {
                 source.searchPrefix.isNotBlank() && source.searchUrlTemplate.isNotBlank() ->
                     runCatching { fetchSearchWebsite(source, "", capturedAt) }
-                        .onFailure { onError() }
+                        .onFailure { onError("Globoplay • busca fallback") }
                         .getOrDefault(emptyList())
 
                 !isDirectGloboplayVideoUrl(source.landingUrl) ->
                     runCatching { fetchWebsite(source, capturedAt) }
-                        .onFailure { onError() }
+                        .onFailure { onError("Globoplay • página fallback") }
                         .getOrDefault(emptyList())
 
                 source.searchUrlTemplate.isNotBlank() ->
                     runCatching { fetchSearchWebsite(source, "", capturedAt) }
-                        .onFailure { onError() }
+                        .onFailure { onError("Globoplay • busca fallback") }
                         .getOrDefault(emptyList())
 
                 else -> emptyList()
@@ -350,7 +422,7 @@ class VideoRepository(
             // como varredura: evitamos revisitar um vídeo histórico a cada execução.
             if (!isDirectGloboplayVideoUrl(source.landingUrl)) {
                 return runCatching { fetchWebsite(source, capturedAt) }
-                    .onFailure { onError() }
+                    .onFailure { onError("Globoplay • página fallback") }
                     .getOrDefault(emptyList())
                     .distinctBy { canonicalKey(it.link) }
             }
@@ -358,7 +430,7 @@ class VideoRepository(
         }
 
         return runCatching { fetchWebsite(source, capturedAt) }
-            .onFailure { onError() }
+            .onFailure { onError("Portal • página") }
             .getOrDefault(emptyList())
             .distinctBy { canonicalKey(it.link) }
     }
@@ -910,6 +982,7 @@ class VideoRepository(
         val haystack = normalize(text)
         val wanted = normalize(phrase)
         if (wanted.isBlank()) return true
+        if (matchesSeptember7Event(haystack, wanted)) return true
 
         val hayTokens = haystack.split(' ').filter { it.isNotBlank() }.toSet()
         val wantedTokens = wanted.split(' ').filter { it.isNotBlank() }
@@ -921,6 +994,17 @@ class VideoRepository(
         return meaningful.isNotEmpty() && meaningful.all { wantedToken ->
             hayTokens.any { actualToken -> tokenEquivalent(actualToken, wantedToken) }
         }
+    }
+
+    private fun matchesSeptember7Event(haystack: String, wanted: String): Boolean {
+        val wantedTokens = wanted.split(' ').filter { it.isNotBlank() }.toSet()
+        if ("7" !in wantedTokens || "setembro" !in wantedTokens) return false
+        if (wantedTokens.none { it in SEPTEMBER_7_EVENT_TOKENS }) return false
+
+        val hayTokens = haystack.split(' ').filter { it.isNotBlank() }.toSet()
+        return "7" in hayTokens &&
+            "setembro" in hayTokens &&
+            hayTokens.any { it in SEPTEMBER_7_EVENT_TOKENS }
     }
 
     private fun tokenEquivalent(actual: String, wanted: String): Boolean {
@@ -1030,6 +1114,9 @@ class VideoRepository(
             "globoplay-jornal-hoje",
             "globoplay-jornal-nacional",
             "globoplay-jornal-da-globo"
+        )
+        private val SEPTEMBER_7_EVENT_TOKENS = setOf(
+            "desfile", "desfiles", "comemoracao", "comemoracoes", "independencia"
         )
         private val STOP_WORDS = setOf("de", "do", "da", "dos", "das", "e", "em", "no", "na", "nos", "nas", "a", "o", "as", "os")
         private val GENERIC_TITLES = setOf(

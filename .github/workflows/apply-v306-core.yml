@@ -1,0 +1,105 @@
+name: Apply v3.0.6 core date fix
+
+on:
+  push:
+    branches: ["fix/v3.0.6-globoplay-date-hardening"]
+    paths: [".github/workflows/apply-v306-core.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v3.0.6-globoplay-date-hardening
+          fetch-depth: 0
+
+      - name: Apply guarded Kotlin changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected 1 occurrence, found {count}\n---needle---\n{old}")
+              p.write_text(text.replace(old, new, 1))
+
+          def replace_count(path, old, new, expected):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f"{path}: expected {expected} occurrences, found {count}: {old}")
+              p.write_text(text.replace(old, new))
+
+          collector = "app/src/main/java/br/com/monitordenoticias/android/GloboplayTrechosCollector.kt"
+          replace_once(collector, 'import java.text.Normalizer\n', 'import java.text.Normalizer\nimport java.time.Instant\n')
+          replace_once(collector, '            publishedAt: Long = capturedAt', '            publishedAt: Long = 0L')
+          replace_once(
+              collector,
+              '''        // Caminho 1: cards presentes diretamente no HTML. Os cabeçalhos da\n        // aba Trechos (ex.: "Hoje, 07/09/2026") delimitam a data dos links abaixo.\n        // Se só houver a data, usamos o fim daquele dia para evitar falso negativo\n        // na janela móvel de 24h; a página /v/<id> ainda pode substituir por horário exato.\n        var sectionPublishedAt: Long? = null\n        doc.select("h1,h2,h3,h4,a[href]").forEach { element ->\n            if (element.tagName().startsWith("h", ignoreCase = true)) {\n                sectionPublishedAt = parseSectionDateEnd(element.text())\n                return@forEach\n            }''',
+              '''        // Caminho 1: cards presentes diretamente no HTML. Os cabeçalhos da\n        // aba Trechos (ex.: "Hoje, 07/09/2026") delimitam a data dos links abaixo.\n        // Uma data sem horário representa um intervalo possível. Usamos o limite\n        // superior desse intervalo, mas nunca além do momento da captura. Assim\n        // "hoje" não vira 23:59 no futuro e um dia parcialmente dentro das últimas\n        // 24h continua elegível até a página /v/<id> fornecer um horário preciso.\n        var sectionPublishedAt: Long? = null\n        doc.select("h1,h2,h3,h4,a[href]").forEach { element ->\n            if (element.tagName().startsWith("h", ignoreCase = true)) {\n                sectionPublishedAt = parseSectionDateUpperBound(element.text(), capturedAt)\n                return@forEach\n            }'''
+          )
+          replace_once(collector, '            addCandidate(direct, rawTitle, parentText, sectionPublishedAt ?: capturedAt)', '            addCandidate(direct, rawTitle, parentText, sectionPublishedAt ?: 0L)')
+          replace_once(
+              collector,
+              '''            val embeddedSummary = nearestJsonValue(context, center, EMBEDDED_SUMMARY_REGEX, 8, 900)\n            val embeddedPublishedAt = nearestSectionDateEnd(context, center) ?: capturedAt\n            addCandidate(direct, embeddedTitle, embeddedSummary, embeddedPublishedAt)''',
+              '''            val embeddedSummary = nearestJsonValue(context, center, EMBEDDED_SUMMARY_REGEX, 8, 900)\n            val embeddedPublishedAt = nearestEmbeddedPublishedAt(context, center, capturedAt)\n                ?: nearestSectionDateUpperBound(context, center, capturedAt)\n                ?: 0L\n            addCandidate(direct, embeddedTitle, embeddedSummary, embeddedPublishedAt)'''
+          )
+          replace_once(collector, '        if (item.publishedAt != item.capturedAt) score += 8', '        if (item.publishedAt > 0L && item.publishedAt != item.capturedAt) score += 8')
+          replace_once(
+              collector,
+              '''    private fun nearestSectionDateEnd(context: String, center: Int): Long? =\n        SECTION_DATE_REGEX.findAll(context)\n            .mapNotNull { match ->\n                parseSectionDateEnd(match.value)?.let { publishedAt ->\n                    publishedAt to abs(match.range.first - center)\n                }\n            }\n            .minByOrNull { it.second }\n            ?.first\n\n    private fun parseSectionDateEnd(value: String): Long? {\n        val rawDate = SECTION_DATE_REGEX.find(value)?.groupValues?.getOrNull(1).orEmpty()\n        if (rawDate.isBlank()) return null\n        val parsed = runCatching {\n            SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).apply { isLenient = false }.parse(rawDate)\n        }.getOrNull() ?: return null\n\n        return Calendar.getInstance().apply {\n            time = parsed\n            set(Calendar.HOUR_OF_DAY, 23)\n            set(Calendar.MINUTE, 59)\n            set(Calendar.SECOND, 59)\n            set(Calendar.MILLISECOND, 999)\n        }.timeInMillis\n    }''',
+              '''    private fun nearestEmbeddedPublishedAt(\n        context: String,\n        center: Int,\n        capturedAt: Long\n    ): Long? = EMBEDDED_PUBLISHED_AT_REGEX.findAll(context)\n        .mapNotNull { match ->\n            parsePrecisePublishedAt(match.groupValues[1], capturedAt)?.let { publishedAt ->\n                publishedAt to abs(match.range.first - center)\n            }\n        }\n        .minByOrNull { it.second }\n        ?.first\n\n    private fun parsePrecisePublishedAt(value: String, capturedAt: Long): Long? {\n        val parsed = runCatching { Instant.parse(value.trim()).toEpochMilli() }.getOrNull() ?: return null\n        return parsed.takeIf { it in 1..capturedAt }\n    }\n\n    private fun nearestSectionDateUpperBound(\n        context: String,\n        center: Int,\n        capturedAt: Long\n    ): Long? = SECTION_DATE_REGEX.findAll(context)\n        .mapNotNull { match ->\n            parseSectionDateUpperBound(match.value, capturedAt)?.let { publishedAt ->\n                publishedAt to abs(match.range.first - center)\n            }\n        }\n        .minByOrNull { it.second }\n        ?.first\n\n    private fun parseSectionDateUpperBound(value: String, capturedAt: Long): Long? {\n        val rawDate = SECTION_DATE_REGEX.find(value)?.groupValues?.getOrNull(1).orEmpty()\n        if (rawDate.isBlank()) return null\n        val parsed = runCatching {\n            SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).apply { isLenient = false }.parse(rawDate)\n        }.getOrNull() ?: return null\n\n        val startOfDay = Calendar.getInstance().apply {\n            time = parsed\n            set(Calendar.HOUR_OF_DAY, 0)\n            set(Calendar.MINUTE, 0)\n            set(Calendar.SECOND, 0)\n            set(Calendar.MILLISECOND, 0)\n        }.timeInMillis\n        if (startOfDay > capturedAt) return null\n\n        val endOfDay = Calendar.getInstance().apply {\n            time = parsed\n            set(Calendar.HOUR_OF_DAY, 23)\n            set(Calendar.MINUTE, 59)\n            set(Calendar.SECOND, 59)\n            set(Calendar.MILLISECOND, 999)\n        }.timeInMillis\n        return minOf(endOfDay, capturedAt)\n    }'''
+          )
+          replace_once(
+              collector,
+              '        private val SECTION_DATE_REGEX = Regex("\\\\b(\\\\d{2}/\\\\d{2}/\\\\d{4})\\\\b")\n        private val EMBEDDED_TITLE_REGEX',
+              '        private val SECTION_DATE_REGEX = Regex("\\\\b(\\\\d{2}/\\\\d{2}/\\\\d{4})\\\\b")\n        private val EMBEDDED_PUBLISHED_AT_REGEX = Regex(\n            "\\\\\\\"(?:datePublished|uploadDate|dateCreated|publishedAt|publicationDate|publishedDate)\\\\\\\"\\\\s*:\\\\s*\\\\\\\"([^\\\\\\\"]+)\\\\\\\"",\n            RegexOption.IGNORE_CASE\n        )\n        private val EMBEDDED_TITLE_REGEX'
+          )
+
+          repo = "app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt"
+          replace_once(repo, '        val publishedAt = parsePublishedAt(doc) ?: candidate.publishedAt.takeIf { it > 0 } ?: capturedAt', '        val publishedAt = parsePublishedAt(doc, capturedAt) ?: candidate.publishedAt.takeIf { it > 0 } ?: 0L')
+          replace_once(repo, '    private fun parsePublishedAt(doc: Document): Long? {', '    private fun parsePublishedAt(doc: Document, capturedAt: Long): Long? {')
+          replace_once(
+              repo,
+              '''        values.distinct().forEach { value ->\n            runCatching { Instant.parse(value.trim()).toEpochMilli() }.getOrNull()?.let { return it }\n        }''',
+              '''        values.distinct().forEach { value ->\n            val parsed = runCatching { Instant.parse(value.trim()).toEpochMilli() }.getOrNull()\n            if (parsed != null && parsed in 1..capturedAt) return parsed\n        }'''
+          )
+          replace_count(repo, 'MonitorNoticias/3.0.5', 'MonitorNoticias/3.0.6', 2)
+
+          c = Path(collector).read_text()
+          r = Path(repo).read_text()
+          checks = {
+              'collector_today_cap': 'parseSectionDateUpperBound(element.text(), capturedAt)' in c,
+              'collector_iso': 'nearestEmbeddedPublishedAt(context, center, capturedAt)' in c,
+              'collector_unknown_zero': 'sectionPublishedAt ?: 0L' in c and 'publishedAt: Long = 0L' in c,
+              'repo_precise_guard': 'parsePublishedAt(doc, capturedAt)' in r,
+              'repo_unknown_zero': 'candidate.publishedAt.takeIf { it > 0 } ?: 0L' in r,
+              'repo_agent_306': r.count('MonitorNoticias/3.0.6') == 2,
+          }
+          for name, ok in checks.items():
+              print(f'{name}={ok}')
+          if not all(checks.values()):
+              raise SystemExit('core guards failed')
+          print('PATCH_V306_CORE_OK=true')
+          PY
+
+      - name: Commit core changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/br/com/monitordenoticias/android/GloboplayTrechosCollector.kt \
+                  app/src/main/java/br/com/monitordenoticias/android/VideoRepository.kt
+          git diff --cached --check
+          git commit -m "fix: endurecer data dos vídeos do Globoplay"
+          git push origin HEAD:fix/v3.0.6-globoplay-date-hardening

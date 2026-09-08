@@ -92,54 +92,57 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v3.0.6 release asset
+      - name: Prepare v3.0.7 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.6.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.7.apk
 
-      - name: Point v3.0.6 tag to validated main commit
+      - name: Point v3.0.7 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v3.0.6 "$GITHUB_SHA"
-          git push --force origin refs/tags/v3.0.6
+          git tag -f v3.0.7 "$GITHUB_SHA"
+          git push --force origin refs/tags/v3.0.7
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.6
+          tag_name: v3.0.7
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v3.0.6
+          name: Monitor de Notícias Android v3.0.7
           body: |
-            Monitor de Notícias Android v3.0.6 — janela móvel de 24h com datas do Globoplay endurecidas.
-
-            Monitor de Vídeos:
-            - buscas manuais normais continuam considerando somente as últimas 24 horas;
-            - buscas automáticas das 08h, 12h, 15h, 19h e 21h usam a mesma janela móvel de 24 horas;
-            - pesquisas de período continuam respeitando exatamente o intervalo escolhido pelo usuário;
-            - o status da busca manual continua deixando explícito que a janela padrão é de 24h;
-            - botão Limpar vídeos permanece visível e continua apagando somente o histórico de vídeos.
+            Monitor de Notícias Android v3.0.7 — cobertura ampliada do Globoplay e diagnóstico de fontes instáveis.
 
             Globoplay / telejornais:
-            - datas sem horário passam a representar um intervalo possível e nunca geram horário futuro;
-            - para blocos de hoje, o limite superior da data é o próprio momento da captura, evitando rejeitar vídeo atual por aparecer como 23:59;
-            - para dias anteriores, o fim do dia continua sendo usado de forma conservadora quando não existe horário preciso;
-            - links encontrados em JSON/JavaScript tentam primeiro timestamps ISO de datePublished, uploadDate, publishedAt e campos equivalentes;
-            - quando a página individual /v/<id> fornece timestamp mais preciso, ele continua tendo prioridade;
-            - vídeo sem qualquer data verificável deixa de ser promovido artificialmente para o horário da captura;
-            - timestamps futuros encontrados em metadados são descartados;
-            - rotas estáveis, sementes históricas, flexões seguras de Termos e links diretos permanecem.
+            - o caminho principal passa a ser Programa -> Edição recente -> Trechos da Edição;
+            - a aba /cenas/ permanece como fallback porque em vários programas ela depende de JavaScript e pode chegar vazia ao coletor Android;
+            - páginas de Edição /v/<id> são usadas para extrair os links diretos dos trechos exibidos naquele telejornal;
+            - somente edições que se sobrepõem à janela pesquisada são abertas;
+            - busca normal e automática continuam usando a janela móvel das últimas 24 horas;
+            - trechos cujo título já casa com Termo/Demanda entram sem uma segunda abertura da página individual, reduzindo chamadas desnecessárias;
+            - leitura profunda permanece limitada para encontrar Termos que apareçam apenas em descrição, tags ou metadados;
+            - links genéricos do Globoplay sem data verificável deixam de herdar artificialmente o horário da captura.
 
-            Notícias automáticas:
-            - permanece a sincronização da Home e do Histórico com o banco após os workers automáticos.
+            Estabilidade e desempenho:
+            - o indicador deixa de somar cada requisição HTTP fracassada e passa a mostrar quantas fontes únicas ficaram instáveis;
+            - uma mesma fonte pode falhar várias vezes internamente, mas conta apenas uma vez no indicador;
+            - fontes tradicionais que acumularem 3 falhas reais na mesma varredura entram em circuit breaker e têm as consultas restantes ignoradas;
+            - isso evita que uma fonte fora do ar gere dezenas de falhas e prolongue a busca por vários minutos.
+
+            Mantido:
+            - Termos e Demandas cruzados localmente no Globoplay e YouTube;
+            - flexões seguras como militar/militares;
+            - resultados progressivos, cronômetro e botão Limpar vídeos;
+            - agenda automática aproximadamente às 08h, 12h, 15h, 19h e 21h;
+            - pesquisas personalizadas por período.
 
             Atualização:
-            - versionCode 306 / versionName 3.0.6;
+            - versionCode 307 / versionName 3.0.7;
             - mesmo applicationId br.com.monitordenoticias.android;
             - mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v3.0.5 preservando Termos, Demandas, histórico de notícias e configurações.
-          files: monitor-de-noticias-v3.0.6.apk
+            - instalação direta sobre v3.0.6 preservando Termos, Demandas, histórico de notícias e configurações.
+          files: monitor-de-noticias-v3.0.7.apk
           overwrite_files: true
           make_latest: true

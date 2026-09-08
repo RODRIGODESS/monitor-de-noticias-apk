@@ -99,8 +99,8 @@ object VideoSourceCatalog {
             group = "Record • Balanço Geral",
             region = "Sudeste",
             state = "SP",
-            landingUrl = "https://record.r7.com/balanco-geral-sp/videos/",
-            linkHints = listOf("/balanco-geral-sp/videos/"),
+            landingUrl = "https://record.r7.com/balanco-geral/",
+            linkHints = listOf("/balanco-geral/videos/"),
             aliases = listOf("Record", "Record TV", "Balanço Geral", "Balanço Geral SP", "BG SP"),
             searchUrlTemplate = "https://www.r7.com/busca?q={query}",
             searchPrefix = "Balanço Geral SP"

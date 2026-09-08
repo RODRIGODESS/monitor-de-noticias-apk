@@ -26,6 +26,7 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
                         .putBoolean(VideoViewModel.KEY_YOUTUBE_283_MIGRATED, true)
                         .putBoolean(VideoViewModel.KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, true)
                         .putBoolean(VideoViewModel.KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, true)
+                        .putBoolean(VideoViewModel.KEY_IMPORTANT_PROGRAMS_3011_MIGRATED, true)
                         .apply()
                 }
             } else {
@@ -48,6 +49,11 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
                 if (!prefs.getBoolean(VideoViewModel.KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, false)) {
                     selected = selected + VideoSourceCatalog.globoplayRegionalSweepIds
                     editor.putBoolean(VideoViewModel.KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, true)
+                    changed = true
+                }
+                if (!prefs.getBoolean(VideoViewModel.KEY_IMPORTANT_PROGRAMS_3011_MIGRATED, false)) {
+                    selected = selected + VideoSourceCatalog.v3011ImportantSourceIds
+                    editor.putBoolean(VideoViewModel.KEY_IMPORTANT_PROGRAMS_3011_MIGRATED, true)
                     changed = true
                 }
 

@@ -298,7 +298,7 @@ class GloboplayJarvisCollector {
         private const val MAX_QUERIES_PER_SCAN = 28
         private const val MAX_DATE_ENRICHMENTS_PER_SCAN = 48
         private const val TARGET_DATE_CONTEXT_CHARS = 4_000
-        private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Mobile) MonitorNoticias/3.0.10"
+        private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Mobile) MonitorNoticias/3.0.11"
         private const val BROWSER_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36"
 
         private fun TARGET_ID_PATTERNS(videoId: String) = listOf(

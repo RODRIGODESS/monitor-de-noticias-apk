@@ -38,6 +38,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
                 .putBoolean(KEY_YOUTUBE_283_MIGRATED, true)
                 .putBoolean(KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED, true)
                 .putBoolean(KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, true)
+                .putBoolean(KEY_IMPORTANT_PROGRAMS_3011_MIGRATED, true)
                 .apply()
             return defaults
         }
@@ -59,6 +60,11 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         if (!prefs.getBoolean(KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, false)) {
             selected = selected + VideoSourceCatalog.globoplayRegionalSweepIds
             editor.putBoolean(KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED, true)
+            changed = true
+        }
+        if (!prefs.getBoolean(KEY_IMPORTANT_PROGRAMS_3011_MIGRATED, false)) {
+            selected = selected + VideoSourceCatalog.v3011ImportantSourceIds
+            editor.putBoolean(KEY_IMPORTANT_PROGRAMS_3011_MIGRATED, true)
             changed = true
         }
 
@@ -317,6 +323,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
         const val KEY_YOUTUBE_283_MIGRATED = "video_v283_youtube_sources_added"
         const val KEY_GLOBOPLAY_TELEJOURNALS_284_MIGRATED = "video_v284_globoplay_telejournals_added"
         const val KEY_GLOBOPLAY_REGIONAL_SWEEPS_285_MIGRATED = "video_v285_globoplay_regional_sweeps_added"
+        const val KEY_IMPORTANT_PROGRAMS_3011_MIGRATED = "video_v3011_important_programs_added"
         const val KEY_PERIOD_START_DATE = "video_period_start_date"
         const val KEY_PERIOD_START_TIME = "video_period_start_time"
         const val KEY_PERIOD_END_DATE = "video_period_end_date"

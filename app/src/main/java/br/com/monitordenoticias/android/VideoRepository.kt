@@ -146,6 +146,9 @@ class VideoRepository(
                 val sourceFailureStages = linkedMapOf<String, Int>()
 
                 fun sourceError(stage: String = "HTTP/rede") {
+                    val optionalGloboplayRoute = isGloboplaySource(source) &&
+                        stage in setOf("Globoplay • Edições", "Globoplay • Trechos")
+                    if (optionalGloboplayRoute) return
                     sourceRequestFailures++
                     sourceFailureStages[stage] = (sourceFailureStages[stage] ?: 0) + 1
                 }
@@ -216,6 +219,7 @@ class VideoRepository(
                     val progressQuery = when {
                         !scanMode -> spec.query
                         source.id in CORE_NATIONAL_GLOBOPLAY_IDS -> "Edições + Trechos + Jarvis • cruzamento local"
+                        isEditorialPortalScanSource(source) -> "Programas recentes • cruzamento local"
                         else -> "Vídeos recentes • cruzamento local"
                     }
                     onUpdate?.invoke(VideoSearchUpdate(progress(source.name, progressQuery)))
@@ -232,7 +236,7 @@ class VideoRepository(
                         rawCandidates
                     }
 
-                    var globoplayDeepFallbacks = 0
+                    var deepFallbacks = 0
                     prioritized.asSequence()
                         .take(resolveLimitFor(source))
                         .forEach { raw ->
@@ -241,16 +245,17 @@ class VideoRepository(
                             // não abrimos /v/<id> de novo. A leitura profunda fica reservada aos cards
                             // sem match superficial, onde o assunto pode estar só em descrição/tags.
                             val globoplay = scanMode && isGloboplaySource(source)
+                            val optimizedScan = scanMode && (globoplay || isEditorialPortalScanSource(source))
                             val shallowBody = "${raw.title} ${raw.summary}"
-                            val shallowTermMatch = globoplay && terms.any { phraseMatches(shallowBody, it) }
-                            val shallowDemandMatch = globoplay && demands.any { demand ->
+                            val shallowTermMatch = optimizedScan && terms.any { phraseMatches(shallowBody, it) }
+                            val shallowDemandMatch = optimizedScan && demands.any { demand ->
                                 sourceMatchesDemand(source, demand.vehicle) &&
                                     phraseMatches(shallowBody, demand.subject)
                             }
 
-                            if (globoplay && !shallowTermMatch && !shallowDemandMatch) {
-                                if (globoplayDeepFallbacks >= deepFallbackLimitFor(source)) return@forEach
-                                globoplayDeepFallbacks++
+                            if (optimizedScan && !shallowTermMatch && !shallowDemandMatch) {
+                                if (deepFallbacks >= deepFallbackLimitFor(source)) return@forEach
+                                deepFallbacks++
                             }
 
                             val item = if (
@@ -484,6 +489,7 @@ class VideoRepository(
         source.id == "video-globoplay-jornalismo" -> MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN
         source.id in VideoSourceCatalog.globoplayRegionalSweepIds -> MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN
         isGloboplaySource(source) -> MAX_GLOBOPLAY_ITEMS_PER_SCAN
+        isEditorialPortalScanSource(source) -> MAX_EDITORIAL_PORTAL_ITEMS_PER_SCAN
         else -> MAX_RESOLVED_PER_QUERY
     }
 
@@ -495,6 +501,7 @@ class VideoRepository(
         source.id == "video-globoplay-jornalismo" -> MAX_GLOBOPLAY_DEEP_FALLBACK_GENERAL
         source.id in VideoSourceCatalog.globoplayRegionalSweepIds -> MAX_GLOBOPLAY_DEEP_FALLBACK_GENERAL
         isGloboplaySource(source) -> MAX_GLOBOPLAY_DEEP_FALLBACK_PER_SOURCE
+        isEditorialPortalScanSource(source) -> MAX_EDITORIAL_PORTAL_DEEP_FALLBACK
         else -> 0
     }
 
@@ -809,7 +816,7 @@ class VideoRepository(
     private fun fetchYoutube(source: VideoSource, capturedAt: Long): List<VideoItem> {
         val handle = source.youtubeHandle.removePrefix("@")
         val channelPage = Jsoup.connect("https://www.youtube.com/@$handle/videos")
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.7")
+            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.11")
             .timeout(14_000)
             .get()
             .html()
@@ -820,7 +827,7 @@ class VideoRepository(
             ?: return emptyList()
 
         val feed = Jsoup.connect("https://www.youtube.com/feeds/videos.xml?channel_id=$channelId")
-            .userAgent("Mozilla/5.0 MonitorNoticias/3.0.7")
+            .userAgent("Mozilla/5.0 MonitorNoticias/3.0.11")
             .timeout(14_000)
             .parser(Parser.xmlParser())
             .get()
@@ -869,7 +876,8 @@ class VideoRepository(
 
         return when {
             isGloboplaySource(source) -> GLOBOPLAY_DIRECT_PATH_REGEX.containsMatchIn(path)
-            source.id == "video-r7-record" -> hasSpecificSuffix(path, "/videos/") || hasSpecificSuffix(path, "/video/")
+            source.id == "video-r7-record" || source.id.startsWith("video-record-") ->
+                hasSpecificSuffix(path, "/videos/") || hasSpecificSuffix(path, "/video/")
             source.id == "video-sbt-news" -> hasSpecificSuffix(path, "/videos/")
             source.id == "video-cnn-brasil" -> hasSpecificSuffix(path, "/videos/") || hasSpecificSuffix(path, "/video/")
             source.id.startsWith("video-band") -> hasSpecificSuffix(path, "/videos/")
@@ -888,8 +896,13 @@ class VideoRepository(
         return host.endsWith("globoplay.globo.com") && GLOBOPLAY_DIRECT_PATH_REGEX.containsMatchIn(uri.path.orEmpty())
     }
 
+    private fun isEditorialPortalScanSource(source: VideoSource): Boolean =
+        source.id == "video-r7-record" ||
+            source.id.startsWith("video-record-") ||
+            source.id.startsWith("video-band")
+
     private fun isSourceScanMode(source: VideoSource): Boolean =
-        isGloboplaySource(source) || source.youtubeHandle.isNotBlank()
+        isGloboplaySource(source) || source.youtubeHandle.isNotBlank() || isEditorialPortalScanSource(source)
 
     private fun hasSpecificSuffix(path: String, marker: String): Boolean {
         val index = path.indexOf(marker, ignoreCase = true)
@@ -1082,6 +1095,8 @@ class VideoRepository(
         private const val MAX_GLOBOPLAY_DEEP_FALLBACK_NATIONAL = 72
         private const val MAX_GLOBOPLAY_LINKS_DISCOVERED = 80
         private const val MAX_YOUTUBE_ITEMS_PER_SCAN = 40
+        private const val MAX_EDITORIAL_PORTAL_ITEMS_PER_SCAN = 20
+        private const val MAX_EDITORIAL_PORTAL_DEEP_FALLBACK = 4
         private const val MAX_ENRICHED_SUMMARY_LENGTH = 1800
 
         private val GLOBOPLAY_DIRECT_PATH_REGEX = Regex("/v/[0-9]+/?$", RegexOption.IGNORE_CASE)
@@ -1113,7 +1128,10 @@ class VideoRepository(
             "globoplay-hora-1",
             "globoplay-jornal-hoje",
             "globoplay-jornal-nacional",
-            "globoplay-jornal-da-globo"
+            "globoplay-jornal-da-globo",
+            "globoplay-fantastico",
+            "globoplay-globo-reporter",
+            "globoplay-profissao-reporter"
         )
         private val SEPTEMBER_7_EVENT_TOKENS = setOf(
             "desfile", "desfiles", "comemoracao", "comemoracoes", "independencia"

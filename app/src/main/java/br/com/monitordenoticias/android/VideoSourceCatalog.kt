@@ -51,6 +51,20 @@ object VideoSourceCatalog {
         )
     )
 
+    private val bandProgramsNational = listOf(
+        bandProgram("video-band-jornal-da-band", "Jornal da Band", "https://www.band.com.br/programas/jornal-da-band"),
+        bandProgram("video-band-brasil-urgente", "Brasil Urgente", "https://www.band.com.br/programas/brasil-urgente"),
+        bandProgram("video-band-bora-brasil", "Bora Brasil", "https://www.band.com.br/programas/bora-brasil")
+    )
+
+    private val recordProgramsNational = listOf(
+        recordProgram("video-record-jornal-da-record", "Jornal da Record", "https://record.r7.com/jornal-da-record/videos/", listOf("JR")),
+        recordProgram("video-record-fala-brasil", "Fala Brasil", "https://record.r7.com/fala-brasil/videos/"),
+        recordProgram("video-record-domingo-espetacular", "Domingo Espetacular", "https://record.r7.com/domingo-espetacular/exclusivo/videos/"),
+        recordProgram("video-record-balanco-geral", "Balanço Geral", "https://record.r7.com/balanco-geral/", listOf("Balanço Geral SP")),
+        recordProgram("video-record-cidade-alerta", "Cidade Alerta", "https://record.r7.com/cidade-alerta/videos/")
+    )
+
     /** Canais oficiais no YouTube monitorados como fontes independentes. */
     val youtubeOfficial = listOf(
         youtube("youtube-cnn-brasil", "CNN Brasil", "@CNNBrasil", listOf("CNN", "CNN Brasil")),
@@ -68,7 +82,10 @@ object VideoSourceCatalog {
         nationalGlobo("globoplay-hora-1", "Hora 1"),
         nationalGlobo("globoplay-jornal-hoje", "Jornal Hoje"),
         nationalGlobo("globoplay-jornal-nacional", "Jornal Nacional"),
-        nationalGlobo("globoplay-jornal-da-globo", "Jornal da Globo")
+        nationalGlobo("globoplay-jornal-da-globo", "Jornal da Globo"),
+        nationalGlobo("globoplay-fantastico", "Fantástico"),
+        nationalGlobo("globoplay-globo-reporter", "Globo Repórter"),
+        nationalGlobo("globoplay-profissao-reporter", "Profissão Repórter")
     )
 
     /**
@@ -248,7 +265,7 @@ object VideoSourceCatalog {
     )
 
     val globoplayTelejournalsRegional: List<VideoSource> = globoplayRegionalSpecific + globoplayRegionalSweeps
-    val national: List<VideoSource> = portalNational + youtubeOfficial + globoplayTelejournalsNational
+    val national: List<VideoSource> = portalNational + bandProgramsNational + recordProgramsNational + youtubeOfficial + globoplayTelejournalsNational
 
     private val bandRegional = listOf(
         VideoSource(
@@ -262,8 +279,8 @@ object VideoSourceCatalog {
             searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
         ),
         VideoSource(
-            id = "video-band-rio", name = "Band Rio", group = "Band Regional", region = "Sudeste", state = "RJ",
-            landingUrl = "https://www.band.com.br/rio-de-janeiro/videos", linkHints = listOf("/rio-de-janeiro/videos/"), aliases = listOf("Band Rio", "Band Rio de Janeiro"),
+            id = "video-band-rio", name = "Band Rio • Jornal do Rio", group = "Band Regional • Jornal do Rio", region = "Sudeste", state = "RJ",
+            landingUrl = "https://www.band.com.br/rio-de-janeiro/videos", linkHints = listOf("/rio-de-janeiro/videos/"), aliases = listOf("Band Rio", "Band Rio de Janeiro", "Jornal do Rio"),
             searchUrlTemplate = "https://www.band.com.br/busca?q={query}"
         ),
         VideoSource(
@@ -278,13 +295,30 @@ object VideoSourceCatalog {
         )
     )
 
-    val regional: List<VideoSource> = bandRegional + globoplayTelejournalsRegional
+    private val recordRegional = listOf(
+        recordRegionalProgram(
+            "video-record-balanco-geral-rj", "Balanço Geral RJ", "RJ", "Sudeste",
+            "https://record.r7.com/balanco-geral-rj/"
+        ),
+        recordRegionalProgram(
+            "video-record-cidade-alerta-rj", "Cidade Alerta RJ", "RJ", "Sudeste",
+            "https://record.r7.com/cidade-alerta-rj/videos/"
+        )
+    )
+
+    val regional: List<VideoSource> = bandRegional + recordRegional + globoplayTelejournalsRegional
     val all: List<VideoSource> = national + regional
     val byId: Map<String, VideoSource> = all.associateBy { it.id }
     val youtubeOfficialIds: Set<String> = youtubeOfficial.map { it.id }.toSet()
     val globoplayTelejournalIds: Set<String> = (globoplayTelejournalsNational + globoplayRegionalSpecific).map { it.id }.toSet()
     val globoplayRegionalSweepIds: Set<String> = globoplayRegionalSweeps.map { it.id }.toSet()
     val defaultIds: Set<String> = national.map { it.id }.toSet()
+    val v3011ImportantSourceIds: Set<String> = setOf(
+        "video-band-jornal-da-band", "video-band-brasil-urgente", "video-band-bora-brasil", "video-band-rio",
+        "video-record-jornal-da-record", "video-record-fala-brasil", "video-record-domingo-espetacular",
+        "video-record-balanco-geral", "video-record-cidade-alerta", "video-record-balanco-geral-rj", "video-record-cidade-alerta-rj",
+        "globoplay-fantastico", "globoplay-globo-reporter", "globoplay-profissao-reporter"
+    )
 
     fun selected(ids: Set<String>): List<VideoSource> = ids.mapNotNull(byId::get)
 
@@ -298,10 +332,50 @@ object VideoSourceCatalog {
         youtubeHandle = handle
     )
 
+    private fun bandProgram(id: String, program: String, landing: String): VideoSource = VideoSource(
+        id = id,
+        name = "Band • $program",
+        group = "Band • Jornalismo nacional",
+        landingUrl = landing,
+        linkHints = listOf("/videos/"),
+        aliases = listOf("Band", "Band Jornalismo", program)
+    )
+
+    private fun recordProgram(
+        id: String,
+        program: String,
+        landing: String,
+        extraAliases: List<String> = emptyList()
+    ): VideoSource = VideoSource(
+        id = id,
+        name = "Record • $program",
+        group = "Record • Jornalismo nacional",
+        landingUrl = landing,
+        linkHints = listOf("/videos/", "/video/"),
+        aliases = (listOf("Record", "Record TV", "R7", program) + extraAliases).distinct()
+    )
+
+    private fun recordRegionalProgram(
+        id: String,
+        program: String,
+        state: String,
+        region: String,
+        landing: String
+    ): VideoSource = VideoSource(
+        id = id,
+        name = "Record • $program",
+        group = "Record • Jornalismo regional",
+        region = region,
+        state = state,
+        landingUrl = landing,
+        linkHints = listOf("/videos/", "/video/"),
+        aliases = listOf("Record", "Record TV", "R7", program)
+    )
+
     private fun nationalGlobo(id: String, program: String): VideoSource = VideoSource(
         id = id,
         name = "Globoplay • $program",
-        group = "Globo / Globoplay • Telejornal nacional",
+        group = "Globo / Globoplay • Jornalismo nacional",
         landingUrl = globoplaySearch(program),
         linkHints = listOf("/v/"),
         aliases = listOf("Globo", "Globoplay", program),

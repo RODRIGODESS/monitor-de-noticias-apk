@@ -55,6 +55,20 @@ fun V30Home(
     val news24h = news.news.count { it.date >= now - 24L * 60L * 60L * 1000L }
     val videoDemands = videos.items.count { it.demand }
     val demandHits = news.demands.count { it.lastFoundCount > 0 }
+    val context = LocalContext.current
+    val prefs = context.getSharedPreferences(BackgroundMonitor.PREFS, Context.MODE_PRIVATE)
+    val autoNewsStart = prefs.getLong(AutoRunLog.KEY_NEWS_ATTEMPT_AT, 0L)
+    val autoNewsEnd = prefs.getLong(AutoRunLog.KEY_NEWS_COMPLETED_AT, 0L)
+    val manualNewsStart = news.searchProgress.startedAt
+    val manualNewsEnd = news.searchProgress.finishedAt.takeIf { it > 0L } ?: if (news.searchProgress.active) now else 0L
+    val useManualNewsWindow = manualNewsStart > autoNewsStart
+    val newNewsStart = if (useManualNewsWindow) manualNewsStart else autoNewsStart
+    val newNewsEnd = if (useManualNewsWindow) manualNewsEnd else autoNewsEnd
+    val visibleNewNews = news.news.count { v401InRun(it.capturedAt, newNewsStart, newNewsEnd) }
+    val orderedNews = news.news.sortedWith(
+        compareByDescending<News> { v401InRun(it.capturedAt, newNewsStart, newNewsEnd) }
+            .thenByDescending { it.date }
+    )
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -144,13 +158,17 @@ fun V30Home(
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Últimas notícias", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                if (visibleNewNews > 0) {
+                    V30Badge(if (visibleNewNews == 1) "1 NOVA" else "$visibleNewNews NOVAS", V30Mint)
+                    Spacer(Modifier.width(6.dp))
+                }
                 if (news.busy) Text("atualizando...", color = V30Mint, fontSize = 10.5.sp)
             }
         }
         if (news.news.isEmpty()) {
             item { V30Empty("Nenhuma notícia no escopo atual", "Faça uma busca ou ajuste suas fontes.") }
         } else {
-            items(news.news.take(40), key = { it.link }) { V30NewsCard(it) }
+            items(orderedNews.take(40), key = { it.link }) { V30NewsCard(it, newNewsStart, newNewsEnd) }
         }
     }
 }
@@ -163,11 +181,25 @@ fun V30Videos(s: VideoState, vm: VideoViewModel, openSources: () -> Unit) {
     val from = v30ParseDateTime(s.periodStartDate, s.periodStartTime)
     val to = v30ParseDateTime(s.periodEndDate, s.periodEndTime)
     val validPeriod = from != null && to != null && from < to
+    val context = LocalContext.current
+    val prefs = context.getSharedPreferences(BackgroundMonitor.PREFS, Context.MODE_PRIVATE)
+    val autoVideoStart = prefs.getLong(VideoAutoRunLog.KEY_ATTEMPT_AT, 0L)
+    val autoVideoEnd = prefs.getLong(VideoAutoRunLog.KEY_COMPLETED_AT, 0L)
+    val manualVideoStart = s.searchProgress.startedAt
+    val manualVideoEnd = s.searchProgress.finishedAt.takeIf { it > 0L } ?: if (s.searchProgress.active) System.currentTimeMillis() else 0L
+    val useManualVideoWindow = manualVideoStart > autoVideoStart
+    val newVideoStart = if (useManualVideoWindow) manualVideoStart else autoVideoStart
+    val newVideoEnd = if (useManualVideoWindow) manualVideoEnd else autoVideoEnd
     val shown = when (s.filter) {
         VideoFilter.ALL -> s.items
         VideoFilter.RELEVANT -> s.items.filter { it.relevant }
         VideoFilter.DEMANDS -> s.items.filter { it.demand }
     }
+    val visibleNewVideos = shown.count { v401InRun(it.capturedAt, newVideoStart, newVideoEnd) }
+    val orderedShown = shown.sortedWith(
+        compareByDescending<VideoItem> { v401InRun(it.capturedAt, newVideoStart, newVideoEnd) }
+            .thenByDescending { it.publishedAt }
+    )
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -292,13 +324,17 @@ fun V30Videos(s: VideoState, vm: VideoViewModel, openSources: () -> Unit) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Vídeos encontrados", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                if (visibleNewVideos > 0) {
+                    V30Badge(if (visibleNewVideos == 1) "1 NOVO" else "$visibleNewVideos NOVOS", V30Mint)
+                    Spacer(Modifier.width(6.dp))
+                }
                 Text("${shown.size}", color = if (s.busy) V30Mint else V30Text2, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
         if (shown.isEmpty()) {
             item { V30Empty("Nenhum vídeo encontrado", "Use Buscar agora ou selecione as fontes desejadas na aba Fontes.") }
         } else {
-            items(shown, key = { it.link }) { V30VideoCard(it) }
+            items(orderedShown, key = { it.link }) { V30VideoCard(it, newVideoStart, newVideoEnd) }
         }
     }
 
@@ -586,8 +622,9 @@ private fun V30SourceCard(title: String, subtitle: String, selected: Boolean, on
 }
 
 @Composable
-private fun V30VideoCard(item: VideoItem) {
+private fun V30VideoCard(item: VideoItem, newStart: Long, newEnd: Long) {
     val context = LocalContext.current
+    val isNew = v401InRun(item.capturedAt, newStart, newEnd)
     val open = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.link))) }; Unit }
     Surface(color = V30Surface, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, V30Divider), modifier = Modifier.fillMaxWidth().clickable(onClick = open)) {
         Column(Modifier.padding(14.dp)) {
@@ -597,6 +634,10 @@ private fun V30VideoCard(item: VideoItem) {
                 Column(Modifier.weight(1f)) {
                     Text(item.sourceName, color = V30Purple, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(v30DateTime(item.publishedAt), color = V30Text2, fontSize = 10.5.sp)
+                }
+                if (isNew) {
+                    V30Badge("NOVO", V30Mint)
+                    Spacer(Modifier.width(6.dp))
                 }
                 Text("Link direto", color = V30Mint, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
             }
@@ -636,14 +677,19 @@ private fun V30VideoCard(item: VideoItem) {
 }
 
 @Composable
-private fun V30NewsCard(n: News) {
+private fun V30NewsCard(n: News, newStart: Long, newEnd: Long) {
     val context = LocalContext.current
+    val isNew = v401InRun(n.capturedAt, newStart, newEnd)
     Surface(color = V30Surface, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, V30Divider), modifier = Modifier.fillMaxWidth().clickable {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(n.link))) }
     }) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(n.source, color = V30Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (isNew) {
+                    V30Badge("NOVO", V30Mint)
+                    Spacer(Modifier.width(6.dp))
+                }
                 Text(v30DateTime(n.date), color = V30Text2, fontSize = 10.5.sp)
             }
             Spacer(Modifier.height(7.dp))
@@ -750,6 +796,12 @@ private fun V30Empty(title: String, subtitle: String) {
     Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(Icons.Outlined.SearchOff, null, tint = V30Accent, modifier = Modifier.size(28.dp)); Spacer(Modifier.height(8.dp)); Text(title, fontWeight = FontWeight.Bold); Text(subtitle, color = V30Text2, fontSize = 11.sp)
     }
+}
+
+private fun v401InRun(capturedAt: Long, startedAt: Long, completedAt: Long): Boolean {
+    if (capturedAt <= 0L || startedAt <= 0L) return false
+    val safeEnd = completedAt.takeIf { it >= startedAt } ?: return false
+    return capturedAt in startedAt..(safeEnd + 5_000L)
 }
 
 private fun v30DateTime(ms: Long): String = if (ms <= 0) "—" else SimpleDateFormat("dd/MM HH:mm", Locale("pt", "BR")).format(Date(ms))

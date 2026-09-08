@@ -46,6 +46,18 @@ object SourceCatalog {
         national("nacional-metropoles", "Metrópoles", "Metropoles")
     )
 
+    val specialized = listOf(
+        specialized("especializada-defesa-em-foco", "Defesa em Foco", "DefesaEmFoco", "defesaemfoco.com.br"),
+        specialized("especializada-defesa-aerea-naval", "Defesa Aérea & Naval", "Defesa Aerea e Naval", "Defesa Aérea Naval", "defesaaereanaval.com.br"),
+        specialized("especializada-defesanet", "DefesaNet", "Defesa Net", "defesanet.com.br"),
+        specialized("especializada-tecnodefesa", "Tecnologia & Defesa", "Tecnodefesa", "Tecnologia e Defesa", "tecnodefesa.com.br"),
+        specialized("especializada-zona-militar", "Zona Militar", "Zona-Militar", "zona-militar.com"),
+        specialized("especializada-click-petroleo-gas", "Click Petróleo e Gás", "Click Petroleo e Gas", "CPG", "clickpetroleoegas.com.br"),
+        specialized("especializada-poder-naval", "Poder Naval", "Naval.com.br", "naval.com.br"),
+        specialized("especializada-agencia-marinha", "Agência Marinha de Notícias", "Agencia Marinha de Noticias", "Agência Marinha", "agencia.marinha.mil.br"),
+        specialized("especializada-sociedade-militar", "Revista Sociedade Militar", "Sociedade Militar", "RSM", "sociedademilitar.com.br")
+    )
+
     val byState = listOf(
         // Norte
         state("AC", "Acre", "Norte", "ac24horas", "ac24horas"),
@@ -188,7 +200,7 @@ object SourceCatalog {
         state("RS", "Rio Grande do Sul", "Sul", "Sul21")
     )
 
-    val all: List<MediaSource> = (national + byState).distinctBy { it.id }
+    val all: List<MediaSource> = (national + specialized + byState).distinctBy { it.id }
     val byId: Map<String, MediaSource> = all.associateBy { it.id }
 
     fun selected(ids: Set<String>): List<MediaSource> = ids.mapNotNull(byId::get)
@@ -200,6 +212,16 @@ object SourceCatalog {
         state = "BR",
         stateName = "Brasil",
         group = "Jornais nacionais",
+        aliases = aliases.toList()
+    )
+
+    private fun specialized(id: String, name: String, vararg aliases: String) = MediaSource(
+        id = id,
+        name = name,
+        region = NATIONAL_REGION,
+        state = "BR",
+        stateName = "Brasil",
+        group = "Mídia especializada",
         aliases = aliases.toList()
     )
 

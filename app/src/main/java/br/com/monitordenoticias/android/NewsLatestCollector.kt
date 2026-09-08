@@ -26,7 +26,7 @@ class NewsLatestCollector {
     )
 
     fun supportedSources(selectedSources: List<MediaSource>, searchAllSources: Boolean): List<MediaSource> {
-        val scope = if (searchAllSources) SourceCatalog.national else selectedSources
+        val scope = if (searchAllSources) SourceCatalog.national + SourceCatalog.specialized else selectedSources
         return scope.filter { ROUTES.containsKey(it.id) }.distinctBy { it.id }
     }
 
@@ -217,7 +217,16 @@ class NewsLatestCollector {
             "nacional-folha" to Route("https://www1.folha.uol.com.br/ultimas-noticias/", setOf("folha.uol.com.br")),
             "nacional-r7" to Route("https://noticias.r7.com/", setOf("r7.com")),
             "nacional-jovem-pan" to Route("https://jovempan.com.br/noticias/", setOf("jovempan.com.br")),
-            "nacional-o-globo" to Route("https://oglobo.globo.com/ultimas-noticias/", setOf("oglobo.globo.com"))
+            "nacional-o-globo" to Route("https://oglobo.globo.com/ultimas-noticias/", setOf("oglobo.globo.com")),
+            "especializada-defesa-em-foco" to Route("https://www.defesaemfoco.com.br/", setOf("defesaemfoco.com.br")),
+            "especializada-defesa-aerea-naval" to Route("https://www.defesaaereanaval.com.br/", setOf("defesaaereanaval.com.br")),
+            "especializada-defesanet" to Route("https://www.defesanet.com.br/categoria/defesa/", setOf("defesanet.com.br")),
+            "especializada-tecnodefesa" to Route("https://tecnodefesa.com.br/", setOf("tecnodefesa.com.br")),
+            "especializada-zona-militar" to Route("https://www.zona-militar.com/pt/", setOf("zona-militar.com")),
+            "especializada-click-petroleo-gas" to Route("https://clickpetroleoegas.com.br/", setOf("clickpetroleoegas.com.br")),
+            "especializada-poder-naval" to Route("https://www.naval.com.br/", setOf("naval.com.br")),
+            "especializada-agencia-marinha" to Route("https://www.agencia.marinha.mil.br/portal", setOf("agencia.marinha.mil.br")),
+            "especializada-sociedade-militar" to Route("https://www.sociedademilitar.com.br/", setOf("sociedademilitar.com.br"))
         )
 
         private val DATE_PUBLISHED_REGEX = Regex("\\\"datePublished\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"", RegexOption.IGNORE_CASE)

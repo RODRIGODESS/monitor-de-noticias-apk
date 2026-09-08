@@ -92,54 +92,53 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v3.0.1 release asset
+      - name: Prepare v3.0.2 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.1.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.2.apk
 
-      - name: Point v3.0.1 tag to validated main commit
+      - name: Point v3.0.2 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v3.0.1 "$GITHUB_SHA"
-          git push --force origin refs/tags/v3.0.1
+          git tag -f v3.0.2 "$GITHUB_SHA"
+          git push --force origin refs/tags/v3.0.2
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.1
+          tag_name: v3.0.2
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v3.0.1
+          name: Monitor de Notícias Android v3.0.2
           body: |
-            Monitor de Notícias Android v3.0.1 — Demandas silenciosas sem achados e varredura de Vídeos otimizada.
+            Monitor de Notícias Android v3.0.2 — Trechos do Globoplay e varredura de Vídeos otimizada.
 
-            Demandas na tela inicial:
-            - o card deixa de mostrar apenas a quantidade de Demandas cadastradas;
-            - passa a destacar somente Demandas que realmente tiveram resultado na última verificação;
-            - quando nenhuma Demanda é encontrada, a tela inicial não exibe mais uma faixa de sucesso só porque as Demandas foram verificadas;
-            - falhas continuam sendo exibidas e resultados encontrados continuam sendo destacados.
+            Globoplay / telejornais:
+            - cada telejornal nacional ou regional tenta descobrir sua página real de programa no Globoplay;
+            - a coleta principal passa pela aba Trechos (/cenas/), capturando títulos e links diretos /v/<id>;
+            - os títulos dos cards são cruzados localmente com todos os Termos e Demandas antes de abrir o vídeo individual;
+            - a página /v/<id> continua sendo usada para enriquecer descrição, tags, keywords e metadados quando necessário;
+            - uma falha no enriquecimento não descarta um card de Trechos que já tenha título e link direto válidos;
+            - a busca geral do Globoplay permanece como fallback para programas cuja página de Trechos não puder ser descoberta.
 
             Monitor de Vídeos:
-            - Globoplay/telejornais e canais oficiais do YouTube passam a fazer uma coleta recente por fonte;
-            - todos os Termos e Demandas são cruzados localmente depois da coleta, reduzindo drasticamente o número de requisições;
-            - evita o cenário de milhares de consultas geradas pela combinação fonte x termo;
-            - o Globoplay descobre links diretos também dentro de JSON/scripts e analisa título, descrição, tags, keywords e metadados estruturados;
-            - o YouTube usa o feed oficial de cada canal e cruza título/descrição localmente;
-            - mantém resultados progressivos, links diretos, deduplicação e palavra inteira para siglas.
+            - canais oficiais do YouTube continuam usando feed por canal e cruzamento local;
+            - Globoplay e YouTube continuam evitando consultas fonte x termo;
+            - resultados continuam aparecendo progressivamente enquanto a varredura prossegue;
+            - links diretos, deduplicação, cronômetro e barra de progresso são preservados.
 
-            Agenda automática de vídeos:
-            - horários-alvo: 08h, 12h, 15h, 19h e 21h no horário local do aparelho;
-            - a busca manual continua disponível a qualquer momento;
-            - Android/Doze pode atrasar alguns minutos uma execução em segundo plano;
-            - a agenda horária antiga é removida automaticamente ao atualizar;
-            - mudanças de hora/fuso do aparelho recalculam o próximo horário.
+            Demandas e agenda:
+            - o card de Demandas continua destacando somente Demandas que realmente encontraram resultado;
+            - horários automáticos de vídeos permanecem em aproximadamente 08h, 12h, 15h, 19h e 21h no horário local do aparelho;
+            - busca manual permanece disponível;
+            - Android/Doze pode atrasar alguns minutos execuções em segundo plano.
 
             Atualização:
-            - versionCode 301 / versionName 3.0.1;
+            - versionCode 302 / versionName 3.0.2;
             - mesmo applicationId e mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v3.0.0 preservando dados e configurações.
-          files: monitor-de-noticias-v3.0.1.apk
+            - instalação direta sobre v3.0.1 preservando Termos, Demandas, histórico e configurações.
+          files: monitor-de-noticias-v3.0.2.apk
           overwrite_files: true
           make_latest: true

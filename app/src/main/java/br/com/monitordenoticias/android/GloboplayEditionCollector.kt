@@ -99,9 +99,7 @@ class GloboplayEditionCollector {
     }
 
     private fun fetchDocumentOrNull(url: String, onError: () -> Unit): Document? =
-        runCatching { fetchDocument(url) }
-            .onFailure { onError() }
-            .getOrNull()
+        runCatching { fetchDocument(url) }.getOrNull()
 
     private fun fetchDocument(url: String): Document = Jsoup.connect(url)
         .userAgent(USER_AGENT)

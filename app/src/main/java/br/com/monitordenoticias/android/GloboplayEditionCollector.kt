@@ -220,8 +220,6 @@ class GloboplayEditionCollector {
             val absolute = anchor.absUrl("href").ifBlank { resolveUrl(edition.url, anchor.attr("href")) }
             val direct = normalizeDirectVideoUrl(absolute) ?: return@forEach
             val context = nearbyText(anchor)
-            if (looksLikeEdition(context)) return@forEach
-
             val title = bestAnchorTitle(anchor, context)
             addCandidate(direct, title, context.removePrefix(title).trim())
         }
@@ -234,8 +232,6 @@ class GloboplayEditionCollector {
             val start = (match.range.first - EMBEDDED_CONTEXT_WINDOW).coerceAtLeast(0)
             val end = (match.range.last + 1 + EMBEDDED_CONTEXT_WINDOW).coerceAtMost(html.length)
             val context = html.substring(start, end)
-            if (looksLikeEdition(context) && DATE_REGEX.containsMatchIn(context)) return@forEach
-
             val center = match.range.first - start
             val title = nearestJsonValue(context, center, EMBEDDED_TITLE_REGEX, 6, 260)
             val summary = nearestJsonValue(context, center, EMBEDDED_SUMMARY_REGEX, 8, 900)
@@ -360,6 +356,8 @@ class GloboplayEditionCollector {
 
     private fun looksLikeEdition(value: String): Boolean {
         val n = normalize(value)
+        val hasDate = DATE_REGEX.containsMatchIn(value)
+        if (!hasDate) return false
         return n.contains("edicao") || n.contains("integra") || n.contains("programa de hoje")
     }
 

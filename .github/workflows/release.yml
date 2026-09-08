@@ -19,33 +19,27 @@ jobs:
         with:
           ref: codex/v4.0.1-new-badges-count-sync
 
-      - name: Apply guarded v4.0.1 implementation patch
+      - name: Apply v4.0.1 settings helper fix
         if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
-        run: python3 tools/patch_v401.py
+        run: python3 tools/fix_v401_helper.py
 
-      - name: Verify v4.0.1 implementation patch
+      - name: Verify v4.0.1 final code
         if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
         run: |
           set -euo pipefail
           grep -q 'versionCode = 401' app/build.gradle.kts
           grep -q 'versionName = "4.0.1"' app/build.gradle.kts
           grep -q 'V30Badge("NOVO", V30Mint)' app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
-          grep -q 'newsNewVisible = s.news.count' app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt
-          ! grep -A18 'val update = ContentValues' app/src/main/java/br/com/monitordenoticias/android/NewsDb.kt | grep -q 'put("captured_at"'
-          ! grep -A18 'val update = ContentValues' app/src/main/java/br/com/monitordenoticias/android/VideoDb.kt | grep -q 'put("captured_at"'
+          grep -q 'v401SettingsInRun' app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt
           git diff --check
 
-      - name: Commit v4.0.1 implementation
+      - name: Commit v4.0.1 helper fix
         if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/build.gradle.kts \
-                  app/src/main/java/br/com/monitordenoticias/android/NewsDb.kt \
-                  app/src/main/java/br/com/monitordenoticias/android/VideoDb.kt \
-                  app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt \
-                  app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt
-          git commit -m "fix: sync new counts and mark new items"
+          git add app/src/main/java/br/com/monitordenoticias/android/MainActivityV28.kt
+          git commit -m "fix: share new-item window safely in settings"
           git push origin HEAD:codex/v4.0.1-new-badges-count-sync
 
       - name: Set up Java 17
@@ -111,26 +105,3 @@ jobs:
           KEYSTORE_CERT=$(keytool -list -v -keystore "$KEYSTORE" -alias monitor-noticias -storepass "$ANDROID_SIGNING_PASSWORD" 2>/dev/null | awk -F': ' '/SHA256:/{gsub(":","",$2); gsub(/[[:space:]]/,"",$2); print tolower($2); exit}')
           test "$KEYSTORE_CERT" = "$EXPECTED_CERT"
           test "$FINAL_CERT" = "$EXPECTED_CERT"
-
-      - name: Prepare v4.0 release asset
-        if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.0.apk
-
-      - name: Point v4.0 tag to validated main commit
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v4.0 "$GITHUB_SHA"
-          git push --force origin refs/tags/v4.0
-
-      - name: Publish GitHub Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v4.0
-          target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v4.0
-          files: monitor-de-noticias-v4.0.apk
-          overwrite_files: true
-          make_latest: true

@@ -402,9 +402,11 @@ class VideoRepository(
         fallbackSummary: String
     ): List<VideoItem> {
         val doc = Jsoup.connect(pageUrl)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.3")
+            .userAgent(BROWSER_USER_AGENT)
+            .header("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.7")
             .referrer("https://www.google.com/")
             .timeout(14_000)
+            .maxBodySize(MAX_HTML_BODY_BYTES)
             .followRedirects(true)
             .get()
 
@@ -479,9 +481,11 @@ class VideoRepository(
         if (!isSpecificVideoUrl(source, candidate.link)) return null
 
         val doc = Jsoup.connect(candidate.link)
-            .userAgent("Mozilla/5.0 (Linux; Android 14) MonitorNoticias/3.0.3")
+            .userAgent(BROWSER_USER_AGENT)
+            .header("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.7")
             .referrer(source.landingUrl)
             .timeout(14_000)
+            .maxBodySize(MAX_HTML_BODY_BYTES)
             .followRedirects(true)
             .get()
 
@@ -854,11 +858,40 @@ class VideoRepository(
         val hayTokens = haystack.split(' ').filter { it.isNotBlank() }.toSet()
         val wantedTokens = wanted.split(' ').filter { it.isNotBlank() }
         if (wantedTokens.isEmpty()) return false
-        if (wantedTokens.size == 1) return wantedTokens.first() in hayTokens
+        if (wantedTokens.size == 1) return hayTokens.any { tokenEquivalent(it, wantedTokens.first()) }
         if (" $haystack ".contains(" $wanted ")) return true
 
         val meaningful = wantedTokens.filter { it.length >= 3 && it !in STOP_WORDS }
-        return meaningful.isNotEmpty() && meaningful.all { it in hayTokens }
+        return meaningful.isNotEmpty() && meaningful.all { wantedToken ->
+            hayTokens.any { actualToken -> tokenEquivalent(actualToken, wantedToken) }
+        }
+    }
+
+    private fun tokenEquivalent(actual: String, wanted: String): Boolean {
+        if (actual == wanted) return true
+        if (actual.length < 5 || wanted.length < 5) return false
+        return actual in inflectionVariants(wanted) || wanted in inflectionVariants(actual)
+    }
+
+    private fun inflectionVariants(token: String): Set<String> = buildSet {
+        add(token)
+        when {
+            token.endsWith("r") -> add(token + "es")
+            token.endsWith("l") -> add(token.dropLast(1) + "is")
+            token.endsWith("m") -> add(token.dropLast(1) + "ns")
+            token.endsWith("ao") -> {
+                add(token.dropLast(2) + "oes")
+                add(token.dropLast(2) + "aes")
+                add(token.dropLast(2) + "aos")
+            }
+            !token.endsWith("s") -> add(token + "s")
+        }
+        when {
+            token.endsWith("res") && token.length > 5 -> add(token.dropLast(2))
+            token.endsWith("is") && token.length > 5 -> add(token.dropLast(2) + "l")
+            token.endsWith("ns") && token.length > 5 -> add(token.dropLast(2) + "m")
+            token.endsWith("s") && token.length > 5 -> add(token.dropLast(1))
+        }
     }
 
     private fun inPeriod(item: VideoItem, from: Long?, to: Long?): Boolean {
@@ -896,6 +929,8 @@ class VideoRepository(
         .trim()
 
     companion object {
+        private const val BROWSER_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Mobile Safari/537.36"
+        private const val MAX_HTML_BODY_BYTES = 8 * 1024 * 1024
         private const val MAX_RESOLVED_PER_QUERY = 8
         private const val MAX_GLOBOPLAY_ITEMS_PER_SCAN = 24
         private const val MAX_GLOBOPLAY_GENERAL_ITEMS_PER_SCAN = 32

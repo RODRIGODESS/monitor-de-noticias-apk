@@ -92,53 +92,56 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v3.0.3 release asset
+      - name: Prepare v3.0.4 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.3.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v3.0.4.apk
 
-      - name: Point v3.0.3 tag to validated main commit
+      - name: Point v3.0.4 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v3.0.3 "$GITHUB_SHA"
-          git push --force origin refs/tags/v3.0.3
+          git tag -f v3.0.4 "$GITHUB_SHA"
+          git push --force origin refs/tags/v3.0.4
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.3
+          tag_name: v3.0.4
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v3.0.3
+          name: Monitor de Notícias Android v3.0.4
           body: |
-            Monitor de Notícias Android v3.0.3 — Globoplay Trechos mais robusto e sincronização das notícias automáticas.
+            Monitor de Notícias Android v3.0.4 — Globoplay com rotas estáveis, flexões seguras e Limpar vídeos visível.
 
             Globoplay / telejornais:
-            - mantém a aba Trechos (/cenas/) como fonte principal para telejornais nacionais e regionais;
-            - passa a extrair links /v/<id> também quando os cards estão injetados em JSON/JavaScript e não existem como <a href> no HTML do Jsoup;
-            - tenta aproveitar título e descrição próximos ao ID do vídeo dentro do JSON serializado;
-            - candidatos que já casam pelo título/JSON continuam sendo priorizados;
-            - uma quantidade pequena e limitada de candidatos sem match superficial também é aberta para consultar descrição, tags, keywords e metadados do /v/<id>;
-            - essa leitura profunda é limitada por fonte para evitar voltar ao modelo fonte x termo e à explosão de consultas;
-            - busca geral do Globoplay permanece como fallback quando a página do programa/Trechos não puder ser descoberta.
+            - rotas estáveis conhecidas de telejornais prioritários entram antes da busca dinâmica do Globoplay;
+            - inclui Jornal Nacional, Jornal Hoje, Hora 1, Bom Dia Brasil, Jornal da Globo, RJ1/RJ2, SP1/SP2, Bom Dia ES e Jornal Tapajós entre as rotas estáveis iniciais;
+            - landings históricas /v/<id> passam a servir como sementes para descobrir a página real /t/<token> do telejornal, sem transformar o vídeo antigo em resultado recorrente;
+            - requisições usam perfil de navegador Android/Chrome e aceitam HTML ampliado para evitar truncar cards e JSON/JavaScript da aba Trechos;
+            - os links /v/<id> continuam sendo extraídos do HTML e do JSON incorporado;
+            - o cruzamento local aceita flexões nominais conservadoras como militar/militares, naval/navais e navio/navios;
+            - tokens curtos continuam exatos, preservando a proteção contra falsos positivos como FAB/fábrica.
+
+            Monitor de Vídeos:
+            - botão Limpar vídeos fica sempre visível no card principal da aba Vídeos;
+            - a limpeza exige confirmação e apaga somente o histórico de vídeos, mantendo Termos, Demandas, fontes e Notícias;
+            - YouTube oficial continua usando feed por canal e cruzamento local;
+            - resultados progressivos, links diretos, deduplicação, cronômetro e barra de progresso são preservados.
 
             Notícias automáticas:
-            - quando o MonitorWorker conclui uma busca automática, Home e Histórico recarregam o mesmo banco usado pelo worker;
-            - resultados notificados deixam de ficar apenas nos contadores das Configurações enquanto a interface permanece com estado antigo;
-            - se o app estava fechado, a abertura continua carregando os registros persistidos normalmente.
+            - permanece a sincronização da Home e do Histórico com o banco ao concluir os workers automáticos.
 
-            Monitor de Vídeos e agenda:
-            - YouTube oficial permanece usando feed por canal e cruzamento local;
-            - resultados progressivos, links diretos, deduplicação, cronômetro e barra de progresso são preservados;
-            - horários automáticos de vídeos permanecem em aproximadamente 08h, 12h, 15h, 19h e 21h no horário local do aparelho;
-            - busca manual permanece disponível e Android/Doze pode atrasar alguns minutos execuções em segundo plano.
+            Agenda:
+            - horários automáticos de vídeos permanecem aproximadamente em 08h, 12h, 15h, 19h e 21h no horário local do aparelho;
+            - busca manual permanece disponível;
+            - Android/Doze pode atrasar alguns minutos execuções em segundo plano.
 
             Atualização:
-            - versionCode 303 / versionName 3.0.3;
+            - versionCode 304 / versionName 3.0.4;
             - mesmo applicationId e mesma assinatura permanente da linha v2.5+;
-            - instalação direta sobre v3.0.2 preservando Termos, Demandas, histórico e configurações.
-          files: monitor-de-noticias-v3.0.3.apk
+            - instalação direta sobre v3.0.3 preservando Termos, Demandas, histórico de notícias e configurações.
+          files: monitor-de-noticias-v3.0.4.apk
           overwrite_files: true
           make_latest: true

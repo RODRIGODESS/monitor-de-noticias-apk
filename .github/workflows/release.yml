@@ -16,34 +16,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: codex/v4.0.5-active-ui-fix
-
-      - name: Apply guarded v4.0.5 active UI patch
-        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
-        run: python3 tools/patch_v405_active_ui.py
-
-      - name: Verify v4.0.5 active UI implementation
-        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
-        run: |
-          set -euo pipefail
-          grep -q 'versionCode = 405' app/build.gradle.kts
-          grep -q 'versionName = "4.0.5"' app/build.gradle.kts
-          grep -q 'SourceCatalog.specialized' app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
-          grep -q 'Mídia especializada' app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
-          grep -q 'v30CopyLink(context, "Link da notícia", n.link)' app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
-          grep -q 'v30CopyLink(context, "Link do vídeo", item.link)' app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
-          grep -q 'Icons.Outlined.ContentCopy' app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
-          git diff --check
-
-      - name: Commit v4.0.5 active UI implementation
-        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/build.gradle.kts app/src/main/java/br/com/monitordenoticias/android/V30Screens.kt
-          git commit -m "fix: apply copy-link and specialized media to active UI"
-          git push origin HEAD:codex/v4.0.5-active-ui-fix
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -114,28 +86,46 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v4.0.4 release asset
+      - name: Prepare v4.0.5 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.0.4.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.0.5.apk
 
-      - name: Point v4.0.4 tag to validated main commit
+      - name: Point v4.0.5 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v4.0.4 "$GITHUB_SHA"
-          git push --force origin refs/tags/v4.0.4
+          git tag -f v4.0.5 "$GITHUB_SHA"
+          git push --force origin refs/tags/v4.0.5
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.0.4
+          tag_name: v4.0.5
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v4.0.4
+          name: Monitor de Notícias Android v4.0.5
           body: |
-            Monitor de Notícias Android v4.0.4 — copiar link direto de notícias e vídeos.
-          files: monitor-de-noticias-v4.0.4.apk
+            Monitor de Notícias Android v4.0.5 — correção da interface ativa.
+
+            Interface:
+            - botão Copiar link agora está nos cards realmente exibidos de cada matéria;
+            - botão Copiar link agora está nos cards realmente exibidos de cada vídeo;
+            - Abrir e WhatsApp permanecem disponíveis;
+            - ao copiar, o Android recebe a URL real do item e o app mostra “Link copiado”.
+
+            Fontes de Notícias:
+            - nova guia visível “Mídia especializada” ao lado de Nacionais e Estados;
+            - a guia usa o catálogo especializado já existente;
+            - inclui Defesa em Foco, Defesa Aérea & Naval, DefesaNet, Tecnologia & Defesa, Zona Militar, Click Petróleo e Gás, Poder Naval, Agência Marinha de Notícias e Revista Sociedade Militar;
+            - seleção/limpeza funciona da mesma forma que nas demais fontes.
+
+            Compatibilidade:
+            - versionCode 405 / versionName 4.0.5;
+            - mesmo applicationId br.com.monitordenoticias.android;
+            - mesma assinatura permanente validada pelo certificado SHA-256 esperado;
+            - atualização direta sobre v4.0.4 preservando banco, notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
+          files: monitor-de-noticias-v4.0.5.apk
           overwrite_files: true
           make_latest: true

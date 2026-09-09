@@ -2,6 +2,9 @@ package android.content
 
 import java.io.File
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.util.Base64
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
@@ -49,8 +52,20 @@ class SharedPreferences internal constructor(private val file: File) {
         file.parentFile?.mkdirs()
         val tmp = File(file.parentFile, "${file.name}.tmp")
         tmp.outputStream().buffered().use { properties.store(it, "Monitor de Noticias") }
-        if (file.exists()) file.delete()
-        tmp.renameTo(file)
+
+        val source = tmp.toPath()
+        val target = file.toPath()
+        val moved = runCatching {
+            Files.move(source, target, REPLACE_EXISTING, ATOMIC_MOVE)
+        }.recoverCatching {
+            // Alguns sistemas de arquivos/antivírus do Windows não oferecem move atômico.
+            // O fallback ainda substitui o destino sem apagar o arquivo válido antes.
+            Files.move(source, target, REPLACE_EXISTING)
+        }
+        moved.getOrElse { error ->
+            runCatching { tmp.delete() }
+            throw IllegalStateException("Não foi possível salvar as preferências em ${file.absolutePath}", error)
+        }
     }
 
     fun getBoolean(key: String, defaultValue: Boolean): Boolean = synchronized(lock) {

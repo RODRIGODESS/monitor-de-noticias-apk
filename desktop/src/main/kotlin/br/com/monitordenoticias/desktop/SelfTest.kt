@@ -51,6 +51,18 @@ fun main() {
             "Domínio www.folhape.com.br não corresponde à Folha de Pernambuco"
         }
 
+        val pureTitleKey = DesktopSourceCatalog.canonicalTitleKey(
+            "Marinha realiza atividade de teste",
+            "Folha de Pernambuco"
+        )
+        val googleTitleKey = DesktopSourceCatalog.canonicalTitleKey(
+            "Marinha realiza atividade de teste - Folha PE",
+            "Folha PE"
+        )
+        check(pureTitleKey == googleTitleKey) {
+            "Título do Google com sufixo editorial não foi normalizado para a mesma matéria"
+        }
+
         val expectedSpecializedIds = setOf(
             "especializada-defesa-em-foco",
             "especializada-defesa-aerea-naval",

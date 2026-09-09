@@ -4,13 +4,17 @@ import br.com.monitordenoticias.android.MediaSource
 import br.com.monitordenoticias.android.SourceCatalog
 
 /**
- * Fontes adicionais exclusivas da edição Windows.
+ * Fontes e aliases adicionais exclusivos da edição Windows.
  *
- * Este catálogo não altera o SourceCatalog compartilhado com o Android. Assim, as
- * mídias especializadas solicitadas ficam isoladas na branch/edição Windows.
+ * O SourceCatalog compartilhado com o Android permanece intacto. Aqui também
+ * normalizamos nomes editoriais que o Google Notícias costuma abreviar. Isso
+ * evita que uma fonte selecionada seja descartada apenas porque o publisher do
+ * RSS usa um nome diferente do nome apresentado no catálogo do aplicativo.
  */
 object DesktopSourceCatalog {
     const val SPECIALIZED_GROUP = "Mídias especializadas"
+
+    private val windowsSharedSources: List<MediaSource> = SourceCatalog.all.map(::withWindowsAliases)
 
     val specialized: List<MediaSource> = listOf(
         specialized("especializada-defesa-em-foco", "Defesa em Foco", "DefesaEmFoco", "defesaemfoco.com.br"),
@@ -23,10 +27,16 @@ object DesktopSourceCatalog {
         specialized("especializada-gbn-news", "GBN Defense", "GBN News", "GBN Defense - A informação começa aqui", "gbnnews.com.br")
     )
 
-    val all: List<MediaSource> = (SourceCatalog.all + specialized).distinctBy { it.id }
+    val all: List<MediaSource> = (windowsSharedSources + specialized).distinctBy { it.id }
     val byId: Map<String, MediaSource> = all.associateBy { it.id }
 
     fun selected(ids: Set<String>): List<MediaSource> = ids.mapNotNull(byId::get)
+
+    private fun withWindowsAliases(source: MediaSource): MediaSource {
+        val extra = WINDOWS_ALIAS_OVERRIDES[source.id].orEmpty()
+        if (extra.isEmpty()) return source
+        return source.copy(aliases = (source.aliases + extra).distinctBy { it.lowercase() })
+    }
 
     private fun specialized(id: String, name: String, vararg aliases: String) = MediaSource(
         id = id,
@@ -36,5 +46,19 @@ object DesktopSourceCatalog {
         stateName = "Brasil",
         group = SPECIALIZED_GROUP,
         aliases = aliases.toList()
+    )
+
+    /**
+     * Aliases observados em agregadores/RSS. Mantidos no Windows para não
+     * alterar o catálogo da aplicação Android.
+     */
+    private val WINDOWS_ALIAS_OVERRIDES: Map<String, List<String>> = mapOf(
+        "pe-folha-de-pernambuco" to listOf(
+            "Folha PE",
+            "FolhaPE",
+            "Folha de Pernambuco",
+            "folhape.com.br",
+            "www.folhape.com.br"
+        )
     )
 }

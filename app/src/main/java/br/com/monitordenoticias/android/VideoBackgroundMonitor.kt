@@ -146,8 +146,11 @@ object VideoAutoRunLog {
 class VideoHeartbeatReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action !in setOf(VideoBackgroundMonitor.ACTION_SCHEDULED_SCAN, "br.com.monitordenoticias.android.VIDEO_HEARTBEAT")) return
-        VideoBackgroundMonitor.enqueueScheduled(context)
+        // Primeiro remove a agenda legada e instala a nova periódica. Só depois cria a
+        // execução de compatibilidade; caso contrário scheduleAll cancelaria o trabalho
+        // one-shot recém-enfileirado com o mesmo nome.
         VideoBackgroundMonitor.scheduleAll(context)
+        VideoBackgroundMonitor.enqueueScheduled(context)
     }
 }
 

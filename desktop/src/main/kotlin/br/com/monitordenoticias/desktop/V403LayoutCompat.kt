@@ -9,8 +9,7 @@ import androidx.compose.ui.unit.dp
  * Dentro de Row/Column, os modifiers weight nativos do Compose têm precedência.
  *
  * No helper de ações rápidas, convertemos o peso solicitado em uma altura estável.
- * Isso evita que um botão tente ocupar toda a altura do painel por estar fora do
- * escopo que fornece o weight nativo do Compose.
+ * 48 dp mantém os três botões uniformes dentro do painel sem recorte/overflow.
  */
 @Suppress("UNUSED_PARAMETER")
-internal fun Modifier.weight(weight: Float): Modifier = this.height(52.dp)
+internal fun Modifier.weight(weight: Float): Modifier = this.height(48.dp)

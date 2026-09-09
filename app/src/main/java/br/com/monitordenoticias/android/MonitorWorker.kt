@@ -6,10 +6,10 @@ import androidx.work.WorkerParameters
 
 class MonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
-        // Protege a configuração v4.2.0 inclusive contra um agendador legado que
-        // ainda possa disparar durante a migração. Em retries legítimos do WorkManager
-        // (runAttemptCount > 0), não bloqueia a nova tentativa pela janela de cadência.
-        // Busca manual não passa por este worker.
+        // Liga/desliga é absoluto, inclusive em retries. A janela de cadência protege
+        // disparos normais/legados, mas não bloqueia um retry legítimo após falha.
+        val auto = AutoSearchSettings.read(applicationContext)
+        if (!auto.newsEnabled) return Result.success()
         if (runAttemptCount == 0 && !AutoSearchSettings.newsDue(applicationContext)) {
             return Result.success()
         }

@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: [self-hosted, Windows]
+    runs-on: self-hosted
     timeout-minutes: 45
     steps:
       - name: Confirm Windows runner

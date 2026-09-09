@@ -392,7 +392,8 @@ class NewsRepository(private val db: NewsDb) {
             .replace(" jornal", "")
             .trim()
         val titleKey = DesktopSourceCatalog.canonicalTitleKey(news.title, news.source)
-        return "$sourceKey|$titleKey"
+        val publishedDay = if (news.date > 0L) news.date / STORY_DAY_MS else -1L
+        return "$sourceKey|$titleKey|$publishedDay"
     }
 
     private fun mergeNews(previous: News, incoming: News): News {
@@ -539,6 +540,7 @@ class NewsRepository(private val db: NewsDb) {
     }.getOrDefault(System.currentTimeMillis())
 
     companion object {
+        private const val STORY_DAY_MS = 24L * 60L * 60L * 1000L
         private const val DIRECT_SCAN_MAX_WINDOW_MS = 48L * 60L * 60L * 1000L
         private const val DIRECT_SCAN_RECENCY_TOLERANCE_MS = 2L * 60L * 60L * 1000L
         private val STOP_WORDS = setOf(

@@ -19,12 +19,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val AutoNews = Color(0xFF155EEF)
-private val AutoDemand = Color(0xFFE56A13)
-private val AutoVideo = Color(0xFF6941C6)
-private val AutoGreen = Color(0xFF128A4B)
-private val AutoMuted = Color(0xFF66788A)
-private val AutoLine = Color(0xFFD9E2EC)
+private val AutoNews = Color(0xFF0B5EA8)
+private val AutoDemand = Color(0xFFC7A347)
+private val AutoVideo = Color(0xFF2C7DA0)
+private val AutoGreen = Color(0xFF168357)
+private val AutoMuted = Color(0xFF60758A)
+private val AutoLine = Color(0xFFD3DEE8)
 
 @Composable
 fun AutomationSettingsCard(c: DesktopController) {
@@ -54,7 +54,7 @@ fun AutomationSettingsCard(c: DesktopController) {
                 Surface(
                     modifier = Modifier.size(46.dp),
                     shape = RoundedCornerShape(13.dp),
-                    color = Color(0xFFEAF2FF)
+                    color = Color(0xFFE8F1F8)
                 ) {
                     Icon(Icons.Default.Schedule, null, tint = AutoNews, modifier = Modifier.padding(11.dp))
                 }
@@ -260,7 +260,7 @@ private fun AutoModuleCard(
 ) {
     Surface(
         shape = RoundedCornerShape(14.dp),
-        color = Color(0xFFFAFCFF),
+        color = Color(0xFFF8FAFC),
         border = androidx.compose.foundation.BorderStroke(1.dp, AutoLine),
         modifier = Modifier.fillMaxWidth()
     ) {

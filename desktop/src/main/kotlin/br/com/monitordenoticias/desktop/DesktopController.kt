@@ -2,6 +2,7 @@ package br.com.monitordenoticias.desktop
 
 import android.content.Context
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import br.com.monitordenoticias.android.*
@@ -60,6 +61,24 @@ class DesktopController(
         private set
     var capturedTodayVideos by mutableStateOf(0)
         private set
+
+    // Coleções usadas diretamente pelas telas precisam ser estado Compose.
+    // Assim limpar histórico, buscas e mutações aparecem sem trocar de aba.
+    var newsHistory: List<News> by mutableStateOf(emptyList())
+        private set
+    var videoHistory: List<VideoItem> by mutableStateOf(emptyList())
+        private set
+
+    // NOVO agora significa inserido na execução corrente, não apenas capturado há <24h.
+    var newsNewLinks: Set<String> by mutableStateOf(emptySet())
+        private set
+    var videoNewLinks: Set<String> by mutableStateOf(emptySet())
+        private set
+
+    var uiRevision by mutableIntStateOf(0)
+        private set
+
+    private fun touchUi() { uiRevision++ }
 
     private val newsAllSourcesState = mutableStateOf(prefs.getBoolean("desktop_news_all_sources", true))
     var newsAllSources: Boolean
@@ -224,10 +243,12 @@ class DesktopController(
     fun refresh() {
         news = newsDb.listRecent(24, 1000)
         videos = videoDb.listRecent(7, 1500)
+        newsHistory = newsDb.listNews(5000)
+        videoHistory = videoDb.listAll(5000)
         terms = newsDb.listTerms()
         demands = newsDb.listDemands()
         videoTerms = VideoTermStore.load(context, terms)
-        val stored = videoDb.listAll(1000).filter { it.relevant }
+        val stored = videoHistory.filter { it.relevant }
         val startOfDay = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
@@ -236,6 +257,7 @@ class DesktopController(
         }.timeInMillis
         totalStoredVideos = stored.size
         capturedTodayVideos = stored.count { it.capturedAt >= startOfDay }
+        touchUi()
     }
 
     private fun selectedNewsSources(): List<MediaSource> =
@@ -251,6 +273,8 @@ class DesktopController(
             if (automatic) markAutoFailed("news", status)
             return
         }
+        val knownBeforeRun = newsDb.listNews(10_000).mapTo(mutableSetOf()) { it.link }
+        newsNewLinks = emptySet()
         newsBusy = true
         if (automatic) markAutoAttempt("news")
         status = if (from == null) "Buscando notícias..." else "Buscando notícias no período..."
@@ -259,15 +283,24 @@ class DesktopController(
                 val result = if (from == null || to == null) {
                     newsRepository.searchProgressive(selectedNewsSources(), newsAllSources) { update ->
                         newsProgress = update.progress
-                        if (update.items.isNotEmpty()) news = mergeNewsForUi(news, update.items)
+                        if (update.items.isNotEmpty()) {
+                            news = mergeNewsForUi(news, update.items)
+                            val currentNew = update.items.asSequence().map { it.link }.filterNot { it in knownBeforeRun }.toSet()
+                            if (currentNew.isNotEmpty()) newsNewLinks = newsNewLinks + currentNew
+                        }
                     }
                 } else {
                     newsRepository.searchPeriodProgressive(from, to, selectedNewsSources(), newsAllSources) { update ->
                         newsProgress = update.progress
-                        if (update.items.isNotEmpty()) news = mergeNewsForUi(news, update.items)
+                        if (update.items.isNotEmpty()) {
+                            news = mergeNewsForUi(news, update.items)
+                            val currentNew = update.items.asSequence().map { it.link }.filterNot { it in knownBeforeRun }.toSet()
+                            if (currentNew.isNotEmpty()) newsNewLinks = newsNewLinks + currentNew
+                        }
                     }
                 }
                 if (automatic) markNewsAutoCompleted(result)
+                newsNewLinks = result.items.asSequence().map { it.link }.filterNot { it in knownBeforeRun }.toSet()
                 refresh()
                 status = "✓ ${result.newCount} nova(s) notícia(s) • ${result.newDemandCount} demanda(s) • ${result.errors} falha(s)"
                 if (result.newCount + result.newDemandCount > 0) notify("Monitor de Notícias", status)
@@ -283,6 +316,8 @@ class DesktopController(
     fun searchDemand(demand: Demand) {
         if (demandBusy) return
         if (!ensureProxyReady(false)) return
+        val knownBeforeRun = newsDb.listNews(10_000).mapTo(mutableSetOf()) { it.link }
+        newsNewLinks = emptySet()
         demandBusy = true
         status = "Buscando demanda: ${demand.vehicle} • ${demand.subject}"
         demandProgress = LiveSearchProgress(
@@ -296,6 +331,7 @@ class DesktopController(
         scope.launch {
             try {
                 val result = newsRepository.searchDemand(demand)
+                newsNewLinks = result.items.asSequence().map { it.link }.filterNot { it in knownBeforeRun }.toSet()
                 refresh()
                 status = "✓ Demanda: ${result.foundCount} resultado(s), ${result.newCount} novo(s)"
                 demandProgress = demandProgress.copy(
@@ -332,6 +368,8 @@ class DesktopController(
             if (automatic) markAutoFailed("demand", status)
             return
         }
+        val knownBeforeRun = newsDb.listNews(10_000).mapTo(mutableSetOf()) { it.link }
+        newsNewLinks = emptySet()
         demandBusy = true
         if (automatic) markAutoAttempt("demand")
         status = "Buscando todas as demandas..."
@@ -345,6 +383,7 @@ class DesktopController(
             try {
                 val result = newsRepository.searchAllDemands()
                 if (automatic) markDemandAutoCompleted(result)
+                newsNewLinks = result.items.asSequence().map { it.link }.filterNot { it in knownBeforeRun }.toSet()
                 refresh()
                 status = "✓ ${result.checkedCount} demanda(s) • ${result.foundCount} resultado(s) • ${result.newCount} novo(s)"
                 demandProgress = demandProgress.copy(
@@ -379,6 +418,8 @@ class DesktopController(
             if (automatic) markAutoFailed("video", videoStatus)
             return
         }
+        val knownBeforeRun = videoDb.listAll(10_000).mapTo(mutableSetOf()) { it.link }
+        videoNewLinks = emptySet()
         videoBusy = true
         if (automatic) markAutoAttempt("video")
         videoStatus = if (from == null) "Buscando vídeos..." else "Buscando vídeos no período..."
@@ -389,16 +430,25 @@ class DesktopController(
                 val result = if (from == null || to == null) {
                     videoRepository.searchProgressive(sources) { update ->
                         videoProgress = update.progress
-                        if (update.items.isNotEmpty()) videos = mergeVideosForUi(videos, update.items)
+                        if (update.items.isNotEmpty()) {
+                            videos = mergeVideosForUi(videos, update.items)
+                            val currentNew = update.items.asSequence().map { it.link }.filterNot { it in knownBeforeRun }.toSet()
+                            if (currentNew.isNotEmpty()) videoNewLinks = videoNewLinks + currentNew
+                        }
                     }
                 } else {
                     videoRepository.searchPeriodProgressive(sources, from, to) { update ->
                         videoProgress = update.progress
-                        if (update.items.isNotEmpty()) videos = mergeVideosForUi(videos, update.items)
+                        if (update.items.isNotEmpty()) {
+                            videos = mergeVideosForUi(videos, update.items)
+                            val currentNew = update.items.asSequence().map { it.link }.filterNot { it in knownBeforeRun }.toSet()
+                            if (currentNew.isNotEmpty()) videoNewLinks = videoNewLinks + currentNew
+                        }
                     }
                 }
                 unstableVideoSources = result.unstableSources
                 if (automatic) markVideoAutoCompleted(result)
+                videoNewLinks = result.items.asSequence().map { it.link }.filterNot { it in knownBeforeRun }.toSet()
                 refresh()
                 videoStatus = "✓ ${result.relevantCount} relevante(s) • ${result.newRelevantCount} novo(s) • ${result.errors} fonte(s) instável(is)"
                 if (result.newRelevantCount > 0) notify("Novos vídeos", "${result.newRelevantCount} vídeo(s) relevante(s)")
@@ -417,8 +467,23 @@ class DesktopController(
     fun removeVideoTerm(v: String) { VideoTermStore.remove(context, v, terms); refresh() }
     fun addDemand(vehicle: String, subject: String) { newsDb.addDemand(vehicle, subject); refresh() }
     fun removeDemand(id: Long) { newsDb.removeDemand(id); refresh() }
-    fun clearNewsHistory() { newsDb.clearHistory(); refresh() }
-    fun clearVideoHistory() { videoDb.clear(); refresh() }
+    fun clearNewsHistory() {
+        newsDb.clearHistory()
+        news = emptyList()
+        newsHistory = emptyList()
+        newsNewLinks = emptySet()
+        status = "✓ Histórico de notícias limpo"
+        refresh()
+    }
+    fun clearVideoHistory() {
+        videoDb.clear()
+        videos = emptyList()
+        videoHistory = emptyList()
+        videoNewLinks = emptySet()
+        status = "✓ Histórico de vídeos limpo"
+        videoStatus = status
+        refresh()
+    }
 
     fun exportNewsHistoryCsv(): File {
         val dir = File(context.filesDir, "exports").apply { mkdirs() }
@@ -577,6 +642,7 @@ class DesktopController(
             .putLong(keyAttempt, System.currentTimeMillis())
             .putString(keyError, "")
             .apply()
+        touchUi()
     }
 
     private fun markAutoFailed(kind: String, error: String) {
@@ -586,6 +652,7 @@ class DesktopController(
             else -> KEY_VIDEO_ERROR
         }
         prefs.edit().putString(key, error.take(180)).apply()
+        touchUi()
     }
 
     private fun markNewsAutoCompleted(result: SearchResult) {
@@ -596,6 +663,7 @@ class DesktopController(
             .putInt(KEY_NEWS_ERRORS, result.errors)
             .putString(KEY_NEWS_ERROR, if (result.errors > 0) "${result.errors} consulta(s) com falha" else "")
             .apply()
+        touchUi()
     }
 
     private fun markDemandAutoCompleted(result: DemandSweepResult) {
@@ -607,6 +675,7 @@ class DesktopController(
             .putInt(KEY_DEMAND_ERRORS, result.errors)
             .putString(KEY_DEMAND_ERROR, if (result.errors > 0) "${result.errors} demanda(s) com falha" else "")
             .apply()
+        touchUi()
     }
 
     private fun markVideoAutoCompleted(result: VideoSearchResult) {
@@ -618,6 +687,7 @@ class DesktopController(
             .putInt(KEY_VIDEO_ERRORS, result.errors)
             .putString(KEY_VIDEO_ERROR, if (result.errors > 0) "${result.errors} fonte(s) instável(is)" else "")
             .apply()
+        touchUi()
     }
 
     private fun updateWindowsStartup(enabled: Boolean) {

@@ -163,14 +163,15 @@ class NewsRepository(private val db: NewsDb) {
             val terms = db.listTerms().ifEmpty { defaultTerms }
             val demands = db.listDemands().filter { it.active }
             val startedAt = System.currentTimeMillis()
-            val directSources = if (
+            val recentDirectWindow =
                 from >= startedAt - DIRECT_SCAN_MAX_WINDOW_MS &&
-                to >= startedAt - DIRECT_SCAN_RECENCY_TOLERANCE_MS
-            ) {
+                    to >= startedAt - DIRECT_SCAN_RECENCY_TOLERANCE_MS
+            val directSources = if (recentDirectWindow) {
                 latestCollector.supportedSources(selectedSources, searchAllSources)
             } else {
                 emptyList()
             }
+            val desktopDirectSteps = if (recentDirectWindow) 1 else 0
 
             val tasks = buildList {
                 terms.forEach { term -> add(SearchTask(term, term, "Google Notícias")) }
@@ -184,6 +185,7 @@ class NewsRepository(private val db: NewsDb) {
                     }
                 }
             }
+            val totalSteps = tasks.size + directSources.size + desktopDirectSteps
 
             val historyBeforeRun = db.listAllNews()
             val historyByLink = historyBeforeRun.associateBy { it.link }
@@ -209,7 +211,7 @@ class NewsRepository(private val db: NewsDb) {
                     startedAt = startedAt,
                     finishedAt = if (active) 0L else System.currentTimeMillis(),
                     completed = completed,
-                    total = tasks.size + directSources.size,
+                    total = totalSteps,
                     currentSource = source,
                     currentQuery = query,
                     found = collected.size,
@@ -316,46 +318,52 @@ class NewsRepository(private val db: NewsDb) {
             }
 
             // Segunda camada exclusiva do Windows: rotas regionais/especializadas.
-            val desktopDirect = desktopDirectCollector.collect(
-                selectedSources = selectedSources,
-                searchAllSources = searchAllSources,
-                terms = terms,
-                demands = demands,
-                from = from,
-                to = to,
-                capturedAt = System.currentTimeMillis()
-            )
-            DesktopSearchDiagnosticsStore.recordDirect(desktopDirect.diagnostics)
+            // Assim como a coleta direta original, só faz sentido para uma janela recente.
+            if (recentDirectWindow) {
+                onUpdate?.invoke(NewsSearchUpdate(progress("Cobertura direta Windows", "Todos os termos")))
+                val desktopDirect = desktopDirectCollector.collect(
+                    selectedSources = selectedSources,
+                    searchAllSources = searchAllSources,
+                    terms = terms,
+                    demands = demands,
+                    from = from,
+                    to = to,
+                    capturedAt = System.currentTimeMillis()
+                )
+                DesktopSearchDiagnosticsStore.recordDirect(desktopDirect.diagnostics)
 
-            if (desktopDirect.items.isNotEmpty()) {
-                val inserts = mutableListOf<News>()
-                val updates = mutableListOf<News>()
-                desktopDirect.items.forEach { rawIncoming ->
-                    val incoming = reuseHistoricalIdentity(rawIncoming)
-                    val duplicate = collected.values.firstOrNull { storyKey(it) == storyKey(incoming) }
-                    if (duplicate == null) {
-                        collected[incoming.link] = incoming
-                        inserts += incoming
-                        updates += incoming
-                    } else {
-                        val merged = mergeNews(
-                            duplicate,
-                            incoming.copy(link = duplicate.link, source = duplicate.source)
+                if (desktopDirect.items.isNotEmpty()) {
+                    val inserts = mutableListOf<News>()
+                    val updates = mutableListOf<News>()
+                    desktopDirect.items.forEach { rawIncoming ->
+                        val incoming = reuseHistoricalIdentity(rawIncoming)
+                        val duplicate = collected.values.firstOrNull { storyKey(it) == storyKey(incoming) }
+                        if (duplicate == null) {
+                            collected[incoming.link] = incoming
+                            inserts += incoming
+                            updates += incoming
+                        } else {
+                            val merged = mergeNews(
+                                duplicate,
+                                incoming.copy(link = duplicate.link, source = duplicate.source)
+                            )
+                            collected[duplicate.link] = merged
+                            updates += merged
+                        }
+                    }
+                    val inserted = db.insertNews(inserts)
+                    inserted.forEach { newLinks += it.link }
+                    if (updates.isNotEmpty()) {
+                        onUpdate?.invoke(
+                            NewsSearchUpdate(
+                                progress("Cobertura direta Windows", "Todos os termos"),
+                                updates
+                            )
                         )
-                        collected[duplicate.link] = merged
-                        updates += merged
                     }
                 }
-                val inserted = db.insertNews(inserts)
-                inserted.forEach { newLinks += it.link }
-                if (updates.isNotEmpty()) {
-                    onUpdate?.invoke(
-                        NewsSearchUpdate(
-                            progress("Cobertura direta Windows", "Todos os termos"),
-                            updates
-                        )
-                    )
-                }
+                completed++
+                onUpdate?.invoke(NewsSearchUpdate(progress("Cobertura direta Windows", "Todos os termos")))
             }
 
             val items = collected.values.sortedByDescending { it.date }
@@ -363,7 +371,7 @@ class NewsRepository(private val db: NewsDb) {
             onUpdate?.invoke(
                 NewsSearchUpdate(
                     progress("Concluído", "", active = false).copy(
-                        completed = tasks.size + directSources.size,
+                        completed = totalSteps,
                         found = items.size,
                         newCount = newLinks.size
                     )

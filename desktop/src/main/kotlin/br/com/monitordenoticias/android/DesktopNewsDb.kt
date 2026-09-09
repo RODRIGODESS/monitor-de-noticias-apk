@@ -112,19 +112,18 @@ class NewsDb(context: Context) : AutoCloseable {
         return queryNews("date>=?", listOf(cutoff), limit)
     }
 
+    /** Lista paginada/limitada para telas e exportações. */
+    fun listNews(limit: Int = 500): List<News> = queryNews(null, emptyList(), limit)
+
     /**
-     * O repositório Windows usa 5000 como janela histórica de trabalho para deduplicação.
-     * Na v4.0.3 essa janela precisa cobrir todo o banco, para que uma matéria antiga não
-     * volte como nova apenas porque saiu do recorte ou porque o Google mudou a URL.
+     * Histórico completo usado somente para identidade/deduplicação de matérias.
+     * Mantém a primeira captura mesmo quando a URL do agregador muda.
      */
-    fun listNews(limit: Int = 500): List<News> {
-        val effectiveLimit = if (limit == 5000) Int.MAX_VALUE else limit
-        return queryNews(null, emptyList(), effectiveLimit)
-    }
+    fun listAllNews(): List<News> = queryNews(null, emptyList(), Int.MAX_VALUE)
 
     /**
      * Índice leve usado para decidir se uma matéria é realmente nova.
-     * Diferente de listNews(limit), não possui janela artificial e carrega apenas URLs.
+     * Não possui janela artificial e carrega apenas URLs.
      */
     @Synchronized
     fun listKnownLinks(): Set<String> = connection.createStatement().use { st ->

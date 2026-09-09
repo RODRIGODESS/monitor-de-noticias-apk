@@ -135,7 +135,7 @@ class NewsRepository(private val db: NewsDb) {
             }
             .sortedByDescending { it.date }
 
-        val history = db.listNews(limit = 5000)
+        val history = db.listAllNews()
         val byLink = history.associateBy { it.link }
         val byStory = history.associateBy { storyKey(it) }
         val stableMatched = matched.map { incoming ->
@@ -185,7 +185,7 @@ class NewsRepository(private val db: NewsDb) {
                 }
             }
 
-            val historyBeforeRun = db.listNews(limit = 5000)
+            val historyBeforeRun = db.listAllNews()
             val historyByLink = historyBeforeRun.associateBy { it.link }
             val historyByStory = historyBeforeRun.associateBy { storyKey(it) }
 

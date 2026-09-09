@@ -91,7 +91,12 @@ object DesktopProxyManager {
 
     fun isReady(context: Context): Boolean {
         val settings = load(context)
-        return !settings.enabled || (settings.username.isNotBlank() && settings.hasSavedPassword)
+        return !settings.enabled || (
+            settings.host.isNotBlank() &&
+                settings.port in 1..65535 &&
+                settings.username.isNotBlank() &&
+                settings.hasSavedPassword
+            )
     }
 
     fun apply(context: Context) {
@@ -143,6 +148,9 @@ object DesktopProxyManager {
         if (!isWindows()) return TestResult(false, "Teste de proxy disponível apenas no Windows.")
         val settings = load(context)
         if (!settings.enabled) return TestResult(false, "Ative e salve o proxy antes de testar.")
+        if (settings.host.isBlank() || settings.port !in 1..65535) {
+            return TestResult(false, "Servidor ou porta do proxy inválidos. Salve a configuração novamente.")
+        }
         if (!settings.hasSavedPassword || settings.username.isBlank()) {
             return TestResult(false, "Salve usuário e senha antes de testar.")
         }

@@ -23,12 +23,25 @@ fun main() {
 
     try {
         val context = Context(tempRoot)
-        context.getSharedPreferences(BackgroundMonitor.PREFS, Context.MODE_PRIVATE)
-            .edit()
+        val basePrefs = context.getSharedPreferences(BackgroundMonitor.PREFS, Context.MODE_PRIVATE)
+        basePrefs.edit()
             .putBoolean("desktop_start_with_windows", false)
             .putBoolean("desktop_automatic_monitoring", false)
             .putBoolean("desktop_proxy_enabled", false)
+            .putString("selftest_persist_value", "ok")
+            .putStringSet("selftest_persist_set", linkedSetOf("fonte-a", "fonte-b"))
             .apply()
+
+        // Regressão da camada portátil: uma nova instância deve ler exatamente o
+        // arquivo já persistido, inclusive os Sets usados por fontes/horários.
+        val reloadedPrefs = Context(tempRoot)
+            .getSharedPreferences(BackgroundMonitor.PREFS, Context.MODE_PRIVATE)
+        check(reloadedPrefs.getString("selftest_persist_value", "") == "ok") {
+            "Preferência textual não persistiu entre instâncias do Context"
+        }
+        check(reloadedPrefs.getStringSet("selftest_persist_set", emptySet()) == setOf("fonte-a", "fonte-b")) {
+            "StringSet portátil não persistiu corretamente entre instâncias"
+        }
 
         // Regressão v4.0.3: o Google Notícias pode publicar "Folha PE" enquanto
         // nosso catálogo usa "Folha de Pernambuco". Essa equivalência precisa

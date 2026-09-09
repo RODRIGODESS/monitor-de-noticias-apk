@@ -9,7 +9,7 @@ plugins {
 group = "br.com.monitordenoticias"
 version = "4.0.2"
 
-// Build Windows com termos estabelecidos, refinamento visual e automação independente por módulo.
+// Build Windows com tema naval profissional, reatividade integral e automação independente por módulo.
 kotlin {
     jvmToolchain(17)
     sourceSets {

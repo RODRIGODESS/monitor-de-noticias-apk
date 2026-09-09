@@ -2,22 +2,6 @@ name: Windows Portable v4.0.3
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - "codex/windows/v4.0.3-portable"
-    paths:
-      - "desktop/**"
-      - "app/src/main/java/br/com/monitordenoticias/android/**"
-      - "build.gradle.kts"
-      - "settings.gradle.kts"
-      - ".github/workflows/windows-portable.yml"
-  pull_request:
-    paths:
-      - "desktop/**"
-      - "app/src/main/java/br/com/monitordenoticias/android/**"
-      - "build.gradle.kts"
-      - "settings.gradle.kts"
-      - ".github/workflows/windows-portable.yml"
 
 permissions:
   contents: write

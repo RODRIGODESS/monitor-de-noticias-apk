@@ -95,7 +95,7 @@ object DesktopProxyManager {
 
     fun showConfigurationDialog(context: Context, afterSave: (() -> Unit)? = null) {
         if (!isWindows()) return
-        SwingUtilities.invokeLater {
+        val action = Runnable {
             val current = load(context)
             val enabled = JCheckBox("Usar proxy", current.enabled)
             val host = JTextField(current.host, 24)
@@ -125,7 +125,7 @@ object DesktopProxyManager {
                 JOptionPane.OK_CANCEL_OPTION,
                 JOptionPane.PLAIN_MESSAGE
             )
-            if (option != JOptionPane.OK_OPTION) return@invokeLater
+            if (option != JOptionPane.OK_OPTION) return@Runnable
 
             val portNumber = port.text.trim().toIntOrNull() ?: -1
             val result = save(
@@ -144,6 +144,12 @@ object DesktopProxyManager {
                 if (result.ok) JOptionPane.INFORMATION_MESSAGE else JOptionPane.ERROR_MESSAGE
             )
             if (result.ok) afterSave?.invoke()
+        }
+
+        if (SwingUtilities.isEventDispatchThread()) {
+            action.run()
+        } else {
+            runCatching { SwingUtilities.invokeAndWait(action) }
         }
     }
 
@@ -189,8 +195,8 @@ object DesktopProxyManager {
         val password = readSavedPassword(context)
         if (settings.username.isBlank() || password.isNullOrEmpty()) {
             Authenticator.setDefault(null)
-            // No primeiro uso, o próprio app solicita as credenciais. O autoteste de CI
-            // usa uma pasta temporária identificável e não deve abrir UI interativa.
+            // O primeiro uso espera a configuração terminar antes de iniciar a automação.
+            // O autoteste de CI usa uma pasta temporária e não deve abrir UI interativa.
             if (!isSelfTestContext(context)) showConfigurationDialog(context)
             return
         }

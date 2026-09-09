@@ -1,0 +1,32 @@
+name: Apply Windows realtime and naval theme
+
+on:
+  push:
+    branches:
+      - codex/windows/v4.0.2-portable
+    paths:
+      - .github/workflows/navy-realtime-patch.yml
+      - .github/scripts/navy_realtime_patch.py
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/windows/v4.0.2-portable
+
+      - name: Apply realtime and naval theme patch
+        run: python .github/scripts/navy_realtime_patch.py
+
+      - name: Commit patched Windows files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add desktop/src/main/kotlin/br/com/monitordenoticias/desktop/DesktopController.kt desktop/src/main/kotlin/br/com/monitordenoticias/desktop/Main.kt desktop/src/main/kotlin/br/com/monitordenoticias/desktop/AutomationSettingsCard.kt
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(windows): reatividade completa novo por busca e tema naval"
+          git push origin HEAD:codex/windows/v4.0.2-portable

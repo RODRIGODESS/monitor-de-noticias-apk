@@ -16,28 +16,43 @@ import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
 /**
- * Centraliza o monitoramento em segundo plano.
+ * Centraliza o monitoramento em segundo plano de Notícias e Demandas.
  *
- * O WorkManager permanece como agendador principal. Um alarme inexacto permitido
- * durante idle funciona como heartbeat de recuperação: se o Android/Samsung
- * atrasar o trabalho periódico por tempo demais, o heartbeat solicita uma nova
- * execução. A busca continua respeitando as restrições de rede do Android.
+ * Desde a v4.2.0, Notícias e Demandas possuem liga/desliga e intervalos
+ * independentes. O WorkManager permanece como agendador principal. Um alarme
+ * inexato permitido durante idle funciona como heartbeat de recuperação para os
+ * monitores que estiverem habilitados.
  */
 object BackgroundMonitor {
     const val PREFS = "monitor_prefs"
     private const val HEARTBEAT_REQUEST_CODE = 2601
     private const val HEARTBEAT_INTERVAL_MS = 60L * 60L * 1000L
-    private const val STALE_AFTER_MS = 50L * 60L * 1000L
+    private const val MIN_STALE_AFTER_MS = 50L * 60L * 1000L
 
     private fun connectedConstraints() = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
 
+    /** Mantém compatibilidade com chamadas antigas que ainda informam o intervalo. */
     fun scheduleAll(context: Context, newsIntervalMinutes: Int) {
         val app = context.applicationContext
-        scheduleNews(app, newsIntervalMinutes)
-        scheduleDemands(app)
-        scheduleHeartbeat(app)
+        AutoSearchSettings.migrate(app)
+        val cfg = AutoSearchSettings.read(app)
+
+        if (cfg.newsEnabled) scheduleNews(app, cfg.newsIntervalMinutes)
+        else cancelNews(app)
+
+        if (cfg.demandsEnabled) scheduleDemands(app, cfg.demandsIntervalMinutes)
+        else cancelDemands(app)
+
+        if (cfg.newsEnabled || cfg.demandsEnabled) scheduleHeartbeat(app)
+        else cancelHeartbeat(app)
+    }
+
+    fun scheduleAll(context: Context) {
+        val legacy = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt("interval_minutes", 30)
+        scheduleAll(context, legacy)
     }
 
     fun scheduleNews(context: Context, minutes: Int) {
@@ -52,15 +67,33 @@ object BackgroundMonitor {
         )
     }
 
-    fun scheduleDemands(context: Context) {
-        val request = PeriodicWorkRequestBuilder<DemandMonitorWorker>(1, TimeUnit.HOURS)
+    fun scheduleDemands(context: Context, minutes: Int = 60) {
+        val safe = minutes.coerceAtLeast(15)
+        val wm = WorkManager.getInstance(context)
+        wm.cancelUniqueWork("monitor_demandas_1h")
+        val request = PeriodicWorkRequestBuilder<DemandMonitorWorker>(safe.toLong(), TimeUnit.MINUTES)
             .setConstraints(connectedConstraints())
             .build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            "monitor_demandas_1h",
+        wm.enqueueUniquePeriodicWork(
+            "monitor_demandas",
             ExistingPeriodicWorkPolicy.UPDATE,
             request
         )
+    }
+
+    private fun cancelNews(context: Context) {
+        WorkManager.getInstance(context).apply {
+            cancelUniqueWork("monitor_noticias")
+            cancelUniqueWork("monitor_noticias_heartbeat")
+        }
+    }
+
+    private fun cancelDemands(context: Context) {
+        WorkManager.getInstance(context).apply {
+            cancelUniqueWork("monitor_demandas")
+            cancelUniqueWork("monitor_demandas_1h")
+            cancelUniqueWork("monitor_demandas_heartbeat")
+        }
     }
 
     fun scheduleHeartbeat(context: Context, delayMs: Long = HEARTBEAT_INTERVAL_MS) {
@@ -87,29 +120,60 @@ object BackgroundMonitor {
             .apply()
     }
 
-    /** Solicita trabalhos de recuperação somente quando a última tentativa está atrasada. */
+    private fun cancelHeartbeat(context: Context) {
+        val app = context.applicationContext
+        val alarmManager = app.getSystemService(AlarmManager::class.java) ?: return
+        val intent = Intent(app, BackgroundHeartbeatReceiver::class.java)
+            .setAction("br.com.monitordenoticias.android.BACKGROUND_HEARTBEAT")
+        val pendingIntent = PendingIntent.getBroadcast(
+            app,
+            HEARTBEAT_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        )
+        if (pendingIntent != null) {
+            alarmManager.cancel(pendingIntent)
+            pendingIntent.cancel()
+        }
+        app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putLong(AutoRunLog.KEY_NEXT_HEARTBEAT_AT, 0L).apply()
+    }
+
+    /** Solicita recuperação somente para monitores habilitados e realmente atrasados. */
     fun enqueueRecoveryIfStale(context: Context, force: Boolean = false) {
         val app = context.applicationContext
         val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val cfg = AutoSearchSettings.read(app)
         val now = System.currentTimeMillis()
         val wm = WorkManager.getInstance(app)
 
-        val lastNews = prefs.getLong(AutoRunLog.KEY_NEWS_ATTEMPT_AT, 0L)
-        if (force || lastNews == 0L || now - lastNews >= STALE_AFTER_MS) {
-            val news = OneTimeWorkRequestBuilder<MonitorWorker>()
-                .setConstraints(connectedConstraints())
-                .build()
-            wm.enqueueUniqueWork("monitor_noticias_heartbeat", ExistingWorkPolicy.REPLACE, news)
+        if (cfg.newsEnabled) {
+            val lastNews = prefs.getLong(AutoRunLog.KEY_NEWS_ATTEMPT_AT, 0L)
+            val staleAfter = staleAfter(cfg.newsIntervalMinutes)
+            if (force || lastNews == 0L || now - lastNews >= staleAfter) {
+                val news = OneTimeWorkRequestBuilder<MonitorWorker>()
+                    .setConstraints(connectedConstraints())
+                    .build()
+                wm.enqueueUniqueWork("monitor_noticias_heartbeat", ExistingWorkPolicy.REPLACE, news)
+            }
         }
 
-        val lastDemand = prefs.getLong(AutoRunLog.KEY_DEMAND_ATTEMPT_AT, 0L)
-        if (force || lastDemand == 0L || now - lastDemand >= STALE_AFTER_MS) {
-            val demand = OneTimeWorkRequestBuilder<DemandMonitorWorker>()
-                .setConstraints(connectedConstraints())
-                .build()
-            wm.enqueueUniqueWork("monitor_demandas_heartbeat", ExistingWorkPolicy.REPLACE, demand)
+        if (cfg.demandsEnabled) {
+            val lastDemand = prefs.getLong(AutoRunLog.KEY_DEMAND_ATTEMPT_AT, 0L)
+            val staleAfter = staleAfter(cfg.demandsIntervalMinutes)
+            if (force || lastDemand == 0L || now - lastDemand >= staleAfter) {
+                val demand = OneTimeWorkRequestBuilder<DemandMonitorWorker>()
+                    .setConstraints(connectedConstraints())
+                    .build()
+                wm.enqueueUniqueWork("monitor_demandas_heartbeat", ExistingWorkPolicy.REPLACE, demand)
+            }
         }
     }
+
+    private fun staleAfter(intervalMinutes: Int): Long = maxOf(
+        MIN_STALE_AFTER_MS,
+        (intervalMinutes + 20L) * 60L * 1000L
+    )
 }
 
 object AutoRunLog {
@@ -192,6 +256,8 @@ object AutoRunLog {
 
 class BackgroundHeartbeatReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
+        val cfg = AutoSearchSettings.read(context)
+        if (!cfg.newsEnabled && !cfg.demandsEnabled) return
         BackgroundMonitor.enqueueRecoveryIfStale(context)
         BackgroundMonitor.scheduleHeartbeat(context)
     }
@@ -201,9 +267,7 @@ class MonitorBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
         if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_MY_PACKAGE_REPLACED) return
-        val prefs = context.getSharedPreferences(BackgroundMonitor.PREFS, Context.MODE_PRIVATE)
-        val interval = prefs.getInt("interval_minutes", 30).coerceAtLeast(15)
-        BackgroundMonitor.scheduleAll(context, interval)
+        BackgroundMonitor.scheduleAll(context)
         BackgroundMonitor.enqueueRecoveryIfStale(context)
     }
 }

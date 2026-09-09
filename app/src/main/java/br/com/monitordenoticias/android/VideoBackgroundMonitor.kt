@@ -6,100 +6,87 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import java.util.Calendar
+import java.util.concurrent.TimeUnit
 
+/**
+ * Monitor automático de vídeos.
+ *
+ * Na v4.2.0 a agenda fixa de 08h/12h/15h/19h/21h é migrada para uma cadência
+ * configurável pelo usuário. A busca manual continua independente da automação.
+ */
 object VideoBackgroundMonitor {
     private const val SCHEDULE_REQUEST_CODE = 2801
     const val ACTION_SCHEDULED_SCAN = "br.com.monitordenoticias.android.VIDEO_SCHEDULED_SCAN"
     private const val LEGACY_HOURLY_ACTION = "br.com.monitordenoticias.android.VIDEO_HEARTBEAT"
-    private val SCHEDULE_HOURS = intArrayOf(8, 12, 15, 19, 21)
+    private const val UNIQUE_PERIODIC_WORK = "monitor_videos_interval_v420"
 
     private fun connectedConstraints() = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
 
-    /**
-     * A partir da v3.0.1, vídeos deixam de usar varredura horária.
-     * As execuções automáticas ficam concentradas em 08h, 12h, 15h, 19h e 21h
-     * no horário local do aparelho. A busca manual continua disponível a qualquer momento.
-     */
     fun scheduleAll(context: Context) {
         val app = context.applicationContext
+        AutoSearchSettings.migrate(app)
+        val cfg = AutoSearchSettings.read(app)
+        val wm = WorkManager.getInstance(app)
 
-        // Remove tanto WorkManager legado quanto um AlarmManager horário que ainda
-        // possa ter sobrevivido à atualização da v3.0.0.
-        WorkManager.getInstance(app).cancelUniqueWork("monitor_videos_1h")
-        WorkManager.getInstance(app).cancelUniqueWork("monitor_videos_heartbeat")
-        cancelLegacyHourlyAlarm(app)
-        scheduleNext(app)
-    }
+        // Remove agendas legadas para evitar varreduras duplicadas após a atualização.
+        wm.cancelUniqueWork("monitor_videos_1h")
+        wm.cancelUniqueWork("monitor_videos_heartbeat")
+        wm.cancelUniqueWork("monitor_videos_scheduled")
+        cancelLegacyAlarm(app)
 
-    fun scheduleNext(context: Context) {
-        val app = context.applicationContext
-        val alarmManager = app.getSystemService(AlarmManager::class.java) ?: return
-        val now = Calendar.getInstance()
-        val next = nextScheduledTime(now)
+        if (!cfg.videosEnabled) {
+            wm.cancelUniqueWork(UNIQUE_PERIODIC_WORK)
+            app.getSharedPreferences(BackgroundMonitor.PREFS, Context.MODE_PRIVATE)
+                .edit().putLong(VideoAutoRunLog.KEY_NEXT_HEARTBEAT_AT, 0L).apply()
+            return
+        }
 
-        val intent = Intent(app, VideoHeartbeatReceiver::class.java)
-            .setAction(ACTION_SCHEDULED_SCAN)
-        val pendingIntent = PendingIntent.getBroadcast(
-            app,
-            SCHEDULE_REQUEST_CODE,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val safe = cfg.videosIntervalMinutes.coerceAtLeast(15)
+        val request = PeriodicWorkRequestBuilder<VideoMonitorWorker>(safe.toLong(), TimeUnit.MINUTES)
+            .setConstraints(connectedConstraints())
+            .build()
+        wm.enqueueUniquePeriodicWork(
+            UNIQUE_PERIODIC_WORK,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            request
         )
 
-        // Não exige permissão de alarme exato. O Android/Doze pode deslocar alguns
-        // minutos, mas 08h, 12h, 15h, 19h e 21h continuam sendo os horários-alvo.
-        alarmManager.setAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            next.timeInMillis,
-            pendingIntent
-        )
-
+        // WorkManager é inexato por projeto; este horário é apenas uma estimativa visual.
         app.getSharedPreferences(BackgroundMonitor.PREFS, Context.MODE_PRIVATE)
             .edit()
-            .putLong(VideoAutoRunLog.KEY_NEXT_HEARTBEAT_AT, next.timeInMillis)
+            .putLong(VideoAutoRunLog.KEY_NEXT_HEARTBEAT_AT, System.currentTimeMillis() + safe * 60_000L)
             .apply()
     }
 
-    private fun cancelLegacyHourlyAlarm(context: Context) {
+    private fun cancelLegacyAlarm(context: Context) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
-        val legacyIntent = Intent(context, VideoHeartbeatReceiver::class.java)
-            .setAction(LEGACY_HOURLY_ACTION)
-        val legacy = PendingIntent.getBroadcast(
-            context,
-            SCHEDULE_REQUEST_CODE,
-            legacyIntent,
-            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-        ) ?: return
-        alarmManager.cancel(legacy)
-        legacy.cancel()
-    }
-
-    private fun nextScheduledTime(now: Calendar): Calendar {
-        val next = now.clone() as Calendar
-        next.set(Calendar.MINUTE, 0)
-        next.set(Calendar.SECOND, 0)
-        next.set(Calendar.MILLISECOND, 0)
-
-        val currentMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
-        val nextHour = SCHEDULE_HOURS.firstOrNull { it * 60 > currentMinutes }
-        if (nextHour != null) {
-            next.set(Calendar.HOUR_OF_DAY, nextHour)
-        } else {
-            next.add(Calendar.DAY_OF_YEAR, 1)
-            next.set(Calendar.HOUR_OF_DAY, SCHEDULE_HOURS.first())
+        listOf(ACTION_SCHEDULED_SCAN, LEGACY_HOURLY_ACTION).forEach { action ->
+            val intent = Intent(context, VideoHeartbeatReceiver::class.java).setAction(action)
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                SCHEDULE_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (pendingIntent != null) {
+                alarmManager.cancel(pendingIntent)
+                pendingIntent.cancel()
+            }
         }
-        return next
     }
 
+    /** Compatibilidade para um alarme legado que eventualmente dispare durante a migração. */
     fun enqueueScheduled(context: Context) {
         val app = context.applicationContext
+        if (!AutoSearchSettings.read(app).videosEnabled) return
         val request = OneTimeWorkRequestBuilder<VideoMonitorWorker>()
             .setConstraints(connectedConstraints())
             .build()
@@ -131,9 +118,14 @@ object VideoAutoRunLog {
     }
 
     fun markCompleted(context: Context, result: VideoSearchResult) {
+        val cfg = AutoSearchSettings.read(context)
         context.getSharedPreferences(BackgroundMonitor.PREFS, Context.MODE_PRIVATE)
             .edit()
             .putLong(KEY_COMPLETED_AT, System.currentTimeMillis())
+            .putLong(
+                KEY_NEXT_HEARTBEAT_AT,
+                if (cfg.videosEnabled) System.currentTimeMillis() + cfg.videosIntervalMinutes * 60_000L else 0L
+            )
             .putInt(KEY_FOUND, result.foundCount)
             .putInt(KEY_NEW, result.newCount)
             .putInt(KEY_RELEVANT, result.relevantCount)
@@ -153,9 +145,12 @@ object VideoAutoRunLog {
 
 class VideoHeartbeatReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action != VideoBackgroundMonitor.ACTION_SCHEDULED_SCAN) return
+        if (intent?.action !in setOf(VideoBackgroundMonitor.ACTION_SCHEDULED_SCAN, "br.com.monitordenoticias.android.VIDEO_HEARTBEAT")) return
+        // Primeiro remove a agenda legada e instala a nova periódica. Só depois cria a
+        // execução de compatibilidade; caso contrário scheduleAll cancelaria o trabalho
+        // one-shot recém-enfileirado com o mesmo nome.
+        VideoBackgroundMonitor.scheduleAll(context)
         VideoBackgroundMonitor.enqueueScheduled(context)
-        VideoBackgroundMonitor.scheduleNext(context)
     }
 }
 

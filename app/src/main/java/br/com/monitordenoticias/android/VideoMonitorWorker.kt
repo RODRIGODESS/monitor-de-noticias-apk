@@ -6,6 +6,14 @@ import androidx.work.WorkerParameters
 
 class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
+        // Liga/desliga é absoluto, inclusive em retries. A cadência limita disparos
+        // normais/legados, sem bloquear uma repetição legítima após falha.
+        val auto = AutoSearchSettings.read(applicationContext)
+        if (!auto.videosEnabled) return Result.success()
+        if (runAttemptCount == 0 && !AutoSearchSettings.videosDue(applicationContext)) {
+            return Result.success()
+        }
+
         VideoAutoRunLog.markAttempt(applicationContext)
         val db = VideoDb(applicationContext).apply {
             removeInvalidListingEntries()
@@ -18,8 +26,6 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
                 ?.toSet()
 
             val selectedIds = if (existing == null) {
-                // Instalações novas da v2.9 começam apenas com as fontes nacionais.
-                // O catálogo regional é grande e deve ser escolhido por Região/UF.
                 VideoSourceCatalog.defaultIds.also { defaults ->
                     prefs.edit()
                         .putStringSet(VideoViewModel.KEY_SELECTED_SOURCES, defaults)

@@ -86,49 +86,50 @@ jobs:
           test "$FINAL_CERT" = "$EXPECTED_CERT"
           echo "PERMANENT_SIGNING_OK=true"
 
-      - name: Prepare v4.1.0 release asset
+      - name: Prepare v4.2.0 release asset
         if: github.event_name != 'pull_request'
-        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.1.0.apk
+        run: cp app/build/outputs/apk/release/app-release.apk monitor-de-noticias-v4.2.0.apk
 
-      - name: Point v4.1.0 tag to validated main commit
+      - name: Point v4.2.0 tag to validated main commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f v4.1.0 "$GITHUB_SHA"
-          git push --force origin refs/tags/v4.1.0
+          git tag -f v4.2.0 "$GITHUB_SHA"
+          git push --force origin refs/tags/v4.2.0
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.1.0
+          tag_name: v4.2.0
           target_commitish: ${{ github.sha }}
-          name: Monitor de Notícias Android v4.1.0
+          name: Monitor de Notícias Android v4.2.0
           body: |
-            Monitor de Notícias Android v4.1.0 — termos padrão e evolução visual profissional.
+            Monitor de Notícias Android v4.2.0 — automação independente e evolução visual profissional.
 
-            Termos padrão:
-            - adiciona Capitania Fluvial, Fragata, Submarino, Comandante da Marinha, Exército, FAB, Marinha, Ministro da Defesa, Ministério da Defesa, Maior navio da América Latina e PROSUB;
-            - o pacote é acrescentado aos Termos de Notícias sem apagar os termos existentes;
-            - o mesmo pacote é acrescentado uma única vez aos Termos de Vídeos;
-            - depois da migração, as listas de Notícias e Vídeos continuam totalmente independentes e editáveis.
+            Automação:
+            - Notícias, Demandas e Vídeos agora têm liga/desliga e intervalo independentes em Configurações;
+            - intervalos disponíveis: 15 min, 30 min, 1 h, 2 h, 3 h, 4 h e 6 h;
+            - o intervalo anterior de Notícias é preservado na atualização;
+            - Demandas iniciam em 1 h e Vídeos em 3 h, podendo ser alterados a qualquer momento;
+            - a busca manual continua disponível mesmo com a automação correspondente pausada;
+            - a agenda fixa antiga de vídeos é removida para evitar varreduras duplicadas.
 
             Interface:
-            - nova paleta escura mais sóbria e consistente;
-            - cabeçalho redesenhado com identidade de Central de Monitoramento;
-            - navegação inferior mais limpa, com indicação visual clara da seção ativa;
-            - cartões de métricas, fontes, notícias e vídeos refinados;
-            - hierarquia de títulos, subtítulos, bordas e espaçamentos revisada;
-            - Abrir, Copiar link e WhatsApp permanecem disponíveis nos cards ativos.
+            - nova interface ativa MainActivityV42 inspirada no painel profissional de monitoramento;
+            - paleta azul-marinho, cabeçalho institucional e navegação inferior com destaque claro da seção ativa;
+            - faixa de atividade de Notícias nas telas secundárias;
+            - Demandas, Período, Histórico, Termos e Configurações foram redesenhados;
+            - Início, Vídeos e Fontes mantêm os componentes funcionais V30 sob o novo shell visual;
+            - Abrir, Copiar link e WhatsApp continuam disponíveis nos cards de conteúdo.
 
             Compatibilidade:
-            - versionCode 410 / versionName 4.1.0;
+            - versionCode 420 / versionName 4.2.0;
             - mesmo applicationId br.com.monitordenoticias.android;
             - mesma assinatura permanente validada pelo certificado SHA-256 esperado;
-            - migração de banco não destrutiva;
-            - atualização direta sobre v4.0.5 preservando notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
-          files: monitor-de-noticias-v4.1.0.apk
+            - atualização direta sobre v4.1.0 preservando banco, notícias, vídeos, Termos, Demandas, fontes, histórico e configurações.
+          files: monitor-de-noticias-v4.2.0.apk
           overwrite_files: true
           make_latest: true

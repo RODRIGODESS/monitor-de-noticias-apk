@@ -1,6 +1,7 @@
 package br.com.monitordenoticias.android
 
 import android.app.Application
+import android.content.SharedPreferences
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +21,11 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = VideoRepository(app, db)
     private val prefs = app.getSharedPreferences(BackgroundMonitor.PREFS, 0)
     private val locale = Locale("pt", "BR")
+    private val autoRunListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == VideoAutoRunLog.KEY_COMPLETED_AT || key == VideoAutoRunLog.KEY_ERROR_TEXT) {
+            refresh()
+        }
+    }
 
     private val savedIds = loadSelectedSourcesForV29()
     private val now = System.currentTimeMillis()
@@ -91,6 +97,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<VideoState> = _state
 
     init {
+        prefs.registerOnSharedPreferenceChangeListener(autoRunListener)
         VideoBackgroundMonitor.scheduleAll(app)
     }
 
@@ -336,6 +343,7 @@ class VideoViewModel(app: Application) : AndroidViewModel(app) {
     private fun formatTime(ms: Long): String = SimpleDateFormat("HH:mm", locale).format(Date(ms))
 
     override fun onCleared() {
+        prefs.unregisterOnSharedPreferenceChangeListener(autoRunListener)
         db.close()
         super.onCleared()
     }

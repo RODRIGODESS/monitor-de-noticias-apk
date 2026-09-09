@@ -6,6 +6,14 @@ import androidx.work.WorkerParameters
 
 class MonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
+        // Liga/desliga é absoluto, inclusive em retries. A janela de cadência protege
+        // disparos normais/legados, mas não bloqueia um retry legítimo após falha.
+        val auto = AutoSearchSettings.read(applicationContext)
+        if (!auto.newsEnabled) return Result.success()
+        if (runAttemptCount == 0 && !AutoSearchSettings.newsDue(applicationContext)) {
+            return Result.success()
+        }
+
         AutoRunLog.markNewsAttempt(applicationContext)
         val db = NewsDb(applicationContext)
         return try {

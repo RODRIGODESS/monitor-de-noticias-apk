@@ -688,6 +688,7 @@ private fun SettingsScreen(c: DesktopController) {
     var auto by remember { mutableStateOf(c.automaticMonitoring) }; var startup by remember { mutableStateOf(c.startWithWindows) }; var interval by remember { mutableIntStateOf(c.newsIntervalMinutes) }
     val nr = c.newsAutoReport(); val dr = c.demandAutoReport(); val vr = c.videoAutoReport()
     LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { ProxySettingsCard(c) }
         item { Panel { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("Monitoramento automático", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); SettingSwitch(auto, { auto = it; c.automaticMonitoring = it }, "Executar buscas automáticas enquanto o aplicativo estiver ativo ou na bandeja"); SettingSwitch(startup, { startup = it; c.startWithWindows = it }, "Iniciar automaticamente após o login no Windows"); Text("Intervalo automático de notícias", fontWeight = FontWeight.SemiBold); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf(15, 30, 45, 60).forEach { m -> FilterChip(selected = interval == m, onClick = { interval = m; c.newsIntervalMinutes = m }, label = { Text("$m min") }) } }; Text("Demandas: 1 hora • Vídeos: 08h, 12h, 15h, 19h e 21h.", color = AppMuted) } } }
         item { AutoReportCard("Notícias automáticas", nr, "${nr.found} resultado(s) • ${nr.newCount} nova(s)") }
         item { AutoReportCard("Demandas automáticas", dr, "${dr.checked} demanda(s) • ${dr.found} resultado(s) • ${dr.newCount} nova(s)") }

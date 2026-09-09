@@ -142,6 +142,7 @@ class DesktopController(
 
     fun searchNews(from: Long? = null, to: Long? = null, automatic: Boolean = false) {
         if (newsBusy) return
+        if (!ensureProxyReady(false)) return
         if (!newsAllSources && selectedNewsSourceIds.isEmpty()) {
             status = "⚠ Selecione pelo menos uma fonte ou ative ‘Buscar em todos os veículos’."
             if (automatic) markAutoFailed("news", status)
@@ -178,6 +179,7 @@ class DesktopController(
 
     fun searchDemand(demand: Demand) {
         if (demandBusy) return
+        if (!ensureProxyReady(false)) return
         demandBusy = true
         status = "Buscando demanda: ${demand.vehicle} • ${demand.subject}"
         demandProgress = LiveSearchProgress(
@@ -220,6 +222,7 @@ class DesktopController(
 
     fun searchAllDemands(automatic: Boolean = false) {
         if (demandBusy) return
+        if (!ensureProxyReady(false)) return
         val active = demands.filter { it.active }
         if (active.isEmpty()) {
             status = "Nenhuma demanda ativa para pesquisar"
@@ -266,6 +269,7 @@ class DesktopController(
 
     fun searchVideos(from: Long? = null, to: Long? = null, automatic: Boolean = false) {
         if (videoBusy) return
+        if (!ensureProxyReady(true)) return
         val sources = selectedVideoSources()
         if (sources.isEmpty()) {
             videoStatus = "⚠ Selecione pelo menos uma fonte de vídeo"
@@ -541,7 +545,7 @@ class DesktopController(
 
     private suspend fun automationLoop() {
         while (currentCoroutineContext().isActive) {
-            if (automaticMonitoring) {
+            if (automaticMonitoring && DesktopProxyManager.isReady(context)) {
                 val now = System.currentTimeMillis()
                 val lastNews = prefs.getLong("desktop_auto_news_at", 0L)
                 if (!newsBusy && now - lastNews >= newsIntervalMinutes * 60_000L) {
@@ -579,6 +583,13 @@ class DesktopController(
             .distinctBy { it.link }
             .sortedWith(compareByDescending<VideoItem> { it.capturedAt }.thenByDescending { it.publishedAt })
             .take(2000)
+
+    private fun ensureProxyReady(video: Boolean): Boolean {
+    if (DesktopProxyManager.isReady(context)) return true
+    val warning = "⚠ Proxy autenticado: configure usuário e senha em Configurações."
+    if (video) videoStatus = warning else status = warning
+    return false
+}
 
     override fun close() {
         scope.cancel()

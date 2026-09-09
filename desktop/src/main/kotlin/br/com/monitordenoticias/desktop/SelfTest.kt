@@ -27,6 +27,7 @@ fun main() {
             .edit()
             .putBoolean("desktop_start_with_windows", false)
             .putBoolean("desktop_automatic_monitoring", false)
+            .putBoolean("desktop_proxy_enabled", false)
             .apply()
 
         // Regressão v4.0.3: o Google Notícias pode publicar "Folha PE" enquanto
@@ -37,11 +38,17 @@ fun main() {
         check(DesktopSourceCatalog.publisherMatches("Folha PE", folhaPe)) {
             "Alias Folha PE não corresponde à Folha de Pernambuco"
         }
+        check(DesktopSourceCatalog.publisherMatches("FolhaPE", folhaPe)) {
+            "Alias FolhaPE não corresponde à Folha de Pernambuco"
+        }
         check(DesktopSourceCatalog.canonicalName("Folha PE") == "Folha de Pernambuco") {
             "Nome canônico de Folha PE incorreto"
         }
         check(DesktopSourceCatalog.publisherMatches("folhape.com.br", folhaPe)) {
             "Domínio folhape.com.br não corresponde à Folha de Pernambuco"
+        }
+        check(DesktopSourceCatalog.publisherMatches("www.folhape.com.br", folhaPe)) {
+            "Domínio www.folhape.com.br não corresponde à Folha de Pernambuco"
         }
 
         val expectedSpecializedIds = setOf(
@@ -74,6 +81,49 @@ fun main() {
             }
             check(controller.videoTerms.toSet().containsAll(expectedTerms)) {
                 "Os termos estabelecidos não foram migrados integralmente para Vídeos"
+            }
+
+            // Regressão de seleção: vazio significa realmente vazio. Não pode haver
+            // fallback silencioso para fontes padrão, especialmente em Vídeos.
+            controller.clearNewsSources()
+            check(!controller.newsAllSources && controller.selectedNewsSourceIds.isEmpty()) {
+                "Limpar fontes de notícias não persistiu seleção vazia"
+            }
+            controller.searchNews()
+            check(controller.status.startsWith("⚠")) {
+                "Busca de notícias deveria bloquear quando nenhuma fonte está selecionada"
+            }
+            controller.selectAllNewsSources()
+            check(controller.newsAllSources && controller.selectedNewsSourceIds.containsAll(DesktopSourceCatalog.all.map { it.id })) {
+                "Selecionar todas as fontes de notícias não restaurou o catálogo Windows"
+            }
+
+            controller.clearVideoSources()
+            check(controller.selectedVideoSourceIds.isEmpty()) {
+                "Limpar fontes de vídeo não persistiu seleção vazia"
+            }
+            controller.searchVideos()
+            check(controller.videoStatus.startsWith("⚠")) {
+                "Busca de vídeos deveria bloquear quando nenhuma fonte está selecionada"
+            }
+            controller.selectAllVideoSources()
+            check(controller.selectedVideoSourceIds.containsAll(VideoSourceCatalog.all.map { it.id })) {
+                "Selecionar todas as fontes de vídeo não restaurou o catálogo"
+            }
+
+            // Regressão dos campos de período usados nas telas Notícias/Vídeos.
+            val preset = controller.periodPreset(1)
+            val parsedPeriod = controller.parsePeriod(
+                preset.startDate,
+                preset.startTime,
+                preset.endDate,
+                preset.endTime
+            ) ?: error("Período de 24h gerado pela interface não pôde ser interpretado")
+            check(parsedPeriod.second > parsedPeriod.first) {
+                "Período interpretado não possui fim posterior ao início"
+            }
+            check(controller.parsePeriod("31/12/2025", "00:00", "01/01/2026", "23:59") != null) {
+                "Parser de período não aceitou datas brasileiras válidas"
             }
 
             // Regressão de histórico/"Nova": a existência é consultada em todo o banco,

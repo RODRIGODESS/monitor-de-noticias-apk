@@ -7,9 +7,9 @@ plugins {
 }
 
 group = "br.com.monitordenoticias"
-version = "4.0.2"
+version = "4.0.3"
 
-// Build Windows com tema naval profissional, reatividade integral e automação independente por módulo.
+// Build Windows v4.0.3 com busca em camadas, aliases regionais e diagnóstico de cobertura.
 kotlin {
     jvmToolchain(17)
     sourceSets {
@@ -26,6 +26,7 @@ kotlin {
                 "br/com/monitordenoticias/android/MonitorViewModel.kt",
                 "br/com/monitordenoticias/android/MonitorWorker.kt",
                 "br/com/monitordenoticias/android/NewsDb.kt",
+                "br/com/monitordenoticias/android/NewsRepository.kt",
                 "br/com/monitordenoticias/android/NotificationHelper.kt",
                 "br/com/monitordenoticias/android/V27LayoutCompat.kt",
                 "br/com/monitordenoticias/android/V30Screens.kt",
@@ -57,20 +58,16 @@ compose.desktop {
     application {
         mainClass = "br.com.monitordenoticias.desktop.MainKt"
         nativeDistributions {
-            // O app usa JDBC/SQLite, AWT/Swing, XML, rede e bibliotecas que carregam
-            // classes por reflexão. Um runtime reduzido pode compilar normalmente e
-            // falhar apenas ao abrir o EXE com a mensagem genérica "Failed to launch JVM".
             includeAllModules = true
             targetFormats(TargetFormat.Msi)
             packageName = "MonitorDeNoticias"
-            packageVersion = "4.0.2"
-            description = "Monitor de Notícias v4.0.2 para Windows"
+            packageVersion = "4.0.3"
+            description = "Monitor de Notícias v4.0.3 para Windows"
             vendor = "Monitor de Notícias"
             windows {
                 menuGroup = "Monitor de Notícias"
                 shortcut = false
                 console = false
-                // Gerado pelo workflow a partir de monitor_icon.ico.b64 antes do Gradle.
                 iconFile.set(project.file("src/main/resources/monitor_icon.ico"))
             }
         }

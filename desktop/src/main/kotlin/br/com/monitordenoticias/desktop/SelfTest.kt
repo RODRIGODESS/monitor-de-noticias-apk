@@ -2,6 +2,7 @@ package br.com.monitordenoticias.desktop
 
 import android.content.Context
 import br.com.monitordenoticias.android.BackgroundMonitor
+import br.com.monitordenoticias.android.DesktopEstablishedTerms
 import br.com.monitordenoticias.android.SourceCatalog
 import br.com.monitordenoticias.android.VideoSourceCatalog
 import java.io.File
@@ -37,12 +38,42 @@ fun main() {
         check(DesktopSourceCatalog.canonicalName("Folha PE") == "Folha de Pernambuco") {
             "Nome canônico de Folha PE incorreto"
         }
+        check(DesktopSourceCatalog.publisherMatches("folhape.com.br", folhaPe)) {
+            "Domínio folhape.com.br não corresponde à Folha de Pernambuco"
+        }
+
+        val expectedSpecializedIds = setOf(
+            "especializada-defesa-em-foco",
+            "especializada-defesa-aerea-naval",
+            "especializada-defesanet",
+            "especializada-tecnodefesa",
+            "especializada-zona-militar",
+            "especializada-click-petroleo-gas",
+            "especializada-poder-naval",
+            "especializada-gbn-news"
+        )
+        check(DesktopSourceCatalog.specialized.size == 8) {
+            "Catálogo especializado Windows deveria conter exatamente 8 fontes"
+        }
+        check(expectedSpecializedIds.all(DesktopSourceCatalog.byId::containsKey)) {
+            "Uma ou mais mídias especializadas esperadas não estão no catálogo Windows"
+        }
 
         DesktopController(context).use { controller ->
             controller.refresh()
             check(SourceCatalog.all.isNotEmpty()) { "News source catalog is empty" }
             check(DesktopSourceCatalog.all.isNotEmpty()) { "Desktop news source catalog is empty" }
             check(VideoSourceCatalog.all.isNotEmpty()) { "Video source catalog is empty" }
+
+            val expectedTerms = DesktopEstablishedTerms.all.toSet()
+            check(expectedTerms.isNotEmpty()) { "Established terms list is empty" }
+            check(controller.terms.toSet().containsAll(expectedTerms)) {
+                "Os termos estabelecidos não foram migrados integralmente para Notícias"
+            }
+            check(controller.videoTerms.toSet().containsAll(expectedTerms)) {
+                "Os termos estabelecidos não foram migrados integralmente para Vídeos"
+            }
+
             controller.newsDb.listTerms()
             controller.newsDb.listDemands()
             controller.videoDb.listRecent(1, 10)

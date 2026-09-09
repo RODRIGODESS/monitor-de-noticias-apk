@@ -52,10 +52,10 @@ class NewsDb(context: Context) : AutoCloseable {
     }
 
     private fun seedTerms() {
-        val defaults = listOf(
+        val defaults = (listOf(
             "Marinha do Brasil","Capitania dos Portos","Distrito Naval","NAM Atlântico",
             "Cisne Branco","Fragata Marinha do Brasil","Navio-Patrulha Marinha","Programa Nuclear da Marinha"
-        )
+        ) + DesktopEstablishedTerms.all).distinctBy { it.lowercase() }
         connection.prepareStatement("INSERT OR IGNORE INTO terms(term) VALUES(?)").use { ps ->
             defaults.forEach { value -> ps.setString(1, value); ps.addBatch() }
             ps.executeBatch()

@@ -113,9 +113,22 @@ class DesktopController(
 
     init {
         DesktopProxyManager.apply(context)
+        migrateEstablishedTerms()
         refresh()
         if (startWithWindows) updateWindowsStartup(true)
         scope.launch { automationLoop() }
+    }
+
+    private fun migrateEstablishedTerms() {
+        val migrationKey = "desktop_established_terms_20260909"
+        if (prefs.getBoolean(migrationKey, false)) return
+
+        DesktopEstablishedTerms.all.forEach(newsDb::addTerm)
+        val newsSeed = newsDb.listTerms()
+        DesktopEstablishedTerms.all.forEach { term ->
+            VideoTermStore.add(context, term, newsSeed)
+        }
+        prefs.edit().putBoolean(migrationKey, true).apply()
     }
 
     fun refresh() {

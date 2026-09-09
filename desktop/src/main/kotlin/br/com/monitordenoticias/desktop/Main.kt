@@ -35,17 +35,18 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val AppBlue = Color(0xFF1769E8)
-private val AppBlueStrong = Color(0xFF0759D7)
-private val AppBlueSoft = Color(0xFFEAF3FF)
-private val AppNavy = Color(0xFF0B1C4D)
-private val AppMuted = Color(0xFF607092)
-private val AppBg = Color(0xFFF4F8FD)
-private val AppPanel = Color(0xFFFBFDFF)
-private val AppLine = Color(0xFFDCE6F4)
-private val AppGreen = Color(0xFF159447)
+private val AppBlue = Color(0xFF155EEF)
+private val AppBlueStrong = Color(0xFF0B4AB8)
+private val AppBlueSoft = Color(0xFFEAF2FF)
+private val AppNavy = Color(0xFF102A43)
+private val AppMuted = Color(0xFF66788A)
+private val AppBg = Color(0xFFF4F7FB)
+private val AppPanel = Color(0xFFFFFFFF)
+private val AppLine = Color(0xFFD9E2EC)
+private val AppGreen = Color(0xFF128A4B)
 private val AppRed = Color(0xFFD92D20)
-private val AppOrange = Color(0xFFEA7B24)
+private val AppOrange = Color(0xFFE56A13)
+private val AppSlate = Color(0xFF334E68)
 
 private val ModernLightScheme = lightColorScheme(
     primary = AppBlue,
@@ -148,8 +149,8 @@ private fun App(c: DesktopController) {
 @Composable
 private fun Sidebar(selected: Section, onSection: (Section) -> Unit, c: DesktopController) {
     Surface(
-        modifier = Modifier.width(236.dp).fillMaxHeight(),
-        color = Color(0xFFF9FBFE),
+        modifier = Modifier.width(248.dp).fillMaxHeight(),
+        color = Color.White,
         shadowElevation = 1.dp
     ) {
         Column(Modifier.fillMaxSize().padding(14.dp)) {
@@ -172,7 +173,7 @@ private fun Sidebar(selected: Section, onSection: (Section) -> Unit, c: DesktopC
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text("Monitor", fontWeight = FontWeight.Bold, color = AppNavy)
-                    Text("de Notícias", style = MaterialTheme.typography.labelMedium, color = AppMuted)
+                    Text("Inteligência de mídia", style = MaterialTheme.typography.labelMedium, color = AppMuted)
                 }
             }
 
@@ -244,7 +245,14 @@ private fun Sidebar(selected: Section, onSection: (Section) -> Unit, c: DesktopC
                         )
                     }
                     Text("Dados salvos localmente", style = MaterialTheme.typography.labelSmall, color = AppMuted)
-                    Text("App portátil • v4.0.2", style = MaterialTheme.typography.labelSmall, color = AppMuted)
+                    Text(
+                        if (DesktopProxyManager.load(c.context).enabled) {
+                            if (DesktopProxyManager.isReady(c.context)) "Proxy autenticado • pronto" else "Proxy autenticado • configurar"
+                        } else "Conexão direta • proxy desativado",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AppMuted
+                    )
+                    Text("Windows Portable • v4.0.2", style = MaterialTheme.typography.labelSmall, color = AppMuted)
                 }
             }
         }
@@ -253,8 +261,10 @@ private fun Sidebar(selected: Section, onSection: (Section) -> Unit, c: DesktopC
 
 @Composable
 private fun ModernTopBar(c: DesktopController, section: Section, nowMs: Long) {
+    val proxy = DesktopProxyManager.load(c.context)
+    val proxyReady = DesktopProxyManager.isReady(c.context)
     Row(
-        Modifier.fillMaxWidth().height(if (section == Section.NEWS) 76.dp else 90.dp).padding(horizontal = 26.dp),
+        Modifier.fillMaxWidth().height(if (section == Section.NEWS) 80.dp else 94.dp).padding(horizontal = 28.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
@@ -266,45 +276,65 @@ private fun ModernTopBar(c: DesktopController, section: Section, nowMs: Long) {
             )
             Text(
                 when (section) {
-                    Section.HOME -> "Acompanhe o que realmente importa em tempo real"
+                    Section.HOME -> "Central de inteligência e monitoramento de mídia em tempo real"
                     Section.NEWS -> "Busque, filtre e acompanhe matérias em tempo real"
                     Section.VIDEOS -> "Monitoramento de vídeos, telejornais e fontes oficiais"
                     Section.TERMS -> "Gerencie termos independentes para notícias e vídeos"
                     Section.DEMANDS -> "Acompanhe assuntos específicos por veículo"
                     Section.SOURCES -> "Selecione fontes nacionais, regionais e especializadas"
                     Section.HISTORY -> "Consulte e exporte o histórico armazenado"
-                    Section.SETTINGS -> "Automação, inicialização e dados portáteis"
+                    Section.SETTINGS -> "Automação, proxy, inicialização e dados portáteis"
                 },
                 color = AppMuted,
                 style = MaterialTheme.typography.bodyMedium
             )
         }
 
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = if (c.automaticMonitoring) Color(0xFFEAF8EF) else Color(0xFFFFF3E6)
-        ) {
-            Row(
-                Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    Modifier.size(9.dp).clip(CircleShape)
-                        .background(if (c.automaticMonitoring) AppGreen else AppOrange)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (c.automaticMonitoring) "Monitoramento automático ATIVO" else "Monitoramento automático PAUSADO",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (c.automaticMonitoring) AppGreen else AppOrange,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
+        TopStatusPill(
+            icon = Icons.Default.Security,
+            text = when {
+                !proxy.enabled -> "Proxy desativado"
+                proxyReady -> "Proxy pronto"
+                else -> "Proxy requer configuração"
+            },
+            active = !proxy.enabled || proxyReady,
+            warning = proxy.enabled && !proxyReady
+        )
+        Spacer(Modifier.width(10.dp))
+        TopStatusPill(
+            icon = Icons.Default.Radar,
+            text = if (c.automaticMonitoring) "Automação ativa" else "Automação pausada",
+            active = c.automaticMonitoring,
+            warning = !c.automaticMonitoring
+        )
         Spacer(Modifier.width(18.dp))
         Column(horizontalAlignment = Alignment.End) {
             Text(SimpleDateFormat("EEE, dd 'de' MMMM", Locale("pt", "BR")).format(Date(nowMs)), color = AppMuted, style = MaterialTheme.typography.labelMedium)
             Text(SimpleDateFormat("HH:mm", Locale("pt", "BR")).format(Date(nowMs)), color = AppNavy, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+@Composable
+private fun TopStatusPill(icon: ImageVector, text: String, active: Boolean, warning: Boolean = false) {
+    val bg = when {
+        warning -> Color(0xFFFFF4E8)
+        active -> Color(0xFFEAF8EF)
+        else -> Color(0xFFF0F4F8)
+    }
+    val fg = when {
+        warning -> AppOrange
+        active -> AppGreen
+        else -> AppSlate
+    }
+    Surface(shape = RoundedCornerShape(12.dp), color = bg) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, null, tint = fg, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(7.dp))
+            Text(text, color = fg, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -339,8 +369,8 @@ private fun HomeScreen(c: DesktopController, nowMs: Long) {
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Ações rápidas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Inicie uma varredura sem sair do painel", color = AppMuted, style = MaterialTheme.typography.bodySmall)
+                        Text("Ações operacionais", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Execute varreduras prioritárias sem interromper o acompanhamento", color = AppMuted, style = MaterialTheme.typography.bodySmall)
                     }
                     Button(onClick = { c.searchNews() }, enabled = !c.newsBusy, shape = RoundedCornerShape(10.dp)) {
                         Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(6.dp)); Text(if (c.newsBusy) "Buscando..." else "Buscar notícias")
@@ -391,7 +421,7 @@ private fun WelcomePanel(c: DesktopController) {
             }
             Spacer(Modifier.width(18.dp))
             Column(Modifier.weight(1f)) {
-                Text("Sistema pronto para monitorar", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Central pronta para monitorar", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text("As buscas e os resultados agora são atualizados na própria tela, em tempo real.", color = AppMuted)
                 Spacer(Modifier.height(5.dp))
                 Text("Status: ${c.status}", color = AppBlue, style = MaterialTheme.typography.labelLarge)
@@ -404,20 +434,23 @@ private fun WelcomePanel(c: DesktopController) {
 private fun MetricCard(title: String, value: String, subtitle: String, icon: ImageVector, accent: Color, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         border = androidx.compose.foundation.BorderStroke(1.dp, AppLine),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = CircleShape, color = accent.copy(alpha = .11f), modifier = Modifier.size(48.dp)) {
-                Icon(icon, null, tint = accent, modifier = Modifier.padding(12.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text(title, color = AppMuted, style = MaterialTheme.typography.labelMedium)
-                Text(value, color = AppNavy, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(subtitle, color = AppMuted, style = MaterialTheme.typography.labelSmall)
+        Column {
+            Box(Modifier.fillMaxWidth().height(3.dp).background(accent.copy(alpha = .85f)))
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = RoundedCornerShape(13.dp), color = accent.copy(alpha = .10f), modifier = Modifier.size(50.dp)) {
+                    Icon(icon, null, tint = accent, modifier = Modifier.padding(13.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(title, color = AppMuted, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
+                    Text(value, color = AppNavy, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(subtitle, color = AppMuted, style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
     }
@@ -702,7 +735,7 @@ private fun SettingsScreen(c: DesktopController) {
 @Composable private fun SettingSwitch(value: Boolean, onChange: (Boolean) -> Unit, text: String) { Row(verticalAlignment = Alignment.CenterVertically) { Switch(value, onCheckedChange = onChange); Spacer(Modifier.width(10.dp)); Text(text) } }
 @Composable private fun StatusStrip(text: String, busy: Boolean) { Surface(shape = RoundedCornerShape(10.dp), color = when { text.startsWith("✓") -> Color(0xFFEAF8EF); text.startsWith("⚠") || text.startsWith("Falha") -> Color(0xFFFFF0EE); busy -> AppBlueSoft; else -> Color(0xFFF3F6FA) }, modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) { if (busy) { CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) } else { Icon(when { text.startsWith("✓") -> Icons.Default.CheckCircle; text.startsWith("⚠") || text.startsWith("Falha") -> Icons.Default.WarningAmber; else -> Icons.Default.Info }, null, modifier = Modifier.size(17.dp), tint = when { text.startsWith("✓") -> AppGreen; text.startsWith("⚠") || text.startsWith("Falha") -> AppRed; else -> AppBlue }); Spacer(Modifier.width(8.dp)) }; Text(text, style = MaterialTheme.typography.labelLarge) } } }
 @Composable private fun Tag(text: String) { Surface(shape = RoundedCornerShape(18.dp), color = Color(0xFFEDF2F8)) { Text(text.take(52), color = Color(0xFF5D6F8B), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)) } }
-@Composable private fun Panel(modifier: Modifier = Modifier, compact: Boolean = false, content: @Composable () -> Unit) { Card(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp), colors = CardDefaults.cardColors(containerColor = Color.White), border = CardDefaults.outlinedCardBorder(), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) { Box(Modifier.padding(if (compact) 13.dp else 18.dp)) { content() } } }
+@Composable private fun Panel(modifier: Modifier = Modifier, compact: Boolean = false, content: @Composable () -> Unit) { Card(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White), border = androidx.compose.foundation.BorderStroke(1.dp, AppLine), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) { Box(Modifier.padding(if (compact) 13.dp else 18.dp)) { content() } } }
 
 private fun copyToClipboard(text: String) { runCatching { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null) } }
 private fun openUrl(url: String) { runCatching { if (AwtDesktop.isDesktopSupported()) AwtDesktop.getDesktop().browse(URI(url)) } }

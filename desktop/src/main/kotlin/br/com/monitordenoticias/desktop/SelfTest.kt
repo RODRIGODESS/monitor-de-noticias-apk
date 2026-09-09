@@ -81,6 +81,7 @@ fun main() {
             // imediatamente, sem depender de troca de aba.
             val now = System.currentTimeMillis()
             val newsLink = "https://selftest.invalid/noticia-ja-conhecida"
+            val secondNewsLink = "https://selftest.invalid/noticia-historica-2"
             controller.newsDb.insertNews(
                 listOf(
                     News(
@@ -90,11 +91,25 @@ fun main() {
                         link = newsLink,
                         matchedTerm = "MARINHA",
                         capturedAt = now - 60_000L
+                    ),
+                    News(
+                        title = "Fragata participa de atividade de teste",
+                        source = "Folha de Pernambuco",
+                        date = now - 120_000L,
+                        link = secondNewsLink,
+                        matchedTerm = "FRAGATA",
+                        capturedAt = now - 120_000L
                     )
                 )
             )
             check(newsLink in controller.newsDb.listKnownLinks()) {
                 "Índice completo de links de notícias não reconheceu item existente"
+            }
+            check(controller.newsDb.listNews(1).size == 1) {
+                "Consulta visual limitada de notícias não respeitou o limite"
+            }
+            check(controller.newsDb.listAllNews().count { it.link == newsLink || it.link == secondNewsLink } == 2) {
+                "Histórico completo da deduplicação não enxergou itens além da janela visual"
             }
             controller.refresh()
             check(controller.newsHistory.any { it.link == newsLink }) {
@@ -104,7 +119,7 @@ fun main() {
             check(controller.newsHistory.isEmpty()) {
                 "Histórico observável de notícias não limpou em tempo real"
             }
-            check(newsLink !in controller.newsDb.listKnownLinks()) {
+            check(newsLink !in controller.newsDb.listKnownLinks() && secondNewsLink !in controller.newsDb.listKnownLinks()) {
                 "SQLite de notícias ainda contém item após limpar histórico"
             }
 

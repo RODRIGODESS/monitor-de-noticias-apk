@@ -6,6 +6,10 @@ import androidx.work.WorkerParameters
 
 class MonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
+        // Protege a configuração v4.2.0 inclusive contra um agendador legado que
+        // ainda possa disparar durante a migração. Busca manual não passa por aqui.
+        if (!AutoSearchSettings.newsDue(applicationContext)) return Result.success()
+
         AutoRunLog.markNewsAttempt(applicationContext)
         val db = NewsDb(applicationContext)
         return try {

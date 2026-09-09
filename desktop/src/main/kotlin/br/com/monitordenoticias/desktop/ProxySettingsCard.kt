@@ -74,7 +74,7 @@ fun ProxySettingsCard(c: DesktopController) {
                 Column(Modifier.weight(1f)) {
                     Text("Proxy autenticado", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
-                        "Configuração integrada ao Monitor de Notícias. A senha fica protegida pelo Windows DPAPI.",
+                        "Configuração dentro do aplicativo. A senha fica protegida pelo Windows DPAPI.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

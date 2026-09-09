@@ -113,7 +113,7 @@ class VideoDb(context: Context) : AutoCloseable {
 
     fun listAll(limit:Int=1000):List<VideoItem> = query(null, emptyList(),limit)
 
-    /** Índice leve e sem limite artificial para a regra visual de vídeo novo. */
+    /** Índice leve e sem limite artificial para compatibilidade com a base existente. */
     @Synchronized
     fun listKnownLinks(): Set<String> = connection.createStatement().use { st ->
         st.executeQuery("SELECT link FROM videos").use { rs ->
@@ -124,6 +124,25 @@ class VideoDb(context: Context) : AutoCloseable {
             }
         }
     }
+
+    /**
+     * Índice canônico usado pela regra visual de vídeo novo.
+     *
+     * Bases de versões anteriores podem conter a mesma mídia como youtu.be,
+     * youtube.com/watch ou com parâmetros de rastreamento. A busca atual já
+     * canonicaliza os resultados; este índice faz o histórico antigo falar a
+     * mesma linguagem sem reescrever o SQLite nem provocar colisões UNIQUE.
+     */
+    @Synchronized
+    fun listKnownCanonicalLinks(): Set<String> = listKnownLinks()
+        .asSequence()
+        .map(::canonicalLinkKey)
+        .filter(String::isNotBlank)
+        .toSet()
+
+    fun canonicalLinkKey(value: String): String = canonicalizeUrl(value)
+        .lowercase()
+        .trimEnd('/')
 
     fun clear(){ connection.createStatement().use { it.executeUpdate("DELETE FROM videos") } }
 
@@ -145,6 +164,32 @@ class VideoDb(context: Context) : AutoCloseable {
                 }
             }
         }
+    }
+
+    private fun canonicalizeUrl(value:String):String {
+        if(value.isBlank()) return ""
+        return runCatching {
+            val uri=URI(value.trim())
+            val host=uri.host.orEmpty().lowercase()
+            if(host=="youtu.be" || host.endsWith("youtube.com")) {
+                val query=uri.rawQuery.orEmpty()
+                val videoId=when {
+                    host=="youtu.be" -> uri.path.orEmpty().trim('/').substringBefore('/')
+                    uri.path.equals("/watch",ignoreCase=true) ->
+                        query.split('&').firstOrNull { it.startsWith("v=") }?.substringAfter("v=").orEmpty()
+                    else -> {
+                        val parts=uri.path.orEmpty().trim('/').split('/').filter { it.isNotBlank() }
+                        if(parts.size>=2 && parts.first().lowercase() in setOf("shorts","live")) parts[1] else ""
+                    }
+                }
+                if(videoId.isNotBlank()) "https://www.youtube.com/watch?v=$videoId" else value.trim()
+            } else {
+                val path=uri.path.orEmpty().ifBlank { "/" }
+                URI(uri.scheme ?: "https",uri.userInfo,uri.host,uri.port,path,null,null)
+                    .toString()
+                    .trimEnd('/')
+            }
+        }.getOrDefault(value.trim())
     }
 
     private fun isGenericStoredResult(title:String,link:String):Boolean {

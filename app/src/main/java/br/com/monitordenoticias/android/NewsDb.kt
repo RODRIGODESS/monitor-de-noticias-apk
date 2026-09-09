@@ -5,13 +5,12 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class NewsDb(context: Context) : SQLiteOpenHelper(context, "news.db", null, 3) {
+class NewsDb(context: Context) : SQLiteOpenHelper(context, "news.db", null, 4) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE news(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,source TEXT,date INTEGER NOT NULL,link TEXT UNIQUE,snippet TEXT,important INTEGER DEFAULT 0,demand INTEGER DEFAULT 0,matched_term TEXT DEFAULT '',matched_demand TEXT DEFAULT '',captured_at INTEGER NOT NULL DEFAULT 0)")
         db.execSQL("CREATE TABLE terms(id INTEGER PRIMARY KEY AUTOINCREMENT,term TEXT UNIQUE NOT NULL)")
         db.execSQL("CREATE TABLE demands(id INTEGER PRIMARY KEY AUTOINCREMENT,vehicle TEXT NOT NULL,subject TEXT NOT NULL,active INTEGER DEFAULT 1,last_checked_at INTEGER NOT NULL DEFAULT 0,last_found_count INTEGER NOT NULL DEFAULT 0,last_new_count INTEGER NOT NULL DEFAULT 0,last_error TEXT DEFAULT '')")
-        val defaults = listOf("Marinha do Brasil","Capitania dos Portos","Distrito Naval","NAM Atlântico","Cisne Branco","Fragata Marinha do Brasil","Navio-Patrulha Marinha","Programa Nuclear da Marinha")
-        defaults.forEach { db.execSQL("INSERT OR IGNORE INTO terms(term) VALUES(?)", arrayOf(it)) }
+        insertDefaultTerms(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -26,6 +25,17 @@ class NewsDb(context: Context) : SQLiteOpenHelper(context, "news.db", null, 3) {
             db.execSQL("ALTER TABLE demands ADD COLUMN last_found_count INTEGER NOT NULL DEFAULT 0")
             db.execSQL("ALTER TABLE demands ADD COLUMN last_new_count INTEGER NOT NULL DEFAULT 0")
             db.execSQL("ALTER TABLE demands ADD COLUMN last_error TEXT DEFAULT ''")
+        }
+        if (oldVersion < 4) {
+            // v4.1.0: acrescenta o novo pacote de termos sem apagar nem substituir
+            // nenhum termo que já exista no banco do usuário.
+            insertDefaultTerms(db)
+        }
+    }
+
+    private fun insertDefaultTerms(db: SQLiteDatabase) {
+        DEFAULT_TERMS.forEach { term ->
+            db.execSQL("INSERT OR IGNORE INTO terms(term) VALUES(?)", arrayOf(term))
         }
     }
 
@@ -117,6 +127,30 @@ class NewsDb(context: Context) : SQLiteOpenHelper(context, "news.db", null, 3) {
         writableDatabase.update("demands", values, "id=?", arrayOf(id.toString()))
     }
 
-    fun removeDemand(id: Long) { writableDatabase.execSQL("DELETE FROM demands WHERE id=?", arrayOf(id)) }
+    fun removeDemand(id: Long) { writableDatabase.execSQL("DELETE FROM demands WHERE id=?", arrayOf(id.toString())) }
     fun clearHistory() { writableDatabase.execSQL("DELETE FROM news") }
+
+    companion object {
+        val DEFAULT_TERMS = listOf(
+            "Marinha do Brasil",
+            "Capitania dos Portos",
+            "Distrito Naval",
+            "NAM Atlântico",
+            "Cisne Branco",
+            "Fragata Marinha do Brasil",
+            "Navio-Patrulha Marinha",
+            "Programa Nuclear da Marinha",
+            "Capitania Fluvial",
+            "Fragata",
+            "Submarino",
+            "Comandante da Marinha",
+            "Exército",
+            "FAB",
+            "Marinha",
+            "Ministro da Defesa",
+            "Ministério da Defesa",
+            "Maior navio da América Latina",
+            "PROSUB"
+        )
+    }
 }

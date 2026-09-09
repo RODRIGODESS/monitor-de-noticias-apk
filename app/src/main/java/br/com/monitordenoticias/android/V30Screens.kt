@@ -32,17 +32,17 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val V30Bg = Color(0xFF07101D)
-private val V30Surface = Color(0xFF0E1A2A)
-private val V30Surface2 = Color(0xFF132238)
-private val V30Selected = Color(0xFF17365F)
-private val V30Accent = Color(0xFF5EA2FF)
-private val V30Mint = Color(0xFF39D6A2)
-private val V30Amber = Color(0xFFFFB45E)
-private val V30Purple = Color(0xFFA57BFF)
-private val V30Red = Color(0xFFFF7777)
-private val V30Text2 = Color(0xFFAEBBD0)
-private val V30Divider = Color(0xFF21334A)
+private val V30Bg = Color(0xFF07111F)
+private val V30Surface = Color(0xFF0C1828)
+private val V30Surface2 = Color(0xFF12243A)
+private val V30Selected = Color(0xFF153B60)
+private val V30Accent = Color(0xFF58A6FF)
+private val V30Mint = Color(0xFF35CFA0)
+private val V30Amber = Color(0xFFF0B35D)
+private val V30Purple = Color(0xFF9B8CFF)
+private val V30Red = Color(0xFFFF6B7A)
+private val V30Text2 = Color(0xFF9FB0C5)
+private val V30Divider = Color(0xFF203449)
 
 @Composable
 fun V30Home(
@@ -621,7 +621,8 @@ private fun v30Duration(seconds: Long): String = "%02d:%02d".format(seconds / 60
 private fun V30SourceCard(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         color = if (selected) V30Selected else V30Surface,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(12.dp),
+        tonalElevation = if (selected) 1.dp else 0.dp,
         border = BorderStroke(1.dp, if (selected) V30Accent.copy(alpha = .45f) else V30Divider),
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
     ) {
@@ -641,8 +642,10 @@ private fun V30VideoCard(item: VideoItem, newStart: Long, newEnd: Long) {
     val context = LocalContext.current
     val isNew = v401InRun(item.capturedAt, newStart, newEnd)
     val open = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.link))) }; Unit }
-    Surface(color = V30Surface, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, V30Divider), modifier = Modifier.fillMaxWidth().clickable(onClick = open)) {
+    Surface(color = V30Surface, shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp, border = BorderStroke(1.dp, V30Divider), modifier = Modifier.fillMaxWidth().clickable(onClick = open)) {
         Column(Modifier.padding(14.dp)) {
+            Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(99.dp)).background(V30Purple.copy(alpha = .72f)))
+            Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.PlayCircle, null, tint = V30Purple, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(8.dp))
@@ -709,10 +712,12 @@ private fun V30VideoCard(item: VideoItem, newStart: Long, newEnd: Long) {
 private fun V30NewsCard(n: News, newStart: Long, newEnd: Long) {
     val context = LocalContext.current
     val isNew = v401InRun(n.capturedAt, newStart, newEnd)
-    Surface(color = V30Surface, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, V30Divider), modifier = Modifier.fillMaxWidth().clickable {
+    Surface(color = V30Surface, shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp, border = BorderStroke(1.dp, V30Divider), modifier = Modifier.fillMaxWidth().clickable {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(n.link))) }
     }) {
         Column(Modifier.padding(14.dp)) {
+            Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(99.dp)).background(V30Accent.copy(alpha = .72f)))
+            Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(n.source, color = V30Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (isNew) {
@@ -799,12 +804,19 @@ private fun v30ShareWhatsApp(context: Context, title: String, link: String) {
 
 @Composable
 private fun V30Metric(label: String, value: String, icon: ImageVector, color: Color, modifier: Modifier) {
-    Surface(color = V30Surface, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, V30Divider), modifier = modifier) {
-        Column(Modifier.padding(13.dp)) {
+    Surface(color = V30Surface, shape = RoundedCornerShape(14.dp), tonalElevation = 1.dp, border = BorderStroke(1.dp, V30Divider), modifier = modifier) {
+        Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, null, tint = color, modifier = Modifier.size(20.dp)); Spacer(Modifier.weight(1f)); Text(value, color = color, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                Surface(color = color.copy(alpha = .10f), shape = RoundedCornerShape(9.dp)) {
+                    Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                        Icon(icon, null, tint = color, modifier = Modifier.size(18.dp))
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                Text(value, color = color, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
             }
-            Spacer(Modifier.height(6.dp)); Text(label, color = V30Text2, fontSize = 11.5.sp)
+            Spacer(Modifier.height(8.dp))
+            Text(label, color = V30Text2, fontSize = 10.8.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }

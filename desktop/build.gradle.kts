@@ -9,7 +9,8 @@ plugins {
 group = "br.com.monitordenoticias"
 version = "4.0.3"
 
-// Build Windows v4.0.3 com busca em camadas, aliases regionais e diagnóstico de cobertura.
+// Build Windows v4.0.3 com busca em camadas, aliases regionais, diagnóstico de cobertura
+// e interface operacional redesenhada a partir dos mockups aprovados.
 kotlin {
     jvmToolchain(17)
     sourceSets {
@@ -56,7 +57,7 @@ dependencies {
 
 compose.desktop {
     application {
-        mainClass = "br.com.monitordenoticias.desktop.MainKt"
+        mainClass = "br.com.monitordenoticias.desktop.MainV403Kt"
         nativeDistributions {
             includeAllModules = true
             targetFormats(TargetFormat.Msi)

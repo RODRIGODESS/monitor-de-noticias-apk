@@ -254,7 +254,7 @@ private fun Sidebar(selected: Section, onSection: (Section) -> Unit, c: DesktopC
 @Composable
 private fun ModernTopBar(c: DesktopController, section: Section, nowMs: Long) {
     Row(
-        Modifier.fillMaxWidth().height(90.dp).padding(horizontal = 26.dp),
+        Modifier.fillMaxWidth().height(if (section == Section.NEWS) 76.dp else 90.dp).padding(horizontal = 26.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
@@ -451,33 +451,109 @@ private fun LiveSearchHero(title: String, p: LiveSearchProgress, nowMs: Long) {
     }
 }
 
+@Composable
+private fun CompactCompletedProgress(title: String, p: LiveSearchProgress) {
+    val sec = ((p.finishedAt - p.startedAt).coerceAtLeast(0L) / 1000)
+    Panel(compact = true) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Surface(shape = CircleShape, color = Color(0xFFEAF8EF), modifier = Modifier.size(42.dp)) {
+                Icon(Icons.Default.CheckCircle, null, tint = AppGreen, modifier = Modifier.padding(10.dp))
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("$title • última execução concluída", fontWeight = FontWeight.Bold, color = AppNavy)
+                LinearProgressIndicator(progress = { 1f }, modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape), color = AppGreen, trackColor = Color(0xFFDCE8F7))
+            }
+            SearchStat("${p.found}", "encontrados", AppNavy)
+            SearchStat("${p.newCount}", "novos", AppGreen)
+            SearchStat("${p.errors}", "falhas", AppRed)
+            SearchStat("${p.completed}/${p.total}", "etapas", AppBlue)
+            MetaLine("Tempo", "%02d:%02d".format(sec / 60, sec % 60), Icons.Default.Timer)
+        }
+    }
+}
+
 @Composable private fun SearchStat(value: String, label: String, color: Color) { Column { Text(value, color = color, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium); Text(label, color = AppMuted, style = MaterialTheme.typography.labelSmall) } }
 @Composable private fun MetaLine(label: String, value: String, icon: ImageVector) { Row(verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = Color(0xFF6D83A5), modifier = Modifier.size(17.dp)); Spacer(Modifier.width(7.dp)); Column(horizontalAlignment = Alignment.End) { Text(label, style = MaterialTheme.typography.labelSmall, color = AppMuted); Text(value.take(34), style = MaterialTheme.typography.labelLarge, color = AppNavy, maxLines = 1) } } }
-@Composable private fun ProgressPanel(title: String, p: LiveSearchProgress, nowMs: Long) { if (!p.active && p.startedAt == 0L) return; LiveSearchHero(title, p, nowMs) }
+@Composable private fun ProgressPanel(title: String, p: LiveSearchProgress, nowMs: Long, compactWhenCompleted: Boolean = false) { if (!p.active && p.startedAt == 0L) return; if (compactWhenCompleted && !p.active) CompactCompletedProgress(title, p) else LiveSearchHero(title, p, nowMs) }
 
 @Composable
 private fun NewsScreen(c: DesktopController, nowMs: Long) {
-    var onlyDemands by remember { mutableStateOf(false) }; var query by remember { mutableStateOf("") }
-    var sd by remember { mutableStateOf("") }; var st by remember { mutableStateOf("00:00") }; var ed by remember { mutableStateOf("") }; var et by remember { mutableStateOf("23:59") }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    var onlyDemands by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var showCustomPeriod by remember { mutableStateOf(false) }
+    var sd by remember { mutableStateOf("") }
+    var st by remember { mutableStateOf("00:00") }
+    var ed by remember { mutableStateOf("") }
+    var et by remember { mutableStateOf("23:59") }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Panel(compact = true) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = query, onValueChange = { query = it }, leadingIcon = { Icon(Icons.Default.Search, null) }, placeholder = { Text("Buscar nas notícias (título, fonte, termo...)") }, singleLine = true, modifier = Modifier.weight(1f))
-                    Button(onClick = { c.searchNews() }, enabled = !c.newsBusy, shape = RoundedCornerShape(10.dp)) { Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(6.dp)); Text(if (c.newsBusy) "Buscando..." else "Buscar últimas 24h") }
-                    FilterChip(selected = onlyDemands, onClick = { onlyDemands = !onlyDemands }, label = { Text("Só demandas") }, leadingIcon = { Icon(Icons.Default.FilterAlt, null) })
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                        placeholder = { Text("Buscar nas notícias (título, fonte, termo...)") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Button(onClick = { c.searchNews() }, enabled = !c.newsBusy, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Default.Refresh, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (c.newsBusy) "Buscando..." else "Buscar últimas 24h")
+                    }
+                    FilterChip(
+                        selected = onlyDemands,
+                        onClick = { onlyDemands = !onlyDemands },
+                        label = { Text("Só demandas") },
+                        leadingIcon = { Icon(Icons.Default.FilterAlt, null) }
+                    )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    PeriodPresets(c) { p -> sd = p.startDate; st = p.startTime; ed = p.endDate; et = p.endTime }
-                    Spacer(Modifier.weight(1f)); Text("${c.news.size} matéria(s) na janela", color = AppMuted, style = MaterialTheme.typography.labelMedium)
+                    PeriodPresets(c) { p ->
+                        sd = p.startDate; st = p.startTime; ed = p.endDate; et = p.endTime
+                        c.parsePeriod(sd, st, ed, et)?.let { c.searchNews(it.first, it.second) }
+                    }
+                    OutlinedButton(onClick = { showCustomPeriod = !showCustomPeriod }, shape = RoundedCornerShape(10.dp)) {
+                        Icon(if (showCustomPeriod) Icons.Default.ExpandLess else Icons.Default.DateRange, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text(if (showCustomPeriod) "Ocultar período" else "Período personalizado")
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text("${c.news.size} matéria(s) na janela", color = AppMuted, style = MaterialTheme.typography.labelMedium)
                 }
-                PeriodFields(sd, { sd = it }, st, { st = it }, ed, { ed = it }, et, { et = it }) { c.parsePeriod(sd, st, ed, et)?.let { c.searchNews(it.first, it.second) } }
+                if (showCustomPeriod) {
+                    PeriodFields(sd, { sd = it }, st, { st = it }, ed, { ed = it }, et, { et = it }) {
+                        c.parsePeriod(sd, st, ed, et)?.let { c.searchNews(it.first, it.second) }
+                    }
+                }
             }
         }
-        ProgressPanel("Notícias", c.newsProgress, nowMs); StatusStrip(c.status, c.newsBusy)
-        val shown = c.news.filter { (!onlyDemands || it.demand) && (query.isBlank() || "${it.title} ${it.source} ${it.snippet} ${it.matchedTerm} ${it.matchedDemand}".contains(query, true)) }
-        Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("Notícias encontradas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text("A lista é atualizada automaticamente durante a busca.", color = AppMuted, style = MaterialTheme.typography.bodySmall) }; Text("${shown.size} exibida(s)", color = AppMuted, style = MaterialTheme.typography.labelLarge) }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.weight(1f)) { items(shown, key = { it.link }) { NewsCard(it) } }
+
+        ProgressPanel("Notícias", c.newsProgress, nowMs, compactWhenCompleted = true)
+        StatusStrip(c.status, c.newsBusy)
+
+        val shown = c.news.filter {
+            (!onlyDemands || it.demand) &&
+                (query.isBlank() || "${it.title} ${it.source} ${it.snippet} ${it.matchedTerm} ${it.matchedDemand}".contains(query, true))
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text("Notícias encontradas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("A lista ocupa o espaço principal e continua sendo atualizada durante a busca.", color = AppMuted, style = MaterialTheme.typography.bodySmall)
+            }
+            Text("${shown.size} exibida(s)", color = AppMuted, style = MaterialTheme.typography.labelLarge)
+        }
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 8.dp),
+            modifier = Modifier.weight(1f).fillMaxWidth()
+        ) {
+            items(shown, key = { it.link }) { NewsCard(it) }
+        }
     }
 }
 

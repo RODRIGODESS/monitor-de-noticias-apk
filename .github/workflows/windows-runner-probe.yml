@@ -1,0 +1,22 @@
+name: Windows Runner Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "codex/windows/v4.0.3-portable"
+    paths:
+      - ".github/workflows/windows-runner-probe.yml"
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Confirm Windows runner
+        shell: pwsh
+        run: |
+          Write-Host "Windows runner iniciou com sucesso."
+          Write-Host "OS: $env:RUNNER_OS"
+          Write-Host "Arch: $env:RUNNER_ARCH"
+          [System.Environment]::OSVersion.VersionString

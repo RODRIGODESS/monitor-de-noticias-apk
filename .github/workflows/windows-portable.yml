@@ -11,6 +11,11 @@ on:
         options:
           - "windows-latest"
           - "self-hosted"
+  push:
+    branches:
+      - "codex/windows/v4.0.3-portable"
+    paths:
+      - ".github/workflows/windows-portable.yml"
 
 permissions:
   contents: write
@@ -21,7 +26,7 @@ concurrency:
 
 jobs:
   portable:
-    runs-on: ${{ inputs.runner_target }}
+    runs-on: ${{ inputs.runner_target || 'windows-latest' }}
     timeout-minutes: 45
     steps:
       - name: Confirm Windows runner

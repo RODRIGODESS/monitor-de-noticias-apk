@@ -1,0 +1,225 @@
+from pathlib import Path
+
+# 1) News defaults: preserve existing defaults and append the established Windows terms.
+news_path = Path('desktop/src/main/kotlin/br/com/monitordenoticias/android/DesktopNewsDb.kt')
+news = news_path.read_text(encoding='utf-8')
+old = '''        val defaults = listOf(
+            "Marinha do Brasil","Capitania dos Portos","Distrito Naval","NAM Atlântico",
+            "Cisne Branco","Fragata Marinha do Brasil","Navio-Patrulha Marinha","Programa Nuclear da Marinha"
+        )'''
+new = '''        val defaults = (listOf(
+            "Marinha do Brasil","Capitania dos Portos","Distrito Naval","NAM Atlântico",
+            "Cisne Branco","Fragata Marinha do Brasil","Navio-Patrulha Marinha","Programa Nuclear da Marinha"
+        ) + DesktopEstablishedTerms.all).distinctBy { it.lowercase() }'''
+if old not in news:
+    raise RuntimeError('DesktopNewsDb seedTerms marker not found')
+news = news.replace(old, new, 1)
+news_path.write_text(news, encoding='utf-8')
+
+# 2) One-time Windows migration for existing installations, in News and Video term lists.
+controller_path = Path('desktop/src/main/kotlin/br/com/monitordenoticias/desktop/DesktopController.kt')
+controller = controller_path.read_text(encoding='utf-8')
+init_old = '''    init {
+        DesktopProxyManager.apply(context)
+        refresh()'''
+init_new = '''    init {
+        DesktopProxyManager.apply(context)
+        migrateEstablishedTerms()
+        refresh()'''
+if init_old not in controller:
+    raise RuntimeError('DesktopController init marker not found')
+controller = controller.replace(init_old, init_new, 1)
+
+marker = '    fun refresh() {'
+helper = '''    private fun migrateEstablishedTerms() {
+        val migrationKey = "desktop_established_terms_20260909"
+        if (prefs.getBoolean(migrationKey, false)) return
+
+        DesktopEstablishedTerms.all.forEach(newsDb::addTerm)
+        val newsSeed = newsDb.listTerms()
+        DesktopEstablishedTerms.all.forEach { term ->
+            VideoTermStore.add(context, term, newsSeed)
+        }
+        prefs.edit().putBoolean(migrationKey, true).apply()
+    }
+
+'''
+if helper.strip() not in controller:
+    pos = controller.index(marker)
+    controller = controller[:pos] + helper + controller[pos:]
+controller_path.write_text(controller, encoding='utf-8')
+
+# 3) Professional visual refinement.
+main_path = Path('desktop/src/main/kotlin/br/com/monitordenoticias/desktop/Main.kt')
+main = main_path.read_text(encoding='utf-8')
+
+color_old = '''private val AppBlue = Color(0xFF1769E8)
+private val AppBlueStrong = Color(0xFF0759D7)
+private val AppBlueSoft = Color(0xFFEAF3FF)
+private val AppNavy = Color(0xFF0B1C4D)
+private val AppMuted = Color(0xFF607092)
+private val AppBg = Color(0xFFF4F8FD)
+private val AppPanel = Color(0xFFFBFDFF)
+private val AppLine = Color(0xFFDCE6F4)
+private val AppGreen = Color(0xFF159447)
+private val AppRed = Color(0xFFD92D20)
+private val AppOrange = Color(0xFFEA7B24)'''
+color_new = '''private val AppBlue = Color(0xFF155EEF)
+private val AppBlueStrong = Color(0xFF0B4AB8)
+private val AppBlueSoft = Color(0xFFEAF2FF)
+private val AppNavy = Color(0xFF102A43)
+private val AppMuted = Color(0xFF66788A)
+private val AppBg = Color(0xFFF4F7FB)
+private val AppPanel = Color(0xFFFFFFFF)
+private val AppLine = Color(0xFFD9E2EC)
+private val AppGreen = Color(0xFF128A4B)
+private val AppRed = Color(0xFFD92D20)
+private val AppOrange = Color(0xFFE56A13)
+private val AppSlate = Color(0xFF334E68)'''
+if color_old not in main:
+    raise RuntimeError('Main color palette marker not found')
+main = main.replace(color_old, color_new, 1)
+
+main = main.replace('modifier = Modifier.width(236.dp).fillMaxHeight(),', 'modifier = Modifier.width(248.dp).fillMaxHeight(),', 1)
+main = main.replace('color = Color(0xFFF9FBFE),', 'color = Color.White,', 1)
+main = main.replace('Text("de Notícias", style = MaterialTheme.typography.labelMedium, color = AppMuted)', 'Text("Inteligência de mídia", style = MaterialTheme.typography.labelMedium, color = AppMuted)', 1)
+main = main.replace('Text("Ações rápidas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)', 'Text("Ações operacionais", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)', 1)
+main = main.replace('Text("Inicie uma varredura sem sair do painel", color = AppMuted, style = MaterialTheme.typography.bodySmall)', 'Text("Execute varreduras prioritárias sem interromper o acompanhamento", color = AppMuted, style = MaterialTheme.typography.bodySmall)', 1)
+main = main.replace('Text("Sistema pronto para monitorar", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)', 'Text("Central pronta para monitorar", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)', 1)
+
+start = main.index('@Composable\nprivate fun ModernTopBar')
+end = main.index('\n@Composable\nprivate fun HomeScreen', start)
+topbar = r'''@Composable
+private fun ModernTopBar(c: DesktopController, section: Section, nowMs: Long) {
+    val proxy = DesktopProxyManager.load(c.context)
+    val proxyReady = DesktopProxyManager.isReady(c.context)
+    Row(
+        Modifier.fillMaxWidth().height(if (section == Section.NEWS) 80.dp else 94.dp).padding(horizontal = 28.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (section == Section.HOME) "Monitor de Notícias" else section.label,
+                style = MaterialTheme.typography.headlineSmall,
+                color = AppNavy,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                when (section) {
+                    Section.HOME -> "Central de inteligência e monitoramento de mídia em tempo real"
+                    Section.NEWS -> "Busque, filtre e acompanhe matérias em tempo real"
+                    Section.VIDEOS -> "Monitoramento de vídeos, telejornais e fontes oficiais"
+                    Section.TERMS -> "Gerencie termos independentes para notícias e vídeos"
+                    Section.DEMANDS -> "Acompanhe assuntos específicos por veículo"
+                    Section.SOURCES -> "Selecione fontes nacionais, regionais e especializadas"
+                    Section.HISTORY -> "Consulte e exporte o histórico armazenado"
+                    Section.SETTINGS -> "Automação, proxy, inicialização e dados portáteis"
+                },
+                color = AppMuted,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
+        TopStatusPill(
+            icon = Icons.Default.Security,
+            text = when {
+                !proxy.enabled -> "Proxy desativado"
+                proxyReady -> "Proxy pronto"
+                else -> "Proxy requer configuração"
+            },
+            active = !proxy.enabled || proxyReady,
+            warning = proxy.enabled && !proxyReady
+        )
+        Spacer(Modifier.width(10.dp))
+        TopStatusPill(
+            icon = Icons.Default.Radar,
+            text = if (c.automaticMonitoring) "Automação ativa" else "Automação pausada",
+            active = c.automaticMonitoring,
+            warning = !c.automaticMonitoring
+        )
+        Spacer(Modifier.width(18.dp))
+        Column(horizontalAlignment = Alignment.End) {
+            Text(SimpleDateFormat("EEE, dd 'de' MMMM", Locale("pt", "BR")).format(Date(nowMs)), color = AppMuted, style = MaterialTheme.typography.labelMedium)
+            Text(SimpleDateFormat("HH:mm", Locale("pt", "BR")).format(Date(nowMs)), color = AppNavy, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+@Composable
+private fun TopStatusPill(icon: ImageVector, text: String, active: Boolean, warning: Boolean = false) {
+    val bg = when {
+        warning -> Color(0xFFFFF4E8)
+        active -> Color(0xFFEAF8EF)
+        else -> Color(0xFFF0F4F8)
+    }
+    val fg = when {
+        warning -> AppOrange
+        active -> AppGreen
+        else -> AppSlate
+    }
+    Surface(shape = RoundedCornerShape(12.dp), color = bg) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, null, tint = fg, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(7.dp))
+            Text(text, color = fg, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+'''
+main = main[:start] + topbar + main[end:]
+
+mstart = main.index('@Composable\nprivate fun MetricCard')
+mend = main.index('\n@Composable\nprivate fun LiveSearchHero', mstart)
+metric = r'''@Composable
+private fun MetricCard(title: String, value: String, subtitle: String, icon: ImageVector, accent: Color, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = androidx.compose.foundation.BorderStroke(1.dp, AppLine),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column {
+            Box(Modifier.fillMaxWidth().height(3.dp).background(accent.copy(alpha = .85f)))
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = RoundedCornerShape(13.dp), color = accent.copy(alpha = .10f), modifier = Modifier.size(50.dp)) {
+                    Icon(icon, null, tint = accent, modifier = Modifier.padding(13.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(title, color = AppMuted, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
+                    Text(value, color = AppNavy, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(subtitle, color = AppMuted, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+'''
+main = main[:mstart] + metric + main[mend:]
+
+panel_old = '@Composable private fun Panel(modifier: Modifier = Modifier, compact: Boolean = false, content: @Composable () -> Unit) { Card(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp), colors = CardDefaults.cardColors(containerColor = Color.White), border = CardDefaults.outlinedCardBorder(), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) { Box(Modifier.padding(if (compact) 13.dp else 18.dp)) { content() } } }'
+panel_new = '@Composable private fun Panel(modifier: Modifier = Modifier, compact: Boolean = false, content: @Composable () -> Unit) { Card(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White), border = androidx.compose.foundation.BorderStroke(1.dp, AppLine), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) { Box(Modifier.padding(if (compact) 13.dp else 18.dp)) { content() } } }'
+if panel_old not in main:
+    raise RuntimeError('Panel marker not found')
+main = main.replace(panel_old, panel_new, 1)
+
+system_old = '''                    Text("Dados salvos localmente", style = MaterialTheme.typography.labelSmall, color = AppMuted)
+                    Text("App portátil • v4.0.2", style = MaterialTheme.typography.labelSmall, color = AppMuted)'''
+system_new = '''                    Text("Dados salvos localmente", style = MaterialTheme.typography.labelSmall, color = AppMuted)
+                    Text(
+                        if (DesktopProxyManager.load(c.context).enabled) {
+                            if (DesktopProxyManager.isReady(c.context)) "Proxy autenticado • pronto" else "Proxy autenticado • configurar"
+                        } else "Conexão direta • proxy desativado",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AppMuted
+                    )
+                    Text("Windows Portable • v4.0.2", style = MaterialTheme.typography.labelSmall, color = AppMuted)'''
+if system_old not in main:
+    raise RuntimeError('Sidebar system card marker not found')
+main = main.replace(system_old, system_new, 1)
+
+main_path.write_text(main, encoding='utf-8')

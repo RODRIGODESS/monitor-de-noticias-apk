@@ -14,7 +14,14 @@ jobs:
   build-release:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout PR head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
       - name: Checkout
+        if: github.event_name != 'pull_request'
         uses: actions/checkout@v4
 
       - name: Apply guarded v4.1.0 professional UI patch

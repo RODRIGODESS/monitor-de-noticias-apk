@@ -4,9 +4,6 @@ import android.app.Application
 import android.content.SharedPreferences
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,7 +12,6 @@ import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     private val db = NewsDb(app)
@@ -28,7 +24,7 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private val savedInterval = prefs.getInt("interval_minutes", 30).coerceAtLeast(15)
+    private val savedInterval = AutoSearchSettings.read(app).newsIntervalMinutes
     private val savedSourceIds = prefs.getStringSet("selected_source_ids", emptySet())
         .orEmpty().filter { SourceCatalog.byId.containsKey(it) }.toSet()
     private val savedSearchAll = prefs.getBoolean("search_all_sources", true)
@@ -52,8 +48,9 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     init {
         prefs.registerOnSharedPreferenceChangeListener(autoRunListener)
         refresh()
-        schedule(savedInterval)
-        scheduleDemandMonitor()
+        // A v4.2.0 centraliza toda a agenda automática no BackgroundMonitor.
+        // Isso respeita liga/desliga e intervalos independentes e remove workers legados.
+        BackgroundMonitor.scheduleAll(app)
     }
 
     fun refresh() {
@@ -366,9 +363,9 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setInterval(minutes: Int) {
         val safe = minutes.coerceAtLeast(15)
-        prefs.edit().putInt("interval_minutes", safe).apply()
-        _state.value = _state.value.copy(intervalMinutes = safe, status = "✓ Intervalo salvo: $safe min")
-        schedule(safe)
+        AutoSearchSettings.setNewsInterval(getApplication<Application>(), safe)
+        _state.value = _state.value.copy(intervalMinutes = safe, status = "✓ Intervalo de Notícias salvo: $safe min")
+        BackgroundMonitor.scheduleAll(getApplication<Application>())
     }
 
     private fun scopedRecent(state: AppState): List<News> {
@@ -423,16 +420,6 @@ class MonitorViewModel(app: Application) : AndroidViewModel(app) {
     private fun sourceStatusPrefix(prefix: String): String {
         val state = _state.value
         return if (state.searchAllSources) "$prefix • qualquer veículo" else "$prefix • ${state.selectedSourceIds.size} fonte(s)"
-    }
-
-    private fun schedule(minutes: Int) {
-        val req = PeriodicWorkRequestBuilder<MonitorWorker>(minutes.toLong(), TimeUnit.MINUTES).build()
-        WorkManager.getInstance(getApplication()).enqueueUniquePeriodicWork("monitor_noticias", ExistingPeriodicWorkPolicy.UPDATE, req)
-    }
-
-    private fun scheduleDemandMonitor() {
-        val req = PeriodicWorkRequestBuilder<DemandMonitorWorker>(1, TimeUnit.HOURS).build()
-        WorkManager.getInstance(getApplication()).enqueueUniquePeriodicWork("monitor_demandas_1h", ExistingPeriodicWorkPolicy.UPDATE, req)
     }
 
     private fun publish(block: (AppState) -> AppState) { _state.value = block(_state.value) }

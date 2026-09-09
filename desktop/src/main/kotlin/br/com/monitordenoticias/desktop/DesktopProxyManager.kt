@@ -2,18 +2,12 @@ package br.com.monitordenoticias.desktop
 
 import android.content.Context
 import br.com.monitordenoticias.android.BackgroundMonitor
-import java.awt.GridLayout
+import com.sun.jna.platform.win32.Crypt32Util
 import java.net.Authenticator
 import java.net.HttpURLConnection
 import java.net.PasswordAuthentication
 import java.net.URL
-import javax.swing.JCheckBox
-import javax.swing.JLabel
-import javax.swing.JOptionPane
-import javax.swing.JPanel
-import javax.swing.JPasswordField
-import javax.swing.JTextField
-import javax.swing.SwingUtilities
+import java.util.Base64
 
 /** Configuração de proxy exclusiva da edição Windows. */
 object DesktopProxyManager {
@@ -62,6 +56,7 @@ object DesktopProxyManager {
         val cleanUser = username.trim()
         val cleanDomain = domain.trim()
         val previous = load(context)
+
         if (enabled && cleanHost.isBlank()) return SaveResult(false, "Informe o servidor do proxy.")
         if (enabled && port !in 1..65535) return SaveResult(false, "Porta de proxy inválida.")
         if (enabled && cleanUser.isBlank()) return SaveResult(false, "Informe o usuário do proxy.")
@@ -79,12 +74,13 @@ object DesktopProxyManager {
 
         if (password.isNotBlank()) {
             val protected = protectWithDpapi(password)
-                ?: return SaveResult(false, "Não foi possível proteger a senha com o Windows DPAPI.")
+                ?: return SaveResult(false, "Não foi possível proteger a senha com a segurança nativa do Windows.")
             editor.putString(KEY_PASSWORD_DPAPI, protected)
         }
+
         editor.apply()
         apply(context)
-        return SaveResult(true, if (enabled) "Proxy autenticado configurado." else "Proxy desativado.")
+        return SaveResult(true, if (enabled) "Proxy salvo e aplicado." else "Proxy desativado.")
     }
 
     fun forgetPassword(context: Context) {
@@ -93,79 +89,9 @@ object DesktopProxyManager {
         apply(context)
     }
 
-    fun showConfigurationDialog(context: Context, afterSave: (() -> Unit)? = null) {
-        if (!isWindows()) return
-        val action = Runnable {
-            val current = load(context)
-            val enabled = JCheckBox("Usar proxy", current.enabled)
-            val host = JTextField(current.host, 24)
-            val port = JTextField(current.port.toString(), 8)
-            val user = JTextField(current.username, 20)
-            val domain = JTextField(current.domain, 16)
-            val password = JPasswordField(20)
-            password.toolTipText = if (current.hasSavedPassword) {
-                "Deixe em branco para manter a senha já salva"
-            } else {
-                "Informe a senha do proxy"
-            }
-
-            val panel = JPanel(GridLayout(0, 2, 8, 8)).apply {
-                add(JLabel("Ativação")); add(enabled)
-                add(JLabel("Servidor")); add(host)
-                add(JLabel("Porta")); add(port)
-                add(JLabel("Usuário")); add(user)
-                add(JLabel("Domínio (opcional)")); add(domain)
-                add(JLabel(if (current.hasSavedPassword) "Senha (salva)" else "Senha")); add(password)
-            }
-
-            val option = JOptionPane.showConfirmDialog(
-                null,
-                panel,
-                "Proxy autenticado — Monitor de Notícias",
-                JOptionPane.OK_CANCEL_OPTION,
-                JOptionPane.PLAIN_MESSAGE
-            )
-            if (option != JOptionPane.OK_OPTION) return@Runnable
-
-            val portNumber = port.text.trim().toIntOrNull() ?: -1
-            val result = save(
-                context = context,
-                enabled = enabled.isSelected,
-                host = host.text,
-                port = portNumber,
-                username = user.text,
-                password = String(password.password),
-                domain = domain.text
-            )
-            JOptionPane.showMessageDialog(
-                null,
-                result.message,
-                "Proxy",
-                if (result.ok) JOptionPane.INFORMATION_MESSAGE else JOptionPane.ERROR_MESSAGE
-            )
-            if (result.ok) afterSave?.invoke()
-        }
-
-        if (SwingUtilities.isEventDispatchThread()) {
-            action.run()
-        } else {
-            runCatching { SwingUtilities.invokeAndWait(action) }
-        }
-    }
-
-    fun showTestDialog(context: Context) {
-        if (!isWindows()) return
-        Thread {
-            val result = test(context)
-            SwingUtilities.invokeLater {
-                JOptionPane.showMessageDialog(
-                    null,
-                    result.message,
-                    "Teste do proxy",
-                    if (result.ok) JOptionPane.INFORMATION_MESSAGE else JOptionPane.ERROR_MESSAGE
-                )
-            }
-        }.apply { isDaemon = true; name = "proxy-test" }.start()
+    fun isReady(context: Context): Boolean {
+        val settings = load(context)
+        return !settings.enabled || (settings.username.isNotBlank() && settings.hasSavedPassword)
     }
 
     fun apply(context: Context) {
@@ -182,10 +108,9 @@ object DesktopProxyManager {
         System.setProperty("https.proxyHost", settings.host)
         System.setProperty("https.proxyPort", settings.port.toString())
         System.setProperty("http.nonProxyHosts", "localhost|127.*|[::1]")
-
-        // Permite autenticação de proxy também no túnel HTTPS (CONNECT).
         System.setProperty("jdk.http.auth.tunneling.disabledSchemes", "")
         System.setProperty("jdk.http.auth.proxying.disabledSchemes", "")
+
         if (settings.domain.isNotBlank()) {
             System.setProperty("http.auth.ntlm.domain", settings.domain)
         } else {
@@ -195,15 +120,14 @@ object DesktopProxyManager {
         val password = readSavedPassword(context)
         if (settings.username.isBlank() || password.isNullOrEmpty()) {
             Authenticator.setDefault(null)
-            // O primeiro uso espera a configuração terminar antes de iniciar a automação.
-            // O autoteste de CI usa uma pasta temporária e não deve abrir UI interativa.
-            if (!isSelfTestContext(context)) showConfigurationDialog(context)
             return
         }
 
         val login = if (settings.domain.isNotBlank() && !settings.username.contains('\\')) {
             "${settings.domain}\\${settings.username}"
-        } else settings.username
+        } else {
+            settings.username
+        }
 
         Authenticator.setDefault(object : Authenticator() {
             override fun getPasswordAuthentication(): PasswordAuthentication? {
@@ -219,9 +143,11 @@ object DesktopProxyManager {
         if (!isWindows()) return TestResult(false, "Teste de proxy disponível apenas no Windows.")
         val settings = load(context)
         if (!settings.enabled) return TestResult(false, "Ative e salve o proxy antes de testar.")
-        if (!settings.hasSavedPassword) return TestResult(false, "Informe e salve a senha antes de testar.")
-        apply(context)
+        if (!settings.hasSavedPassword || settings.username.isBlank()) {
+            return TestResult(false, "Salve usuário e senha antes de testar.")
+        }
 
+        apply(context)
         return try {
             val connection = URL("https://news.google.com/robots.txt").openConnection() as HttpURLConnection
             connection.connectTimeout = 10_000
@@ -256,36 +182,21 @@ object DesktopProxyManager {
         Authenticator.setDefault(null)
     }
 
-    private fun protectWithDpapi(secret: String): String? = runPowerShell(
-        "${'$'}s=[Console]::In.ReadToEnd();" +
-            "${'$'}b=[Text.Encoding]::UTF8.GetBytes(${'$'}s);" +
-            "${'$'}e=[Security.Cryptography.ProtectedData]::Protect(${'$'}b,${'$'}null,[Security.Cryptography.DataProtectionScope]::CurrentUser);" +
-            "[Convert]::ToBase64String(${'$'}e)",
-        secret
-    )
-
-    private fun unprotectWithDpapi(value: String): String? = runPowerShell(
-        "${'$'}s=[Console]::In.ReadToEnd();" +
-            "${'$'}b=[Convert]::FromBase64String(${'$'}s.Trim());" +
-            "${'$'}d=[Security.Cryptography.ProtectedData]::Unprotect(${'$'}b,${'$'}null,[Security.Cryptography.DataProtectionScope]::CurrentUser);" +
-            "[Text.Encoding]::UTF8.GetString(${'$'}d)",
-        value
-    )
-
-    private fun runPowerShell(script: String, stdin: String): String? {
+    private fun protectWithDpapi(secret: String): String? {
         if (!isWindows()) return null
         return runCatching {
-            val process = ProcessBuilder(
-                "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script
-            ).redirectErrorStream(true).start()
-            process.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(stdin) }
-            val output = process.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }.trim()
-            if (process.waitFor() == 0 && output.isNotBlank()) output else null
+            val encrypted = Crypt32Util.cryptProtectData(secret.toByteArray(Charsets.UTF_8))
+            Base64.getEncoder().encodeToString(encrypted)
         }.getOrNull()
     }
 
-    private fun isSelfTestContext(context: Context): Boolean =
-        context.filesDir.absolutePath.contains("monitor-de-noticias-self-test", ignoreCase = true)
+    private fun unprotectWithDpapi(value: String): String? {
+        if (!isWindows()) return null
+        return runCatching {
+            val encrypted = Base64.getDecoder().decode(value)
+            String(Crypt32Util.cryptUnprotectData(encrypted), Charsets.UTF_8)
+        }.getOrNull()
+    }
 
     private fun isWindows() = System.getProperty("os.name", "").startsWith("Windows", ignoreCase = true)
 }

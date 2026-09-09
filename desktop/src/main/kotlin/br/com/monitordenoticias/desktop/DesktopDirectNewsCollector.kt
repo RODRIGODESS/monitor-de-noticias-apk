@@ -8,7 +8,10 @@ import org.jsoup.nodes.Document
 import java.net.URI
 import java.text.Normalizer
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /**
  * Segunda camada de descoberta exclusiva do Windows.
@@ -98,8 +101,7 @@ class DesktopDirectNewsCollector {
                         .removePrefix(title)
                         .trim()
                         .take(800)
-                    val key = canonical(link)
-                    candidates.putIfAbsent(key, Candidate(title, snippet, link))
+                    candidates.putIfAbsent(canonical(link), Candidate(title, snippet, link))
                 }
             }
 
@@ -205,9 +207,19 @@ class DesktopDirectNewsCollector {
             ?.coerceAtMost(capturedAt)
     }
 
-    private fun parseInstant(value: String): Long? =
-        runCatching { Instant.parse(value).toEpochMilli() }.getOrNull()
-            ?: runCatching { OffsetDateTime.parse(value).toInstant().toEpochMilli() }.getOrNull()
+    private fun parseInstant(value: String): Long? {
+        val cleanValue = value.trim()
+        return runCatching { Instant.parse(cleanValue).toEpochMilli() }.getOrNull()
+            ?: runCatching { OffsetDateTime.parse(cleanValue).toInstant().toEpochMilli() }.getOrNull()
+            ?: LOCAL_DATE_TIME_FORMATS.asSequence().mapNotNull { format ->
+                runCatching {
+                    LocalDateTime.parse(cleanValue, format)
+                        .atZone(ZoneId.of("America/Sao_Paulo"))
+                        .toInstant()
+                        .toEpochMilli()
+                }.getOrNull()
+            }.firstOrNull()
+    }
 
     private fun vehicleMatches(source: MediaSource, vehicle: String): Boolean {
         if (vehicle.isBlank()) return true
@@ -238,8 +250,12 @@ class DesktopDirectNewsCollector {
     private fun looksLikeArticle(url: String): Boolean {
         val path = runCatching { URI(url).path.orEmpty().lowercase() }.getOrDefault("")
         if (path.isBlank() || path == "/") return false
-        if (path.contains("/busca") || path.contains("/login") || path.contains("/assine")) return false
-        return path.count { it == '/' } >= 2
+        if (BLOCKED_PATH_PARTS.any(path::contains)) return false
+
+        val segments = path.trim('/').split('/').filter(String::isNotBlank)
+        if (segments.size >= 2) return true
+        val slug = segments.firstOrNull().orEmpty()
+        return slug.length >= 28 && '-' in slug
     }
 
     private fun usefulTitle(value: String): Boolean {
@@ -274,9 +290,13 @@ class DesktopDirectNewsCollector {
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152 Safari/537.36 MonitorNoticiasWindows/4.0.3"
         private const val REQUEST_TIMEOUT_MS = 12_000
         private const val MAX_BODY_BYTES = 4_000_000
-        private const val MAX_CANDIDATES_PER_SOURCE = 80
+        private const val MAX_CANDIDATES_PER_SOURCE = 100
         private const val FUTURE_TOLERANCE_MS = 10L * 60L * 1000L
 
+        /**
+         * Rotas confirmadas para cobertura complementar. Uma falha em qualquer
+         * rota é isolada e aparece no diagnóstico; não interrompe a busca Google.
+         */
         private val ROUTES = listOf(
             Route(
                 sourceId = "pe-folha-de-pernambuco",
@@ -285,6 +305,52 @@ class DesktopDirectNewsCollector {
                     "https://www.folhape.com.br/economia/"
                 ),
                 hosts = setOf("folhape.com.br")
+            ),
+            Route(
+                sourceId = "especializada-defesa-em-foco",
+                listingUrls = listOf("https://www.defesaemfoco.com.br/"),
+                hosts = setOf("defesaemfoco.com.br")
+            ),
+            Route(
+                sourceId = "especializada-defesa-aerea-naval",
+                listingUrls = listOf(
+                    "https://www.defesaaereanaval.com.br/",
+                    "https://www.defesaaereanaval.com.br/naval/"
+                ),
+                hosts = setOf("defesaaereanaval.com.br")
+            ),
+            Route(
+                sourceId = "especializada-defesanet",
+                listingUrls = listOf("https://www.defesanet.com.br/"),
+                hosts = setOf("defesanet.com.br")
+            ),
+            Route(
+                sourceId = "especializada-tecnodefesa",
+                listingUrls = listOf(
+                    "https://tecnodefesa.com.br/",
+                    "https://tecnodefesa.com.br/categoria/marinha/"
+                ),
+                hosts = setOf("tecnodefesa.com.br")
+            ),
+            Route(
+                sourceId = "especializada-zona-militar",
+                listingUrls = listOf("https://www.zona-militar.com/pt/"),
+                hosts = setOf("zona-militar.com")
+            ),
+            Route(
+                sourceId = "especializada-click-petroleo-gas",
+                listingUrls = listOf("https://clickpetroleoegas.com.br/"),
+                hosts = setOf("clickpetroleoegas.com.br")
+            ),
+            Route(
+                sourceId = "especializada-poder-naval",
+                listingUrls = listOf("https://www.naval.com.br/"),
+                hosts = setOf("naval.com.br")
+            ),
+            Route(
+                sourceId = "especializada-gbn-news",
+                listingUrls = listOf("https://www.gbnnews.com.br/"),
+                hosts = setOf("gbnnews.com.br")
             )
         )
 
@@ -292,6 +358,19 @@ class DesktopDirectNewsCollector {
             "\\\"datePublished\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"",
             RegexOption.IGNORE_CASE
         )
+
+        private val LOCAL_DATE_TIME_FORMATS = listOf(
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"),
+            DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"),
+            DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+        )
+
+        private val BLOCKED_PATH_PARTS = listOf(
+            "/busca", "/search", "/login", "/assine", "/tag/", "/autor/", "/author/",
+            "/categoria/", "/category/", "/feed", "/wp-json", "/contato", "/sobre"
+        )
+
         private val STOP_WORDS = setOf(
             "de", "do", "da", "dos", "das", "e", "em", "no", "na", "nos", "nas", "a", "o", "as", "os"
         )

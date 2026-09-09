@@ -112,7 +112,15 @@ class NewsDb(context: Context) : AutoCloseable {
         return queryNews("date>=?", listOf(cutoff), limit)
     }
 
-    fun listNews(limit: Int = 500): List<News> = queryNews(null, emptyList(), limit)
+    /**
+     * O repositório Windows usa 5000 como janela histórica de trabalho para deduplicação.
+     * Na v4.0.3 essa janela precisa cobrir todo o banco, para que uma matéria antiga não
+     * volte como nova apenas porque saiu do recorte ou porque o Google mudou a URL.
+     */
+    fun listNews(limit: Int = 500): List<News> {
+        val effectiveLimit = if (limit == 5000) Int.MAX_VALUE else limit
+        return queryNews(null, emptyList(), effectiveLimit)
+    }
 
     /**
      * Índice leve usado para decidir se uma matéria é realmente nova.

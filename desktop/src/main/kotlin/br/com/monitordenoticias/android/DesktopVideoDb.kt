@@ -113,6 +113,18 @@ class VideoDb(context: Context) : AutoCloseable {
 
     fun listAll(limit:Int=1000):List<VideoItem> = query(null, emptyList(),limit)
 
+    /** Índice leve e sem limite artificial para a regra visual de vídeo novo. */
+    @Synchronized
+    fun listKnownLinks(): Set<String> = connection.createStatement().use { st ->
+        st.executeQuery("SELECT link FROM videos").use { rs ->
+            buildSet {
+                while (rs.next()) {
+                    rs.getString(1)?.takeIf { it.isNotBlank() }?.let(::add)
+                }
+            }
+        }
+    }
+
     fun clear(){ connection.createStatement().use { it.executeUpdate("DELETE FROM videos") } }
 
     private fun query(where:String?,args:List<Long>,limit:Int):List<VideoItem> {

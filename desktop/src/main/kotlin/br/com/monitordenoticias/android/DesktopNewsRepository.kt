@@ -391,7 +391,7 @@ class NewsRepository(private val db: NewsDb) {
             .replace(" noticias", "")
             .replace(" jornal", "")
             .trim()
-        val titleKey = normalize(news.title)
+        val titleKey = DesktopSourceCatalog.canonicalTitleKey(news.title, news.source)
         return "$sourceKey|$titleKey"
     }
 

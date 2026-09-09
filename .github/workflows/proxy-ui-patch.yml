@@ -1,0 +1,96 @@
+name: Apply integrated proxy UI
+
+on:
+  push:
+    branches:
+      - codex/windows/v4.0.2-portable
+    paths:
+      - .github/workflows/proxy-ui-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/windows/v4.0.2-portable
+
+      - name: Patch Windows UI and proxy guard
+        shell: python
+        run: |
+          from pathlib import Path
+
+          main_path = Path("desktop/src/main/kotlin/br/com/monitordenoticias/desktop/Main.kt")
+          main = main_path.read_text(encoding="utf-8")
+          settings_marker = "private fun SettingsScreen(c: DesktopController) {"
+          pos = main.index(settings_marker)
+          lazy = "    LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {"
+          lazy_pos = main.index(lazy, pos) + len(lazy)
+          card = "\n        item { ProxySettingsCard(c) }"
+          if card.strip() not in main[pos:]:
+              main = main[:lazy_pos] + card + main[lazy_pos:]
+          main_path.write_text(main, encoding="utf-8")
+
+          controller_path = Path("desktop/src/main/kotlin/br/com/monitordenoticias/desktop/DesktopController.kt")
+          controller = controller_path.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  "    fun searchNews(from: Long? = null, to: Long? = null, automatic: Boolean = false) {\n        if (newsBusy) return\n",
+                  "    fun searchNews(from: Long? = null, to: Long? = null, automatic: Boolean = false) {\n        if (newsBusy) return\n        if (!ensureProxyReady(false)) return\n"
+              ),
+              (
+                  "    fun searchDemand(demand: Demand) {\n        if (demandBusy) return\n",
+                  "    fun searchDemand(demand: Demand) {\n        if (demandBusy) return\n        if (!ensureProxyReady(false)) return\n"
+              ),
+              (
+                  "    fun searchAllDemands(automatic: Boolean = false) {\n        if (demandBusy) return\n",
+                  "    fun searchAllDemands(automatic: Boolean = false) {\n        if (demandBusy) return\n        if (!ensureProxyReady(false)) return\n"
+              ),
+              (
+                  "    fun searchVideos(from: Long? = null, to: Long? = null, automatic: Boolean = false) {\n        if (videoBusy) return\n",
+                  "    fun searchVideos(from: Long? = null, to: Long? = null, automatic: Boolean = false) {\n        if (videoBusy) return\n        if (!ensureProxyReady(true)) return\n"
+              ),
+          ]
+          for old, new in replacements:
+              if new not in controller:
+                  if old not in controller:
+                      raise RuntimeError(f"Controller marker not found: {old[:60]}")
+                  controller = controller.replace(old, new, 1)
+
+          auto_marker = "    private suspend fun automationLoop() {"
+          auto_pos = controller.index(auto_marker)
+          old_auto = "            if (automaticMonitoring) {"
+          new_auto = "            if (automaticMonitoring && DesktopProxyManager.isReady(context)) {"
+          auto_if_pos = controller.index(old_auto, auto_pos)
+          if new_auto not in controller[auto_pos:]:
+              controller = controller[:auto_if_pos] + controller[auto_if_pos:].replace(old_auto, new_auto, 1)
+
+          helper = '''    private fun ensureProxyReady(video: Boolean): Boolean {
+        if (DesktopProxyManager.isReady(context)) return true
+        val warning = "⚠ Proxy autenticado: configure usuário e senha em Configurações."
+        if (video) videoStatus = warning else status = warning
+        return false
+    }
+
+'''
+          close_marker = "    override fun close() {"
+          if "private fun ensureProxyReady(video: Boolean)" not in controller:
+              close_pos = controller.index(close_marker)
+              controller = controller[:close_pos] + helper + controller[close_pos:]
+
+          controller_path.write_text(controller, encoding="utf-8")
+
+      - name: Commit integrated proxy UI
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add desktop/src/main/kotlin/br/com/monitordenoticias/desktop/Main.kt \
+                  desktop/src/main/kotlin/br/com/monitordenoticias/desktop/DesktopController.kt
+          git diff --cached --quiet && exit 0
+          git commit -m "feat(windows): integrar proxy autenticado na interface"
+          git push origin HEAD:codex/windows/v4.0.2-portable

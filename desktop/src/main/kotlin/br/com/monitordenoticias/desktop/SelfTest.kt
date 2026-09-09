@@ -186,6 +186,11 @@ fun main() {
             }
 
             val videoLink = "https://selftest.invalid/video-ja-conhecido"
+            val legacyYoutube = "https://youtu.be/AbC12345?si=legado"
+            val canonicalYoutube = "https://www.youtube.com/watch?v=AbC12345"
+            val trackedPortal = "https://selftest.invalid/videos/submarino?utm_source=legado#trecho"
+            val cleanPortal = "https://selftest.invalid/videos/submarino"
+            val firstVideoCapture = now - 180_000L
             controller.videoDb.insert(
                 listOf(
                     VideoItem(
@@ -195,13 +200,72 @@ fun main() {
                         publishedAt = now,
                         link = videoLink,
                         matchedTerm = "MARINHA",
-                        capturedAt = now - 60_000L
+                        capturedAt = firstVideoCapture
+                    ),
+                    VideoItem(
+                        title = "Fragata em exercício naval",
+                        sourceId = "selftest-youtube",
+                        sourceName = "Canal de teste",
+                        publishedAt = now - 1_000L,
+                        link = legacyYoutube,
+                        matchedTerm = "FRAGATA",
+                        capturedAt = firstVideoCapture
+                    ),
+                    VideoItem(
+                        title = "Submarino em atividade",
+                        sourceId = "selftest-portal",
+                        sourceName = "Portal de teste",
+                        publishedAt = now - 2_000L,
+                        link = trackedPortal,
+                        matchedTerm = "SUBMARINO",
+                        capturedAt = firstVideoCapture
                     )
                 )
             )
-            check(videoLink in controller.videoDb.listKnownLinks()) {
+            val knownVideos = controller.videoDb.listKnownLinks()
+            check(videoLink in knownVideos) {
                 "Índice completo de links de vídeos não reconheceu item existente"
             }
+            check(canonicalYoutube in knownVideos) {
+                "Índice canônico não reconheceu URL YouTube atual equivalente ao youtu.be legado"
+            }
+            check(cleanPortal in knownVideos) {
+                "Índice canônico não reconheceu URL de portal sem parâmetros de rastreamento"
+            }
+            check(
+                controller.videoDb.canonicalLinkKey(legacyYoutube) ==
+                    controller.videoDb.canonicalLinkKey(canonicalYoutube)
+            ) {
+                "URLs equivalentes do YouTube não geraram a mesma identidade canônica"
+            }
+            check(
+                controller.videoDb.canonicalLinkKey(trackedPortal) ==
+                    controller.videoDb.canonicalLinkKey(cleanPortal)
+            ) {
+                "Parâmetros de rastreamento alteraram indevidamente a identidade do vídeo"
+            }
+
+            // Reencontrar o mesmo link pode atualizar metadados/matches, mas nunca
+            // deve alterar a primeira captura armazenada.
+            controller.videoDb.insert(
+                listOf(
+                    VideoItem(
+                        title = "Marinha - vídeo de teste atualizado",
+                        sourceId = "selftest",
+                        sourceName = "Fonte de teste",
+                        publishedAt = now,
+                        link = videoLink,
+                        matchedTerm = "MARINHA, FRAGATA",
+                        capturedAt = now
+                    )
+                )
+            )
+            val storedVideo = controller.videoDb.listAll(20).firstOrNull { it.link == videoLink }
+                ?: error("Vídeo de teste desapareceu após atualização")
+            check(storedVideo.capturedAt == firstVideoCapture) {
+                "Primeira captura do vídeo foi sobrescrita ao reencontrar o mesmo link"
+            }
+
             controller.refresh()
             check(controller.videoHistory.any { it.link == videoLink }) {
                 "Histórico observável de vídeos não recebeu o item de teste"
@@ -210,7 +274,8 @@ fun main() {
             check(controller.videoHistory.isEmpty()) {
                 "Histórico observável de vídeos não limpou em tempo real"
             }
-            check(videoLink !in controller.videoDb.listKnownLinks()) {
+            val afterClearVideos = controller.videoDb.listKnownLinks()
+            check(videoLink !in afterClearVideos && canonicalYoutube !in afterClearVideos && cleanPortal !in afterClearVideos) {
                 "SQLite de vídeos ainda contém item após limpar histórico"
             }
 

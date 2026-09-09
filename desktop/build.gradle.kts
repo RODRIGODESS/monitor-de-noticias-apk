@@ -67,6 +67,8 @@ compose.desktop {
                 menuGroup = "Monitor de Notícias"
                 shortcut = false
                 console = false
+                // Gerado pelo workflow a partir de monitor_icon.ico.b64 antes do Gradle.
+                iconFile.set(project.file("src/main/resources/monitor_icon.ico"))
             }
         }
     }

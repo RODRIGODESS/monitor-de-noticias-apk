@@ -3,7 +3,9 @@ package br.com.monitordenoticias.desktop
 import android.content.Context
 import br.com.monitordenoticias.android.BackgroundMonitor
 import br.com.monitordenoticias.android.DesktopEstablishedTerms
+import br.com.monitordenoticias.android.News
 import br.com.monitordenoticias.android.SourceCatalog
+import br.com.monitordenoticias.android.VideoItem
 import br.com.monitordenoticias.android.VideoSourceCatalog
 import java.io.File
 
@@ -72,6 +74,67 @@ fun main() {
             }
             check(controller.videoTerms.toSet().containsAll(expectedTerms)) {
                 "Os termos estabelecidos não foram migrados integralmente para Vídeos"
+            }
+
+            // Regressão de histórico/"Nova": a existência é consultada em todo o banco,
+            // e limpar histórico precisa atualizar tanto o SQLite quanto o estado Compose
+            // imediatamente, sem depender de troca de aba.
+            val now = System.currentTimeMillis()
+            val newsLink = "https://selftest.invalid/noticia-ja-conhecida"
+            controller.newsDb.insertNews(
+                listOf(
+                    News(
+                        title = "Marinha realiza atividade de teste",
+                        source = "Folha de Pernambuco",
+                        date = now,
+                        link = newsLink,
+                        matchedTerm = "MARINHA",
+                        capturedAt = now - 60_000L
+                    )
+                )
+            )
+            check(newsLink in controller.newsDb.listKnownLinks()) {
+                "Índice completo de links de notícias não reconheceu item existente"
+            }
+            controller.refresh()
+            check(controller.newsHistory.any { it.link == newsLink }) {
+                "Histórico observável de notícias não recebeu o item de teste"
+            }
+            controller.clearNewsHistory()
+            check(controller.newsHistory.isEmpty()) {
+                "Histórico observável de notícias não limpou em tempo real"
+            }
+            check(newsLink !in controller.newsDb.listKnownLinks()) {
+                "SQLite de notícias ainda contém item após limpar histórico"
+            }
+
+            val videoLink = "https://selftest.invalid/video-ja-conhecido"
+            controller.videoDb.insert(
+                listOf(
+                    VideoItem(
+                        title = "Marinha - vídeo de teste",
+                        sourceId = "selftest",
+                        sourceName = "Fonte de teste",
+                        publishedAt = now,
+                        link = videoLink,
+                        matchedTerm = "MARINHA",
+                        capturedAt = now - 60_000L
+                    )
+                )
+            )
+            check(videoLink in controller.videoDb.listKnownLinks()) {
+                "Índice completo de links de vídeos não reconheceu item existente"
+            }
+            controller.refresh()
+            check(controller.videoHistory.any { it.link == videoLink }) {
+                "Histórico observável de vídeos não recebeu o item de teste"
+            }
+            controller.clearVideoHistory()
+            check(controller.videoHistory.isEmpty()) {
+                "Histórico observável de vídeos não limpou em tempo real"
+            }
+            check(videoLink !in controller.videoDb.listKnownLinks()) {
+                "SQLite de vídeos ainda contém item após limpar histórico"
             }
 
             controller.newsDb.listTerms()

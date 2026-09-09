@@ -179,6 +179,7 @@ fun ProxySettingsCard(c: DesktopController) {
                         if (result.ok) {
                             password = ""
                             loaded = DesktopProxyManager.load(c.context)
+                            c.refresh()
                         }
                     },
                     shape = RoundedCornerShape(10.dp)
@@ -199,6 +200,7 @@ fun ProxySettingsCard(c: DesktopController) {
                             }
                             password = ""
                             loaded = DesktopProxyManager.load(c.context)
+                            c.refresh()
                             busy = true
                             message = "Testando conexão via ${loaded.host}:${loaded.port}..."
                             messageOk = true
@@ -206,6 +208,7 @@ fun ProxySettingsCard(c: DesktopController) {
                             busy = false
                             message = result.message
                             messageOk = result.ok
+                            c.refresh()
                         }
                     },
                     shape = RoundedCornerShape(10.dp)
@@ -226,6 +229,7 @@ fun ProxySettingsCard(c: DesktopController) {
                             password = ""
                             message = "Senha removida. Informe uma nova senha para usar o proxy."
                             messageOk = false
+                            c.refresh()
                         }
                     ) {
                         Text("Remover senha salva")

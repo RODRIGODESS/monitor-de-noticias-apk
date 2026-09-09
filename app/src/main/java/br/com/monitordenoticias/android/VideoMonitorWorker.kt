@@ -8,7 +8,10 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
     override suspend fun doWork(): Result {
         // A automação v4.2.0 é independente. Disparos legados ficam inofensivos
         // quando o monitor está pausado ou ainda não atingiu o intervalo escolhido.
-        if (!AutoSearchSettings.videosDue(applicationContext)) return Result.success()
+        // Retries legítimos do WorkManager após falha não são bloqueados pela cadência.
+        if (runAttemptCount == 0 && !AutoSearchSettings.videosDue(applicationContext)) {
+            return Result.success()
+        }
 
         VideoAutoRunLog.markAttempt(applicationContext)
         val db = VideoDb(applicationContext).apply {

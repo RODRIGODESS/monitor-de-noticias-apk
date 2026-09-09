@@ -61,6 +61,27 @@ object AutoSearchSettings {
         )
     }
 
+    fun newsDue(context: Context, now: Long = System.currentTimeMillis()): Boolean {
+        val cfg = read(context)
+        if (!cfg.newsEnabled) return false
+        val last = prefs(context).getLong(AutoRunLog.KEY_NEWS_ATTEMPT_AT, 0L)
+        return due(last, cfg.newsIntervalMinutes, now)
+    }
+
+    fun demandsDue(context: Context, now: Long = System.currentTimeMillis()): Boolean {
+        val cfg = read(context)
+        if (!cfg.demandsEnabled) return false
+        val last = prefs(context).getLong(AutoRunLog.KEY_DEMAND_ATTEMPT_AT, 0L)
+        return due(last, cfg.demandsIntervalMinutes, now)
+    }
+
+    fun videosDue(context: Context, now: Long = System.currentTimeMillis()): Boolean {
+        val cfg = read(context)
+        if (!cfg.videosEnabled) return false
+        val last = prefs(context).getLong(VideoAutoRunLog.KEY_ATTEMPT_AT, 0L)
+        return due(last, cfg.videosIntervalMinutes, now)
+    }
+
     fun setNewsEnabled(context: Context, enabled: Boolean) {
         migrate(context)
         prefs(context).edit().putBoolean(KEY_NEWS_ENABLED, enabled).apply()
@@ -97,6 +118,18 @@ object AutoSearchSettings {
 
     private fun prefs(context: Context) = context.applicationContext
         .getSharedPreferences(BackgroundMonitor.PREFS, Context.MODE_PRIVATE)
+
+    /**
+     * Uma pequena tolerância evita que dois agendadores legados/disparos muito
+     * próximos executem a mesma busca. O WorkManager continua podendo atrasar a
+     * execução por Doze/rede, mas nunca antecipa artificialmente a cadência escolhida.
+     */
+    private fun due(lastAttempt: Long, intervalMinutes: Int, now: Long): Boolean {
+        if (lastAttempt <= 0L) return true
+        val intervalMs = intervalMinutes.coerceAtLeast(15) * 60_000L
+        val toleranceMs = minOf(2L * 60_000L, intervalMs / 10L)
+        return now - lastAttempt >= intervalMs - toleranceMs
+    }
 
     private fun sanitize(value: Int, fallback: Int): Int {
         if (value < 15) return fallback.coerceAtLeast(15)

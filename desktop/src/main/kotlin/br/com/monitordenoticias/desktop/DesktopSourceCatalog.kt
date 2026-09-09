@@ -47,6 +47,40 @@ object DesktopSourceCatalog {
         }
     }
 
+    /**
+     * Chave editorial do título usada apenas para deduplicação.
+     *
+     * O Google Notícias frequentemente entrega "Título - Veículo" enquanto a
+     * página direta entrega apenas "Título". Removemos somente um sufixo que
+     * corresponda ao próprio publisher (nome canônico ou alias conhecido), sem
+     * alterar o texto exibido ao usuário.
+     */
+    fun canonicalTitleKey(rawTitle: String, rawPublisher: String): String {
+        var key = normalize(rawTitle)
+        if (key.isBlank()) return key
+
+        val source = all.firstOrNull { publisherMatches(rawPublisher, it) }
+        val publisherVariants = buildList {
+            add(rawPublisher)
+            add(canonicalName(rawPublisher))
+            if (source != null) {
+                add(source.name)
+                addAll(source.aliases)
+            }
+        }
+            .map(::normalize)
+            .filter { it.length >= 3 }
+            .distinct()
+            .sortedByDescending { it.length }
+
+        publisherVariants.forEach { publisher ->
+            if (key.endsWith(" $publisher")) {
+                key = key.removeSuffix(" $publisher").trim()
+            }
+        }
+        return key
+    }
+
     private fun withWindowsAliases(source: MediaSource): MediaSource {
         val generated = generatedRegionalAliases(source)
         val overrides = WINDOWS_ALIAS_OVERRIDES[source.id].orEmpty()

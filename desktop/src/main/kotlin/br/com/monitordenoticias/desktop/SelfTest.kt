@@ -26,9 +26,22 @@ fun main() {
             .putBoolean("desktop_automatic_monitoring", false)
             .apply()
 
+        // Regressão v4.0.3: o Google Notícias pode publicar "Folha PE" enquanto
+        // nosso catálogo usa "Folha de Pernambuco". Essa equivalência precisa
+        // continuar válida para buscas com fontes selecionadas e deduplicação.
+        val folhaPe = DesktopSourceCatalog.byId["pe-folha-de-pernambuco"]
+            ?: error("Folha de Pernambuco não encontrada no catálogo Windows")
+        check(DesktopSourceCatalog.publisherMatches("Folha PE", folhaPe)) {
+            "Alias Folha PE não corresponde à Folha de Pernambuco"
+        }
+        check(DesktopSourceCatalog.canonicalName("Folha PE") == "Folha de Pernambuco") {
+            "Nome canônico de Folha PE incorreto"
+        }
+
         DesktopController(context).use { controller ->
             controller.refresh()
             check(SourceCatalog.all.isNotEmpty()) { "News source catalog is empty" }
+            check(DesktopSourceCatalog.all.isNotEmpty()) { "Desktop news source catalog is empty" }
             check(VideoSourceCatalog.all.isNotEmpty()) { "Video source catalog is empty" }
             controller.newsDb.listTerms()
             controller.newsDb.listDemands()

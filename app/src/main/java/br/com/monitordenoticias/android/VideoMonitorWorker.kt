@@ -6,6 +6,10 @@ import androidx.work.WorkerParameters
 
 class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
+        // A automação v4.2.0 é independente. Disparos legados ficam inofensivos
+        // quando o monitor está pausado ou ainda não atingiu o intervalo escolhido.
+        if (!AutoSearchSettings.videosDue(applicationContext)) return Result.success()
+
         VideoAutoRunLog.markAttempt(applicationContext)
         val db = VideoDb(applicationContext).apply {
             removeInvalidListingEntries()
@@ -18,8 +22,6 @@ class VideoMonitorWorker(appContext: Context, params: WorkerParameters) : Corout
                 ?.toSet()
 
             val selectedIds = if (existing == null) {
-                // Instalações novas da v2.9 começam apenas com as fontes nacionais.
-                // O catálogo regional é grande e deve ser escolhido por Região/UF.
                 VideoSourceCatalog.defaultIds.also { defaults ->
                     prefs.edit()
                         .putStringSet(VideoViewModel.KEY_SELECTED_SOURCES, defaults)

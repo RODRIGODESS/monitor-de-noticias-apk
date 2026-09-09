@@ -114,6 +114,21 @@ class NewsDb(context: Context) : AutoCloseable {
 
     fun listNews(limit: Int = 500): List<News> = queryNews(null, emptyList(), limit)
 
+    /**
+     * Índice leve usado para decidir se uma matéria é realmente nova.
+     * Diferente de listNews(limit), não possui janela artificial e carrega apenas URLs.
+     */
+    @Synchronized
+    fun listKnownLinks(): Set<String> = connection.createStatement().use { st ->
+        st.executeQuery("SELECT link FROM news").use { rs ->
+            buildSet {
+                while (rs.next()) {
+                    rs.getString(1)?.takeIf { it.isNotBlank() }?.let(::add)
+                }
+            }
+        }
+    }
+
     private fun queryNews(where: String?, args: List<Long>, limit: Int): List<News> {
         val sql = buildString {
             append("SELECT id,title,source,date,link,snippet,important,demand,matched_term,matched_demand,captured_at FROM news")

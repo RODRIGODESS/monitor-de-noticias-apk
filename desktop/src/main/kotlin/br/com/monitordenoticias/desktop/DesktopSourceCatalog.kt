@@ -33,6 +33,20 @@ object DesktopSourceCatalog {
 
     fun selected(ids: Set<String>): List<MediaSource> = ids.mapNotNull(byId::get)
 
+    /** Retorna o nome canônico do catálogo quando o publisher chega abreviado pelo RSS. */
+    fun canonicalName(rawPublisher: String): String =
+        all.firstOrNull { publisherMatches(rawPublisher, it) }?.name ?: rawPublisher.trim()
+
+    /** Comparação usada pelas camadas Windows para aliases, abreviações e domínios. */
+    fun publisherMatches(rawPublisher: String, source: MediaSource): Boolean {
+        val raw = normalize(rawPublisher)
+        val rawCompact = compact(rawPublisher)
+        if (raw.isBlank() || rawCompact.isBlank()) return false
+        return (listOf(source.name) + source.aliases).any { candidate ->
+            normalize(candidate) == raw || compact(candidate) == rawCompact
+        }
+    }
+
     private fun withWindowsAliases(source: MediaSource): MediaSource {
         val generated = generatedRegionalAliases(source)
         val overrides = WINDOWS_ALIAS_OVERRIDES[source.id].orEmpty()

@@ -2,10 +2,18 @@ package br.com.monitordenoticias.desktop
 
 import android.content.Context
 import br.com.monitordenoticias.android.BackgroundMonitor
+import java.awt.GridLayout
 import java.net.Authenticator
 import java.net.HttpURLConnection
 import java.net.PasswordAuthentication
 import java.net.URL
+import javax.swing.JCheckBox
+import javax.swing.JLabel
+import javax.swing.JOptionPane
+import javax.swing.JPanel
+import javax.swing.JPasswordField
+import javax.swing.JTextField
+import javax.swing.SwingUtilities
 
 /** Configuração de proxy exclusiva da edição Windows. */
 object DesktopProxyManager {
@@ -53,9 +61,13 @@ object DesktopProxyManager {
         val cleanHost = host.trim()
         val cleanUser = username.trim()
         val cleanDomain = domain.trim()
+        val previous = load(context)
         if (enabled && cleanHost.isBlank()) return SaveResult(false, "Informe o servidor do proxy.")
         if (enabled && port !in 1..65535) return SaveResult(false, "Porta de proxy inválida.")
         if (enabled && cleanUser.isBlank()) return SaveResult(false, "Informe o usuário do proxy.")
+        if (enabled && password.isBlank() && !previous.hasSavedPassword) {
+            return SaveResult(false, "Informe a senha do proxy.")
+        }
 
         val prefs = context.getSharedPreferences(BackgroundMonitor.PREFS, Context.MODE_PRIVATE)
         val editor = prefs.edit()
@@ -79,6 +91,75 @@ object DesktopProxyManager {
         context.getSharedPreferences(BackgroundMonitor.PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY_PASSWORD_DPAPI, "").apply()
         apply(context)
+    }
+
+    fun showConfigurationDialog(context: Context, afterSave: (() -> Unit)? = null) {
+        if (!isWindows()) return
+        SwingUtilities.invokeLater {
+            val current = load(context)
+            val enabled = JCheckBox("Usar proxy", current.enabled)
+            val host = JTextField(current.host, 24)
+            val port = JTextField(current.port.toString(), 8)
+            val user = JTextField(current.username, 20)
+            val domain = JTextField(current.domain, 16)
+            val password = JPasswordField(20)
+            password.toolTipText = if (current.hasSavedPassword) {
+                "Deixe em branco para manter a senha já salva"
+            } else {
+                "Informe a senha do proxy"
+            }
+
+            val panel = JPanel(GridLayout(0, 2, 8, 8)).apply {
+                add(JLabel("Ativação")); add(enabled)
+                add(JLabel("Servidor")); add(host)
+                add(JLabel("Porta")); add(port)
+                add(JLabel("Usuário")); add(user)
+                add(JLabel("Domínio (opcional)")); add(domain)
+                add(JLabel(if (current.hasSavedPassword) "Senha (salva)" else "Senha")); add(password)
+            }
+
+            val option = JOptionPane.showConfirmDialog(
+                null,
+                panel,
+                "Proxy autenticado — Monitor de Notícias",
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE
+            )
+            if (option != JOptionPane.OK_OPTION) return@invokeLater
+
+            val portNumber = port.text.trim().toIntOrNull() ?: -1
+            val result = save(
+                context = context,
+                enabled = enabled.isSelected,
+                host = host.text,
+                port = portNumber,
+                username = user.text,
+                password = String(password.password),
+                domain = domain.text
+            )
+            JOptionPane.showMessageDialog(
+                null,
+                result.message,
+                "Proxy",
+                if (result.ok) JOptionPane.INFORMATION_MESSAGE else JOptionPane.ERROR_MESSAGE
+            )
+            if (result.ok) afterSave?.invoke()
+        }
+    }
+
+    fun showTestDialog(context: Context) {
+        if (!isWindows()) return
+        Thread {
+            val result = test(context)
+            SwingUtilities.invokeLater {
+                JOptionPane.showMessageDialog(
+                    null,
+                    result.message,
+                    "Teste do proxy",
+                    if (result.ok) JOptionPane.INFORMATION_MESSAGE else JOptionPane.ERROR_MESSAGE
+                )
+            }
+        }.apply { isDaemon = true; name = "proxy-test" }.start()
     }
 
     fun apply(context: Context) {

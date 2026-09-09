@@ -113,32 +113,38 @@ class VideoDb(context: Context) : AutoCloseable {
 
     fun listAll(limit:Int=1000):List<VideoItem> = query(null, emptyList(),limit)
 
-    /** Índice leve e sem limite artificial para compatibilidade com a base existente. */
+    /**
+     * Índice leve e sem limite artificial para a regra visual de vídeo novo.
+     *
+     * O Set mantém a API já usada pelo controller, mas `contains` trabalha com a
+     * identidade canônica da URL. Assim uma entrada histórica `youtu.be/...` é
+     * reconhecida quando a busca atual retorna `youtube.com/watch?v=...`, e URLs
+     * de portais com parâmetros de rastreamento também não voltam como novas.
+     */
     @Synchronized
-    fun listKnownLinks(): Set<String> = connection.createStatement().use { st ->
-        st.executeQuery("SELECT link FROM videos").use { rs ->
-            buildSet {
-                while (rs.next()) {
-                    rs.getString(1)?.takeIf { it.isNotBlank() }?.let(::add)
+    fun listKnownLinks(): Set<String> {
+        val keys = connection.createStatement().use { st ->
+            st.executeQuery("SELECT link FROM videos").use { rs ->
+                buildSet {
+                    while (rs.next()) {
+                        rs.getString(1)
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let(::canonicalLinkKey)
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let(::add)
+                    }
                 }
             }
         }
+        return object : AbstractSet<String>() {
+            override val size: Int get() = keys.size
+            override fun iterator(): Iterator<String> = keys.iterator()
+            override fun contains(element: String): Boolean = canonicalLinkKey(element) in keys
+        }
     }
 
-    /**
-     * Índice canônico usado pela regra visual de vídeo novo.
-     *
-     * Bases de versões anteriores podem conter a mesma mídia como youtu.be,
-     * youtube.com/watch ou com parâmetros de rastreamento. A busca atual já
-     * canonicaliza os resultados; este índice faz o histórico antigo falar a
-     * mesma linguagem sem reescrever o SQLite nem provocar colisões UNIQUE.
-     */
-    @Synchronized
-    fun listKnownCanonicalLinks(): Set<String> = listKnownLinks()
-        .asSequence()
-        .map(::canonicalLinkKey)
-        .filter(String::isNotBlank)
-        .toSet()
+    /** Cópia explícita das chaves canônicas para diagnóstico e SelfTest. */
+    fun listKnownCanonicalLinks(): Set<String> = listKnownLinks().toSet()
 
     fun canonicalLinkKey(value: String): String = canonicalizeUrl(value)
         .lowercase()

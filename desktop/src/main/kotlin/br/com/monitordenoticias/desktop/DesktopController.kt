@@ -273,7 +273,7 @@ class DesktopController(
             if (automatic) markAutoFailed("news", status)
             return
         }
-        val knownBeforeRun = newsDb.listNews(10_000).mapTo(mutableSetOf()) { it.link }
+        val knownBeforeRun = newsDb.listKnownLinks()
         newsNewLinks = emptySet()
         newsBusy = true
         if (automatic) markAutoAttempt("news")
@@ -316,7 +316,7 @@ class DesktopController(
     fun searchDemand(demand: Demand) {
         if (demandBusy) return
         if (!ensureProxyReady(false)) return
-        val knownBeforeRun = newsDb.listNews(10_000).mapTo(mutableSetOf()) { it.link }
+        val knownBeforeRun = newsDb.listKnownLinks()
         newsNewLinks = emptySet()
         demandBusy = true
         status = "Buscando demanda: ${demand.vehicle} • ${demand.subject}"
@@ -368,7 +368,7 @@ class DesktopController(
             if (automatic) markAutoFailed("demand", status)
             return
         }
-        val knownBeforeRun = newsDb.listNews(10_000).mapTo(mutableSetOf()) { it.link }
+        val knownBeforeRun = newsDb.listKnownLinks()
         newsNewLinks = emptySet()
         demandBusy = true
         if (automatic) markAutoAttempt("demand")
@@ -418,7 +418,7 @@ class DesktopController(
             if (automatic) markAutoFailed("video", videoStatus)
             return
         }
-        val knownBeforeRun = videoDb.listAll(10_000).mapTo(mutableSetOf()) { it.link }
+        val knownBeforeRun = videoDb.listKnownLinks()
         videoNewLinks = emptySet()
         videoBusy = true
         if (automatic) markAutoAttempt("video")
@@ -771,11 +771,11 @@ class DesktopController(
             .take(2000)
 
     private fun ensureProxyReady(video: Boolean): Boolean {
-    if (DesktopProxyManager.isReady(context)) return true
-    val warning = "⚠ Proxy autenticado: configure usuário e senha em Configurações."
-    if (video) videoStatus = warning else status = warning
-    return false
-}
+        if (DesktopProxyManager.isReady(context)) return true
+        val warning = "⚠ Proxy autenticado: configure usuário e senha em Configurações."
+        if (video) videoStatus = warning else status = warning
+        return false
+    }
 
     override fun close() {
         scope.cancel()

@@ -44,6 +44,19 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
+      - name: Prepare native Windows icon
+        shell: pwsh
+        run: |
+          $encoded = "desktop\src\main\resources\monitor_icon.ico.b64"
+          $icon = "desktop\src\main\resources\monitor_icon.ico"
+          if (!(Test-Path $encoded)) { throw "Native icon source was not found: $encoded" }
+          $base64 = [IO.File]::ReadAllText($encoded).Trim()
+          [IO.File]::WriteAllBytes($icon, [Convert]::FromBase64String($base64))
+          if (!(Test-Path $icon)) { throw "Native icon was not generated." }
+          $length = (Get-Item $icon).Length
+          if ($length -lt 1000) { throw "Generated ICO is unexpectedly small: $length bytes" }
+          Write-Host "Native Windows icon ready: $icon ($length bytes)"
+
       - name: Build Windows app image
         shell: pwsh
         run: gradle :desktop:createDistributable --stacktrace

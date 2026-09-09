@@ -286,8 +286,15 @@ private fun V42StatusStrip(text: String) {
 private fun V42NewsPulse(s: AppState) {
     val context = LocalContext.current
     val prefs = context.getSharedPreferences(BackgroundMonitor.PREFS, 0)
-    val started = prefs.getLong(AutoRunLog.KEY_NEWS_ATTEMPT_AT, 0L)
-    val completed = prefs.getLong(AutoRunLog.KEY_NEWS_COMPLETED_AT, 0L)
+    val autoStarted = prefs.getLong(AutoRunLog.KEY_NEWS_ATTEMPT_AT, 0L)
+    val autoCompleted = prefs.getLong(AutoRunLog.KEY_NEWS_COMPLETED_AT, 0L)
+    val manualIsNews = s.searchProgress.kind.startsWith("Notícias")
+    val manualStarted = if (manualIsNews) s.searchProgress.startedAt else 0L
+    val manualCompleted = if (!manualIsNews) 0L else s.searchProgress.finishedAt.takeIf { it > 0L }
+        ?: if (s.searchProgress.active) System.currentTimeMillis() else 0L
+    val useManual = manualStarted > autoStarted
+    val started = if (useManual) manualStarted else autoStarted
+    val completed = if (useManual) manualCompleted else autoCompleted
     val newCount = s.news.count { v42InRun(it.capturedAt, started, completed) }
     val label = if (newCount > 0) "$newCount nova(s) notícia(s) encontrada(s)" else "${s.news.size} notícia(s) no escopo atual"
     Surface(
@@ -571,7 +578,31 @@ private fun V42Settings(s: AppState, vm: MonitorViewModel, videos: VideoState) {
     val powerManager = context.getSystemService(PowerManager::class.java)
     val unrestricted = powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
     val latestAttempt = maxOf(newsAttempt, demandAttempt, videoAttempt)
-    val stale = latestAttempt > 0 && System.currentTimeMillis() - latestAttempt > 2L * 60L * 60L * 1000L
+    val now = System.currentTimeMillis()
+    fun overdue(enabled: Boolean, lastAttempt: Long, intervalMinutes: Int): Boolean {
+        if (!enabled || lastAttempt <= 0L) return false
+        val tolerance = 30L * 60L * 1000L
+        return now - lastAttempt > intervalMinutes.coerceAtLeast(15) * 60_000L + tolerance
+    }
+    val stale = overdue(autoConfig.newsEnabled, newsAttempt, autoConfig.newsIntervalMinutes) ||
+        overdue(autoConfig.demandsEnabled, demandAttempt, autoConfig.demandsIntervalMinutes) ||
+        overdue(autoConfig.videosEnabled, videoAttempt, autoConfig.videosIntervalMinutes)
+    val anyEnabled = autoConfig.newsEnabled || autoConfig.demandsEnabled || autoConfig.videosEnabled
+    val monitorColor = when {
+        stale -> V42Amber
+        anyEnabled -> V42Mint
+        else -> V42Text2
+    }
+    val monitorBadge = when {
+        stale -> "VERIFICAR AUTOMAÇÃO"
+        anyEnabled -> "MONITOR ATIVO"
+        else -> "AUTOMAÇÃO PAUSADA"
+    }
+    val monitorTitle = when {
+        stale -> "Atenção ao monitor"
+        anyEnabled -> "Monitor funcionando"
+        else -> "Buscas automáticas pausadas"
+    }
 
     fun reschedule() {
         BackgroundMonitor.scheduleAll(context)
@@ -582,17 +613,25 @@ private fun V42Settings(s: AppState, vm: MonitorViewModel, videos: VideoState) {
 
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Surface(color = if (stale) V42Amber.copy(alpha = .08f) else V42Mint.copy(alpha = .07f), shape = RoundedCornerShape(22.dp), border = BorderStroke(1.dp, if (stale) V42Amber.copy(alpha = .42f) else V42Mint.copy(alpha = .35f)), modifier = Modifier.fillMaxWidth()) {
+            Surface(color = monitorColor.copy(alpha = .07f), shape = RoundedCornerShape(22.dp), border = BorderStroke(1.dp, monitorColor.copy(alpha = .38f)), modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(64.dp).clip(CircleShape).background((if (stale) V42Amber else V42Mint).copy(alpha = .12f)), contentAlignment = Alignment.Center) {
-                        Icon(if (stale) Icons.Outlined.WarningAmber else Icons.Outlined.Radar, null, tint = if (stale) V42Amber else V42Mint, modifier = Modifier.size(34.dp))
+                    Box(Modifier.size(64.dp).clip(CircleShape).background(monitorColor.copy(alpha = .12f)), contentAlignment = Alignment.Center) {
+                        Icon(if (stale) Icons.Outlined.WarningAmber else if (anyEnabled) Icons.Outlined.Radar else Icons.Outlined.PauseCircleOutline, null, tint = monitorColor, modifier = Modifier.size(34.dp))
                     }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        V42Badge(if (stale) "VERIFICAR AUTOMAÇÃO" else "MONITOR ATIVO", if (stale) V42Amber else V42Mint)
+                        V42Badge(monitorBadge, monitorColor)
                         Spacer(Modifier.height(6.dp))
-                        Text(if (stale) "Atenção ao monitor" else "Monitor funcionando", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                        Text(if (latestAttempt > 0) "Último disparo: ${v42DateTime(latestAttempt)}" else "Aguardando primeira execução automática", color = V42Text2, fontSize = 11.5.sp)
+                        Text(monitorTitle, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(
+                            when {
+                                latestAttempt > 0 -> "Último disparo: ${v42DateTime(latestAttempt)}"
+                                anyEnabled -> "Aguardando primeira execução automática"
+                                else -> "As buscas manuais continuam disponíveis"
+                            },
+                            color = V42Text2,
+                            fontSize = 11.5.sp
+                        )
                     }
                     FilledIconButton(onClick = { refreshKey++; autoConfig = AutoSearchSettings.read(context) }, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.Refresh, "Atualizar") }
                 }

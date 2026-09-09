@@ -17,6 +17,9 @@ kotlin {
         main {
             kotlin.srcDir("../app/src/main/java")
             kotlin.exclude(
+                // A v4.0.3 usa exclusivamente MainV403Kt. O Main.kt legado permanece
+                // versionado como referência, mas não participa desta compilação.
+                "br/com/monitordenoticias/desktop/Main.kt",
                 "br/com/monitordenoticias/android/BackgroundMonitor.kt",
                 "br/com/monitordenoticias/android/DemandMonitorWorker.kt",
                 "br/com/monitordenoticias/android/MainActivity.kt",

@@ -39,12 +39,12 @@ object DesktopProxyManager {
     fun load(context: Context): Settings {
         val prefs = context.getSharedPreferences(BackgroundMonitor.PREFS, Context.MODE_PRIVATE)
         return Settings(
-            enabled = prefs.getBoolean(KEY_ENABLED, false),
+            enabled = prefs.getBoolean(KEY_ENABLED, true),
             host = prefs.getString(KEY_HOST, BackgroundMonitor.WINDOWS_PROXY_HOST).orEmpty()
                 .ifBlank { BackgroundMonitor.WINDOWS_PROXY_HOST },
             port = prefs.getInt(KEY_PORT, BackgroundMonitor.WINDOWS_PROXY_PORT),
             username = prefs.getString(KEY_USER, "").orEmpty(),
-            domain = prefs.getString(KEY_DOMAIN, "").orEmpty(),
+            domain = prefs.getString(KEY_DOMAIN, System.getenv("USERDOMAIN") ?: "").orEmpty(),
             hasSavedPassword = prefs.getString(KEY_PASSWORD_DPAPI, "").orEmpty().isNotBlank()
         )
     }
@@ -189,6 +189,9 @@ object DesktopProxyManager {
         val password = readSavedPassword(context)
         if (settings.username.isBlank() || password.isNullOrEmpty()) {
             Authenticator.setDefault(null)
+            // No primeiro uso, o próprio app solicita as credenciais. O autoteste de CI
+            // usa uma pasta temporária identificável e não deve abrir UI interativa.
+            if (!isSelfTestContext(context)) showConfigurationDialog(context)
             return
         }
 
@@ -274,6 +277,9 @@ object DesktopProxyManager {
             if (process.waitFor() == 0 && output.isNotBlank()) output else null
         }.getOrNull()
     }
+
+    private fun isSelfTestContext(context: Context): Boolean =
+        context.filesDir.absolutePath.contains("monitor-de-noticias-self-test", ignoreCase = true)
 
     private fun isWindows() = System.getProperty("os.name", "").startsWith("Windows", ignoreCase = true)
 }

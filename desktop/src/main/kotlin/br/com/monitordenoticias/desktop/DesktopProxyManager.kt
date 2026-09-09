@@ -154,7 +154,7 @@ object DesktopProxyManager {
             connection.readTimeout = 12_000
             connection.instanceFollowRedirects = true
             connection.requestMethod = "GET"
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0 MonitorNoticiasWindows/4.0.2")
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0 MonitorNoticiasWindows/4.0.3")
             val code = connection.responseCode
             connection.disconnect()
             when {

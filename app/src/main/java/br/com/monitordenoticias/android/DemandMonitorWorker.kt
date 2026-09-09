@@ -6,8 +6,11 @@ import androidx.work.WorkerParameters
 
 class DemandMonitorWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
-        // Garante que o worker horário legado não fure a cadência escolhida na v4.2.0.
-        if (!AutoSearchSettings.demandsDue(applicationContext)) return Result.success()
+        // Garante que agendadores legados não furem a cadência escolhida na v4.2.0,
+        // mas mantém livres os retries legítimos do WorkManager após uma falha.
+        if (runAttemptCount == 0 && !AutoSearchSettings.demandsDue(applicationContext)) {
+            return Result.success()
+        }
 
         AutoRunLog.markDemandAttempt(applicationContext)
         val db = NewsDb(applicationContext)

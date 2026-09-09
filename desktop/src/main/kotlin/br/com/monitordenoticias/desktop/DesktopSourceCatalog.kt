@@ -10,6 +10,7 @@ import br.com.monitordenoticias.android.SourceCatalog
  * normalizamos nomes editoriais que o Google Notícias costuma abreviar. Isso
  * evita que uma fonte selecionada seja descartada apenas porque o publisher do
  * RSS usa um nome diferente do nome apresentado no catálogo do aplicativo.
+ * O caso "Folha PE" é mantido como regressão conhecida e coberta por alias.
  */
 object DesktopSourceCatalog {
     const val SPECIALIZED_GROUP = "Mídias especializadas"

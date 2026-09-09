@@ -9,6 +9,7 @@ plugins {
 group = "br.com.monitordenoticias"
 version = "4.0.2"
 
+// Build Windows com termos estabelecidos e refinamento visual profissional.
 kotlin {
     jvmToolchain(17)
     sourceSets {

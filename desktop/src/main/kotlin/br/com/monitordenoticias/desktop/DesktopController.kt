@@ -112,6 +112,7 @@ class DesktopController(
         }
 
     init {
+        DesktopProxyManager.apply(context)
         refresh()
         if (startWithWindows) updateWindowsStartup(true)
         scope.launch { automationLoop() }
